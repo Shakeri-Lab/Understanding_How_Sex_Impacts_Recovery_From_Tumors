@@ -1,7 +1,10 @@
 #!/bin/bash
+set -euo pipefail
+
+export EDITOR=${EDITOR:-vi}
 
 # Set the project directory
-PROJECT_DIR="/project/orien/data/aws/24PRJ217UVA_IORIG/codes"
+PROJECT_DIR="/project/orien/data/aws/24PRJ217UVA_IORIG/Understanding_How_Sex_Impacts_Recovery_From_Tumors"
 CONDA_DIR="$PROJECT_DIR/miniconda3"
 
 # Download and install Miniconda if not already installed
@@ -28,10 +31,14 @@ fi
 # Make sure conda is initialized
 source "$CONDA_DIR/etc/profile.d/conda.sh"
 
+conda config --env --set channel_priority strict
+conda config --env --prepend channels conda-forge
+conda config --env --append channels bioconda
+
 # Create new environment if it doesn't exist
 if ! conda env list | grep -q "ici_sex"; then
     echo "Creating ici_sex environment..."
-    conda create -y -n ici_sex python=3.9
+    conda create -y -n ici_sex python=3.12
 fi
 
 # Activate the environment
@@ -39,29 +46,23 @@ conda activate ici_sex
 
 # Install required packages
 echo "Installing required packages..."
-conda install -y numpy matplotlib scikit-learn
-conda install -y pandas scipy
-conda install -y seaborn lifelines rpy2
-conda install -y statsmodels
+conda install -y 'libblas=*=*openblas' lifelines numpy matplotlib pandas scipy scikit-learn seaborn statsmodels 'r-base>=4.4,<4.5' r-essentials r-devtools r-remotes 'r-htmltools>=0.5.7' r-pracma r-quadprog 'bioconductor-genomeinfodbdata=1.2.13' bioconductor-gsva bioconductor-gseabase bioconductor-biobase bioconductor-summarizedexperiment bioconductor-biomart bioconductor-org.hs.eg.db
+
+pip install --no-cache-dir rpy2==3.5.17
 
 # Install R and Bioconductor packages through conda
 echo "Installing R packages..."
-conda install -y -c conda-forge r-base r-essentials
-conda install -y -c conda-forge r-devtools r-remotes
-conda install -y -c bioconda bioconductor-gsva
-conda install -y -c bioconda bioconductor-gseabase
-conda install -y -c bioconda bioconductor-biobase
-conda install -y -c bioconda bioconductor-summarizedexperiment
-conda install -y -c bioconda bioconductor-biomart
-conda install -y -c bioconda bioconductor-org.hs.eg.db
 
 # Install xCell and prepare data
 conda run -n ici_sex R -e '
-  .libPaths(paste0(Sys.getenv("CONDA_PREFIX"), "/lib/R/library"));
-  if (!require("devtools")) install.packages("devtools", lib=.libPaths()[1]);
+  options(repos = c(CRAN = "https://cloud.r-project.org"))
+  if (!requireNamespace("BiocManager", quietly = TRUE)) install.packages("BiocManager")
+  BiocManager::install(version = "3.20", ask = FALSE, update = FALSE)
+  
+  if (!requireNamespace("remotes", quietly = TRUE)) install.packages("remotes");
   
   # Install xCell from GitHub
-  devtools::install_github("dviraran/xCell", lib=.libPaths()[1], force=TRUE);
+  remotes::install_github("dviraran/xCell", dependencies = FALSE, upgrade = "never");
   
   # Download and save xCell data
   library(xCell);
