@@ -376,8 +376,6 @@ def process_clinical_data(dfs, output_dir, qc_file_path=None):
         return str([age < icb_start_age if pd.notna(age) and pd.notna(icb_start_age) else 'Unknown' 
                 for age in ages])
     
-    patients['SequencingBeforeICB'] = patients.apply(get_sequencing_before_icb, axis=1)
-    
     # --- Calculate Earliest Sequencing Age from Melanoma Samples --- 
     earliest_melanoma_ages = {}
     for patient_id, samples in patient_sequencing.items():
@@ -401,6 +399,8 @@ def process_clinical_data(dfs, output_dir, qc_file_path=None):
     patients['ICB_Treatments'] = [[] for _ in range(len(patients))] # Initialize as empty list
     patients['ICB_START_AGE'] = np.nan # Initialize
 
+    patients['SequencingBeforeICB'] = patients.apply(get_sequencing_before_icb, axis=1)
+    
     if medication_col:
         treatments['icb_drug'] = treatments[medication_col].apply(classify_icb)
         icb_treatments = treatments[treatments['icb_drug'].notnull()].copy()
