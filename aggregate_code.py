@@ -1,4 +1,5 @@
-from paths_of_important_files import paths_of_data_processing_files
+#from paths_of_important_files import paths_of_data_processing_files
+from paths_of_important_files import paths_of_ICB_analysis_files
 #from paths_of_important_files import paths_of_other_source_files
 #from paths_of_important_files import paths_to_data_files
 #from paths_of_important_files import paths_to_docs
@@ -52,7 +53,7 @@ def replace_import_groups(content):
 
 
 def main():
-    aggregated_string = aggregate_files(base_path, paths_of_data_processing_files)
+    aggregated_string = aggregate_files(base_path, paths_of_ICB_analysis_files)
     #aggregated_string = replace_import_groups(aggregated_string)
     output_path = os.path.join(base_path, "aggregated_contents.txt")
     try:

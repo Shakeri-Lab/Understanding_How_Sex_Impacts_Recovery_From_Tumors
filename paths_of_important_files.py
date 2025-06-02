@@ -8,22 +8,24 @@ paths_of_data_processing_files = [
     "src/data_processing/utils.py"
 ]
 
+paths_of_ICB_analysis_files = [
+    "src/icb_analysis/__init__.py",
+    #"src/icb_analysis/[old]advanced_group_analysis.py",
+    #"src/icb_analysis/[old]icb_analysis.py",
+    "src/icb_analysis/group_analysis.py",
+    "src/icb_analysis/group_data_loader.py",
+    "src/icb_analysis/icb_analysis.py",
+    "src/icb_analysis/icb_data_loader.py",
+    "src/icb_analysis/icb_main.py",
+    "src/icb_analysis/README.md"
+]
+
 paths_of_other_source_files = [
     "src/cd8_analysis/__init__.py",
     "src/cd8_analysis/cd8_analysis.py",
     "src/cd8_analysis/cd8_groups_analysis.py",
     "src/cd8_analysis/clinical_analysis.py",
     "src/cd8_analysis/README.md",
-    
-    "src/icb_analysis/__init__.py",
-    "src/icb_analysis/[old]advanced_group_analysis.py",
-    "src/icb_analysis/[old]icb_analysis.py",
-    "src/icb_analysis/group_analysis.py",
-    "src/icb_analysis/group_data_loader.py",
-    "src/icb_analysis/icb_analysis.py",
-    "src/icb_analysis/icb_data_loader.py",
-    "src/icb_analysis/icb_main.py",
-    "src/icb_analysis/README.md",
 
     "src/immune_analysis/__init__.py",
     "src/immune_analysis/data_loading.py",
