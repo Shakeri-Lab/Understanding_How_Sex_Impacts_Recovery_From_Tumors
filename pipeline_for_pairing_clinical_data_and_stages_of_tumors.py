@@ -31,6 +31,10 @@ This single script
     7.  emits one row per paired specimen with traceability fields plus a code (StageRuleHit) identifying which rule produced the stage.
         TODO: What is a paired specimen?
         TODO: What is a traceability field?
+        
+Usage:
+
+python pipeline_for_pairing_clinical_data_and_stages_of_tumors.py --clinmol ../../../Avatar_CLINICAL_Data/20250317_UVA_ClinicalMolLinkage_V4.csv --diagnosis ../../../Avatar_CLINICAL_Data/NormalizedFiles/20250317_UVA_Diagnosis_V4.csv --metadisease ../../../Avatar_CLINICAL_Data/NormalizedFiles/20250317_UVA_MetastaticDisease_V4.csv --out output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors.csv > output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors.txt 2>&1
 '''
 
 from __future__ import annotations
