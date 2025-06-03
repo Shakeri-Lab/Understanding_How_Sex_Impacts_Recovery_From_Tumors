@@ -446,22 +446,34 @@ def stage_cutaneous(spec: pd.Series, dx: pd.Series, meta_patient: pd.DataFrame) 
 
 
 def stage_ocular(spec: pd.Series, dx: pd.Series, meta_patient: pd.DataFrame) -> Tuple[str, str]:
+    '''
+    Ocular primary staging (rules OC-1, OC-2, OC-3, and OC-4)
+    '''
+    
     path_stage = str(dx.get("PathGroupStage", "")).upper()
     clin_stage = str(dx.get("ClinGroupStage", "")).upper()
     age_spec = _float(spec["Age At Specimen Collection"])
+    site_coll = str(spec["SpecimenSiteOfCollection"]).lower()
 
+    # OC-1 / OC-2: Stage IV at diagnosis
     if "IV" in path_stage:
         return "IV", "OC1"
     if "IV" in clin_stage and path_stage.lower() in UNKNOWN_PATH_STAGE_VALUES:
         return "IV", "OC2"
 
-    # Interval metastatic disease (≤ specimen age OR unknown)
+    # Prepare metastatic disease rows (<= specimen age or unknown)
     meta_rows = _filter_meta(meta_patient, age_spec)
-    if not meta_rows.empty:
-        if not meta_rows[meta_rows["MetastaticDiseaseInd"].str.contains("Yes - Distant", na=False)].empty:
-            return "IV", "OC3"
-        if not meta_rows[meta_rows["MetastaticDiseaseInd"].str.contains(r"Yes - Regional|Yes - NOS", na=False)].empty:
-            return "III", "OC4"
+    if meta_rows.empty:
+        return "Unknown", "OC-UNK"
+    
+    # OC-3: interval distant metastases
+    if not meta_rows[meta_rows["MetastaticDiseaseInd"].str.contains("Yes - Distant", na = False)].empty:
+        return "IV", "OC3"
+    
+    # OC-4: lymph-node speciment and regional / Not Otherwise Specified metastases
+    is_node_spec = bool(NODE_REGEX.search(site_coll))
+    if is_node_spec and not meta_rows[meta_rows["MetastaticDiseaseInd"].str.contains(r"Yes - Regional|Yes - NOS", na = False)].empty:
+        return "III", "OC4"
 
     return "Unknown", "OC‑UNK"
 
