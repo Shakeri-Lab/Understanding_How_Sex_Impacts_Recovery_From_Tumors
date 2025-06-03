@@ -161,12 +161,9 @@ def _contains(value: str | float | int | None, pattern: str | re.Pattern) -> boo
     return bool(re.search(pattern, str(value).lower()))
 
 
-def _filter_meta(meta_patient: pd.DataFrame, age_spec: float | None) -> pd.DataFrame:
+def _filter_meta_before(meta_patient: pd.DataFrame, age_spec: float | None) -> pd.DataFrame:
     '''
-    Retain metastatic-disease rows that occurred on/before the specimen age
-    OR whose age is "Age Unknown/Not Recorded".
-    This guarantees correct behaviour for rules that say
-        "... AgeAtMetastaticSite <= AgeAtSpecimenCollection OR Age Unknown/Not Recorded".
+    Rows with AgeAtMetastaticSite ≤ specimen age or "Age Unknown/Not Recorded".
     '''
     if meta_patient is None or meta_patient.empty:
         return pd.DataFrame()
@@ -179,6 +176,18 @@ def _filter_meta(meta_patient: pd.DataFrame, age_spec: float | None) -> pd.DataF
         return m[pd.isna(m["_age"])]
 
     return m[pd.isna(m["_age"]) | (m["_age"] <= age_spec)]
+
+
+def _filter_meta_after(meta_patient: pd.DataFrame, age_spec: float | None) -> pd.DataFrame:
+    '''
+    Rows with AgeAtMetastaticSite > specimen age (interval mets).
+    '''
+    if meta_patient is None or meta_patient.empty or age_spec is None:
+        return pd.DataFrame()
+
+    m = meta_patient.copy()
+    m["_age"] = m["AgeAtMetastaticSite"].apply(_float)
+    return m[pd.notna(m["_age"]) & (m["_age"] > age_spec)]
 
 
 def _float(val) -> float | None:
@@ -304,7 +313,7 @@ def _select_specimen_B(patient_cm: pd.DataFrame) -> pd.Series:
     is_node = candidates["SpecimenSiteOfCollection"].str.contains(r"lymph node", case = False, na = False)
 
     # 4. Skin precedence when alone
-    if has_skin.any() and not (is_node.any() or is_soft.any()):
+    if is_skin.any() and not (is_node.any() or is_soft.any()):
         return candidates[is_skin].iloc[0]
 
     # 5. Node precedence when alone
@@ -431,17 +440,28 @@ def stage_cutaneous(spec: pd.Series, dx: pd.Series, meta_patient: pd.DataFrame) 
     primary_met = spec["Primary/Met"].lower()
     age_spec = _float(spec["Age At Specimen Collection"])
 
-    # Meta rows with age <= specimen or "Unknown/Not Recorded"
-    meta_rows = _filter_meta(meta_patient, age_spec)
+    meta_before = _filter_meta_before(meta_patient, age_spec)  # ≤ specimen age
+    meta_after  = _filter_meta_after(meta_patient, age_spec)   #   > specimen age
 
-    def _meta_yes(kind_pat: str, site_pat: str, distant: Optional[bool] = None) -> bool:
-        if meta_rows.empty:
+    def _meta_yes(rows: pd.DataFrame,
+                  kind_pat: str,
+                  site_pat: str,
+                  ind_cat: str | None = None) -> bool:
+        """
+        ind_cat: 'distant', 'regional', 'regional_nos', 'distant_nos', or None (no filter)
+        """
+        if rows.empty:
             return False
-        ok = meta_rows["MetsDzPrimaryDiagnosisSite"].str.contains(kind_pat, case = False, na = False)
-        ok &= meta_rows["MetastaticDiseaseSite"].str.contains(site_pat, case = False, na = False)
-        if distant is not None:
-            ind_pat = "Yes - Distant" if distant else r"Yes - Regional|Yes - NOS"
-            ok &= meta_rows["MetastaticDiseaseInd"].str.contains(ind_pat, case = False, na = False)
+        ok = rows["MetsDzPrimaryDiagnosisSite"].str.contains(kind_pat, case=False, na=False)
+        ok &= rows["MetastaticDiseaseSite"].str.contains(site_pat, case=False, na=False)
+        if ind_cat is not None:
+            ind_pat = {
+                "distant":        r"Yes - Distant",
+                "regional":       r"Yes - Regional",
+                "regional_nos":   r"Yes - Regional|Yes - NOS",
+                "distant_nos":    r"Yes - Distant|Yes - NOS",
+            }[ind_cat]
+            ok &= rows["MetastaticDiseaseInd"].str.contains(ind_pat, case=False, na=False)
         return ok.any()
     
     # --- RULE CUT‑1: PathGroupStage contains IV --------------------------------
@@ -455,10 +475,12 @@ def stage_cutaneous(spec: pd.Series, dx: pd.Series, meta_patient: pd.DataFrame) 
     ):
         return "IV", "CUT2"
 
-    # --- RULE CUT‑3: Metastatic specimen from non‑skin/non‑node site -----------
-    if primary_met == "metastatic" and not (
-        _contains(site_coll, r"skin|lymph node|soft tissues|muscle|parotid|chest wall|head|scalp")
-    ):
+    # --- RULE CUT-3 -----------------------------------------------------------
+    # metastatic specimen from a site that is NOT skin, lymph-node, soft-tissue,
+    # muscle, *or* parotid (explicitly).
+    if (primary_met == "metastatic"
+        and not _contains(site_coll,
+            r"skin|lymph node|soft tissue|muscle|parotid|chest wall|head|scalp")):
         return "IV", "CUT3"
 
     # Lymph node helper booleans
@@ -467,7 +489,7 @@ def stage_cutaneous(spec: pd.Series, dx: pd.Series, meta_patient: pd.DataFrame) 
     # --- RULE CUT‑4: Node specimen, stage III at diagnosis ---------------------
     if (
         is_node_spec
-        and _meta_yes(r"skin|ear|eyelid|vulva", "lymph node", distant = False)
+        and _meta_yes(meta_before, r"skin|ear|eyelid|vulva", "lymph node", "regional_nos")
         and "III" in path_stage
     ):
         return "III", "CUT4"
@@ -479,7 +501,7 @@ def stage_cutaneous(spec: pd.Series, dx: pd.Series, meta_patient: pd.DataFrame) 
     # --- RULE CUT‑6: Node specimen, distant nodal recurrence → stage IV --------
     if (
         is_node_spec
-        and _meta_yes(r"skin|ear|eyelid|vulva", "lymph node", distant = True)
+        and _meta_yes(meta_before, r"skin|ear|eyelid|vulva", "lymph node", "distant")
         and "IV" not in path_stage
     ):
         return "IV", "CUT6"
@@ -487,25 +509,32 @@ def stage_cutaneous(spec: pd.Series, dx: pd.Series, meta_patient: pd.DataFrame) 
     # --- RULE CUT‑7: Parotid specimen distant recurrence → stage IV ------------
     # --- RULE CUT‑8: Parotid specimen regional → stage III ---------------------
     if PAROTID_REGEX.search(site_coll):
-        if _meta_yes(r"skin|ear|eyelid|vulva", "parotid", distant=True):
+        if _meta_yes(meta_before, r"skin|ear|eyelid|vulva", "parotid", "distant"):
             return "IV", "CUT7"
-        if _meta_yes(r"skin|ear|eyelid|vulva", r"parotid|lymph node", distant=False):
+        if _meta_yes(meta_before, r"skin|ear|eyelid|vulva", r"parotid|lymph node", "regional_nos"):
             return "III", "CUT8"
 
     # --- RULE CUT‑9: Distant cutaneous recurrence → stage IV -------------------
-    # --- RULE CUT‑10: Regional cutaneous recurrence → stage III ---------------
     cut_site_pat = r"skin|ear|eyelid|head|soft tissues|muscle|chest wall|vulva"
-    if _contains(site_coll, cut_site_pat) and primary_met == "metastatic" and "IV" not in path_stage:
-        if _meta_yes(r"skin|ear|eyelid|vulva", cut_site_pat, distant=True) or _meta_yes(
-            r"skin|ear|eyelid|vulva", r".*", distant=True
-        ):
-            return "IV", "CUT9"
-        return "III", "CUT10"
+    if (_contains(site_coll, cut_site_pat)
+        and primary_met == "metastatic"
+        and "IV" not in path_stage):
 
-    # --- RULE CUT‑11: Primary specimen after interval distant mets → stage IV --
-    if primary_met == "primary" and _contains(site_coll, cut_site_pat) and _meta_yes(
-        r"skin|ear|eyelid|vulva", r".*", distant=True
-    ):
+        # CUT-9 – distant cutaneous recurrence (≤ specimen age, Distant or NOS)
+        if (_meta_yes(meta_before, r"skin|ear|eyelid|vulva", cut_site_pat, "distant_nos")
+            or _meta_yes(meta_before, r"skin|ear|eyelid|vulva", r".*", "distant_nos")):
+            return "IV", "CUT9"
+
+        # CUT-10 – regional cutaneous recurrence (≤ specimen age, Regional or NOS)
+        if (_meta_yes(meta_before, r"skin|ear|eyelid|vulva", cut_site_pat, "regional_nos")
+            or _meta_yes(meta_before, r"skin|ear|eyelid|vulva", r".*", "regional_nos")):
+            return "III", "CUT10"
+   
+        
+    # CUT-11 – primary specimen collected *after* interval distant mets
+    if (primary_met == "primary"
+        and _contains(site_coll, cut_site_pat)
+        and _meta_yes(meta_after, r"skin|ear|eyelid|vulva", r".*", "distant_nos")):
         return "IV", "CUT11"
 
     # --- RULE CUT‑12: Fallback to numeric stage -------------------------------
@@ -535,7 +564,7 @@ def stage_ocular(spec: pd.Series, dx: pd.Series, meta_patient: pd.DataFrame) -> 
         return "IV", "OC2"
 
     # Prepare metastatic disease rows (<= specimen age or unknown)
-    meta_rows = _filter_meta(meta_patient, age_spec)
+    meta_rows = _filter_meta_before(meta_patient, age_spec)
     if meta_rows.empty:
         return "Unknown", "OC-UNK"
     
@@ -567,7 +596,7 @@ def stage_mucosal(spec: pd.Series, dx: pd.Series, meta_patient: pd.DataFrame) ->
             if m and m.group(1) != "IV":
                 return m.group(1), rule
 
-    meta_rows = _filter_meta(meta_patient, age_spec)
+    meta_rows = _filter_meta_before(meta_patient, age_spec)
     if not meta_rows.empty and not meta_rows[meta_rows["MetastaticDiseaseInd"].str.contains("Yes - Distant", na=False)].empty:
         return "IV", "MU4"
 
