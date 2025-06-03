@@ -35,7 +35,7 @@ This single script
         
 Usage:
 
-python pipeline_for_pairing_clinical_data_and_stages_of_tumors.py --clinmol ../../../Avatar_CLINICAL_Data/20250317_UVA_ClinicalMolLinkage_V4.csv --diagnosis ../../../Avatar_CLINICAL_Data/NormalizedFiles/20250317_UVA_Diagnosis_V4.csv --metadisease ../../../Avatar_CLINICAL_Data/NormalizedFiles/20250317_UVA_MetastaticDisease_V4.csv --out output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors.csv > output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors.txt 2>&1
+python pipeline_for_pairing_clinical_data_and_stages_of_tumors.py --clinmol ../../../Avatar_CLINICAL_Data/20250317_UVA_ClinicalMolLinkage_V4.csv --diagnosis ../../../Avatar_CLINICAL_Data/NormalizedFiles/20250317_UVA_Diagnosis_V4.csv --metadisease ../../../Avatar_CLINICAL_Data/NormalizedFiles/20250317_UVA_MetastaticDisease_V4.csv --therapy ../../../Avatar_CLINICAL_Data/NormalizedFiles/20250317_UVA_Medications_V4.csv --out output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors.csv > output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors.txt 2>&1
 '''
 
 from __future__ import annotations
@@ -50,6 +50,11 @@ from typing import Dict, List, Tuple
 ###########
 # CONSTANTS
 ###########
+
+ICB_PATTERN = re.compile(
+    r"immune checkpoint|pembrolizumab|nivolumab|ipilimumab|atezolizumab|durvalumab|avelumab|cemiplimab|relatlimab",
+    re.I,
+)
 
 # ICD-O-3 malignant-melanoma morphology codes
 # Source refs: SEER “Cutaneous Melanoma” rules, Pathology Outlines, WHO ICD-O-3 lists
@@ -117,6 +122,39 @@ UNKNOWN_PATH_STAGE_VALUES = {
 # UTILITY HELPERS
 #################
 
+def _assign_icb_status(
+    spec_row: pd.Series,
+    therapy_patient: Optional[pd.DataFrame],
+) -> str:
+    """
+    Return Pre-ICB / Post-ICB / No-ICB / Unknown for this specimen.
+
+    Logic
+    • If therapy file not supplied (None) → Unknown
+    • Filter patient therapy rows whose Agent or Class matches ICB_PATTERN.
+    • Compare earliest AgeAtTherapyStart to Age At Specimen Collection.
+    """
+    age_spec = _float(spec_row.get("Age At Specimen Collection"))
+    if therapy_patient is None:
+        return "Unknown"
+    
+    age_col = "AgeAtMedStart"
+    
+    icb_rows = therapy_patient[
+        therapy_patient["Medication"].str.contains(ICB_PATTERN, na = False)
+    ].copy()
+    if icb_rows.empty:
+        return "No-ICB"
+
+    icb_rows["_age"] = icb_rows["AgeAtMedStart"].apply(_float)
+    icb_rows = icb_rows[pd.notna(icb_rows["_age"])]
+    if icb_rows.empty or age_spec is None:
+        return "Unknown"
+
+    min_icb_age = icb_rows["_age"].min()
+    return "Post-ICB" if age_spec >= min_icb_age else "Pre-ICB"
+
+
 def _contains(value: str | float | int | None, pattern: str | re.Pattern) -> bool:
     if pd.isna(value):
         return False
@@ -161,7 +199,12 @@ def _strip_cols(df: pd.DataFrame) -> None:
 # CSV LOADING
 #############
 
-def load_inputs(clinmol_csv: Path, dx_csv: Path, meta_csv: Path) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+def load_inputs(
+    clinmol_csv: Path,
+    dx_csv: Path,
+    meta_csv: Path,
+    therapy_csv: Optional[Path] = None,
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, Optional[pd.DataFrame]]:
     logging.info("Loading Clinical‑Molecular Linkage...")
     cm = pd.read_csv(clinmol_csv, dtype = str)
     _strip_cols(cm)
@@ -176,7 +219,14 @@ def load_inputs(clinmol_csv: Path, dx_csv: Path, meta_csv: Path) -> Tuple[pd.Dat
     md = pd.read_csv(meta_csv, dtype = str)
     _strip_cols(md)
 
-    return cm, dx, md
+    if therapy_csv is not None:
+        logging.info("Loading Therapy ...")
+        th = pd.read_csv(therapy_csv, dtype=str)
+        _strip_cols(th)
+    else:
+        th = None
+
+    return cm, dx, md, th
 
 
 #######################
@@ -519,12 +569,13 @@ def main():
     parser.add_argument("--clinmol", required = True, type = Path)
     parser.add_argument("--diagnosis", required = True, type = Path)
     parser.add_argument("--metadisease", required = True, type = Path)
+    parser.add_argument("--therapy", required = False, type = Path, help = "ORIEN Therapy CSV (optional; used for ICB status)")
     parser.add_argument("--out", required = True, type = Path)
     args = parser.parse_args()
 
     logging.basicConfig(level = logging.INFO, format = "%(levelname)s: %(message)s")
 
-    cm, dx, md = load_inputs(args.clinmol, args.diagnosis, args.metadisease)
+    cm, dx, md, th = load_inputs(args.clinmol, args.diagnosis, args.metadisease, args.therapy)
     cm, dx = add_counts(cm, dx)
 
     # Attach group labels to CM rows (one per specimen)
@@ -548,6 +599,7 @@ def main():
             )
             continue
         meta_patient = md[md["AvatarKey"] == avatar]
+        therapy_patient = th[th["AvatarKey"] == avatar] if th is not None else None
         group = specs["Group"].iloc[0]
 
         if group == "A":
@@ -578,15 +630,18 @@ def main():
         else:
             stage, rule = stage_unknown_primary(spec_row, diag_row, meta_patient)
 
+        icb_status = _assign_icb_status(spec_row, therapy_patient)
+
         output_rows.append(
             {
                 "AvatarKey": avatar,
                 "ORIENSpecimenID": spec_row["ORIENSpecimenID"],
-                "DiagnosisIndex": int(diag_row.name), # index of row in table Diagnosis for traceability
+                "DiagnosisIndex": int(diag_row.name),
                 "AgeAtSpecimenCollection": spec_row["Age At Specimen Collection"],
                 "AssignedPrimarySite": primary_site,
                 "AssignedStage": stage,
                 "StageRuleHit": rule,
+                "ICBStatus": icb_status,
             }
         )
 
