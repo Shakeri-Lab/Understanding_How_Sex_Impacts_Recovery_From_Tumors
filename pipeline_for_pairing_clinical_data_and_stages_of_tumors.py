@@ -163,7 +163,12 @@ def _contains(value: str | float | int | None, pattern: str | re.Pattern) -> boo
 
 def _filter_meta_before(meta_patient: pd.DataFrame, age_spec: float | None) -> pd.DataFrame:
     '''
-    Rows with AgeAtMetastaticSite ≤ specimen age or "Age Unknown/Not Recorded".
+    Keep metastatic-disease rows that satisfy either condition:
+      • AgeAtMetastaticSite ≤ AgeAtSpecimenCollection
+      • AgeAtMetastaticSite is "Age Unknown/Not Recorded" (therefore we store it as NaN)
+
+    This matches the wording for OC-3 and MU-4, which explicitly
+    include unknown-age distant mets.
     '''
     if meta_patient is None or meta_patient.empty:
         return pd.DataFrame()
@@ -171,8 +176,8 @@ def _filter_meta_before(meta_patient: pd.DataFrame, age_spec: float | None) -> p
     m = meta_patient.copy()
     m["_age"] = m["AgeAtMetastaticSite"].apply(_float)   # _float->None for "Unknown..."
 
+    # Unknown age rows (pd.isna) are **always** retained
     if age_spec is None:
-        # If specimen age is missing, keep only age-unknown rows
         return m[pd.isna(m["_age"])]
 
     return m[pd.isna(m["_age"]) | (m["_age"] <= age_spec)]
