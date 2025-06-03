@@ -51,18 +51,43 @@ from typing import Dict, List, Tuple
 # CONSTANTS
 ###########
 
-# ICD-O-3 codes for melanoma
-# TODO: What is "ICD-O-3"?
+# ICD-O-3 malignant-melanoma morphology codes
+# Source refs: SEER “Cutaneous Melanoma” rules, Pathology Outlines, WHO ICD-O-3 lists
 MELANOMA_HISTOLOGY_CODES: set[str] = {
-    # Cutaneous / NOS codes
-    # TODO: Why are Not Otherwise Specified codes included?
-    # TODO: Should unknown codes be included?
-    "8720/3", "8721/3", "8722/3", "8723/3", "8728/3", "8730/3",
-    "8740/3", "8741/3", "8742/3", "8743/3", "8744/3", "8745/3",
-    # Acral / mucosal / ocular sub‑types
-    # TODO: Are sub-types codes?
-    # TODO: Why are acral codes included?
-    "8761/3", "8770/3", "8771/3", "8772/3", "8773/3", "8774/3", "8780/3"
+    # Classic / cutaneous
+    "8720/3",  # Malignant melanoma, NOS
+    "8721/3",  # Nodular melanoma
+    "8722/3",  # Balloon cell melanoma
+    "8723/3",  # Malignant melanoma, regressing
+    "8730/3",  # Amelanotic melanoma
+    "8740/3",  # Malignant melanoma in junctional nevus
+    "8741/3",  # Malignant melanoma in precancerous melanosis
+    "8742/3",  # Lentigo maligna melanoma
+    "8743/3",  # Superficial spreading melanoma
+    "8744/3",  # Acral lentiginous melanoma
+    "8745/3",  # Desmoplastic / neurotropic melanoma
+    "8746/3",  # Mucosal lentiginous melanoma
+
+    # Congenital / blue-nevus–related
+    "8761/3",  # MM arising in giant congenital nevus
+    "8762/3",  # MM arising in congenital nevus (childhood type)
+    "8780/3",  # MM arising in blue nevus
+
+    # Dysplastic / magnocellular variants
+    "8726/3",  # Malignant magnocellular melanoma
+    "8727/3",  # Malignant melanoma in dysplastic nevus
+
+    # Spitzoid / spindle / epithelioid
+    "8770/3",  # Mixed epithelioid & spindle cell melanoma
+    "8771/3",  # Epithelioid cell melanoma
+    "8772/3",  # Spindle cell melanoma, NOS
+    "8773/3",  # Spindle cell melanoma, type A
+    "8774/3",  # Spindle cell melanoma, type B
+
+    # Other special forms
+    "8790/3",  # Malignant melanoma, NOS (eye & other sites)
+    "8724/3",  # Nodular melanoma (ocular usage)
+    "8725/3",  # Malignant neuronevus / neural-type melanoma
 }
 
 NODE_REGEX = re.compile(r"lymph node", re.I) # regular expression object
