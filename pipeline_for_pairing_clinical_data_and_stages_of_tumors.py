@@ -7,28 +7,29 @@ Pairs melanoma clinical diagnoses with sequenced tumor specimens and assigns an
 AJCC stage (I, II, III, IV) at the time of specimen collection, exactly as
 described in "ORIEN Data Rules for Tumor Clinical Pairing".
 
-TODO: What is a medical clinical diagnosis?
+A melanoma clinical diagnosis is a row in the Diagnosis CSV file describes a case of skin cancer for a patient.
 TODO: How can a medical clinical diagnosis be paired?
-TODO: What is a sequenced tumor specimen?
+A sequenced tumor specimen is a row in the Clinical Molecular Linkage CSV file with value "Tumor" for field "Tumor/Germline" that represents a biological sample for which at least Whole Exome Sequencing (WES) or RNA sequencing data were generated.
 TODO: How can a sequenced tumor specimen be paired?
-TODO: What is an AJCC stage?
+An AJCC stage is a grouping defined by the American Joint Committee on Cancer. AJCC stage may be I, II, III, or IV. An AJCC stage corresponds to fields `ClinGroupStage` and `PathGroupStage` in table Diagnosis. `ClinGroupStage` represents AJCC stages determined during clinical assessments. `PathGroupStage` represents AJCC stages determined during pathological assessments.
+TODO: What does an AJCC stage signify?
 
 This single script
     1.  reads Clinical Molecular Linkage, Diagnosis, and Metastatic Disease CSV files;
-    2.  identifies melanoma diagnoses (ICD‑O‑3 codes) and tumor specimens;
+    2.  filters to melanoma diagnoses (ICD‑O‑3 codes) and tumor specimens;
         TODO: How does this script identify melanoma diagnoses?
         TODO: How does this script identify tumor specimens?
+        TODO: How does this script filter to melanoma diagnoses and tumor specimens?
     3.  derives per‑patient summary metrics (MelanomaDiagnosisCount /
-        SequencedTumorCount) → Group A/B/C/D;
-        TODO: Change "(MelanomaDiagnosisCount /
-        SequencedTumorCount) → Group A/B/C/D." into a sentence or part of a sentence.
-    4.  reduces each patient to one (specimen, diagnosis) pair using the
-        selection logic for that patient's group;
+        SequencedTumorCount) and assigns patients to Group A, B, C, or D;
+        TODO: How are patients assigned to Group A, B, C, or D?
+    4.  reduces each patient to one (specimen, diagnosis) pair using the selection logic for that patient's group, dropping a patient if no valid pairing can be found (e.g., if all tumors lack RNA sequencing data);
         TODO: What is a specimen?
         TODO: What is a diagnosis?
-    5.  assigns an `AssignedPrimarySite`;
-    6.  assigns an `AssignedStage` using rule sets that are specific to cutaneous, ocular, mucosal, or unknown primary site; and
-    7.  emits one row per paired specimen with traceability fields plus a code (StageRuleHit) identifying which rule produced the stage.
+    5.  assigns a value to `AssignedPrimarySite` equal to "cutaneous", "ocular", "mucosal", or "unknown";
+    6.  assigns an `AssignedStage` using a rule set that is specific to a primary site;
+    7.  assigns a code (StageRuleHit) identifying which rule produced the stage; and
+    8.  emits one row per paired specimen with traceability fields.
         TODO: What is a paired specimen?
         TODO: What is a traceability field?
         
@@ -50,6 +51,8 @@ from typing import Dict, List, Tuple
 # CONSTANTS
 ###########
 
+# ICD-O-3 codes for melanoma
+# TODO: What is "ICD-O-3"?
 MELANOMA_HISTOLOGY_CODES: set[str] = {
     # Cutaneous / NOS codes
     # TODO: Why are Not Otherwise Specified codes included?
@@ -67,7 +70,7 @@ NODE_REGEX = re.compile(r"lymph node", re.I) # regular expression object
 PAROTID_REGEX = re.compile(r"parotid", re.I) # regular expression object
 
 SITE_KEYWORDS = {
-    "cutaneous": r"skin|ear|eyelid|vulva",
+    "cutaneous": r"skin|ear|eyelid|vulva|head|scalp",
     "ocular": r"choroid|ciliary body|conjunctiva|eye",
     "mucosal": r"sinus|gum|nasal|urethra",
     "unknown": r"unknown"
@@ -159,7 +162,7 @@ def add_counts(cm: pd.DataFrame, dx: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Dat
 
 def patient_group(row) -> str:
     '''
-    Return A/B/C/D according to counts.
+    Return A, B, C, or D according to diagnosis and tumor counts.
     '''
     mdx = row["MelanomaDiagnosisCount"] or 0
     mts = row["SequencedTumorCount"] or 0
@@ -178,14 +181,18 @@ def patient_group(row) -> str:
 
 def _select_specimen_B(patient_cm: pd.DataFrame) -> pd.Series:
     '''
-    Return a single specimen row for a Group B/D patient per rules.
+    Return a single specimen row for a Group B/D patient or None if patient should be dropped.
     '''
     cm = patient_cm.copy()
+    
+    if cm["RNASeq"].notna().sum() == 0:
+        return None
+    
     # 1. Keep only RNA‑seq‑enabled tumours if possible
     if cm["RNASeq"].notna().any():
-        cm = cm[cm["RNASeq"].notna()]
-        if len(cm) == 1:
-            return cm.iloc[0]
+        cm_rna = cm[cm["RNASeq"].notna()]
+        if len(cm_rna) == 1:
+            return cm_rna.iloc[0]
 
     # 2. Skin taking precedence (no nodes/soft tissue present)
     has_skin = cm["SpecimenSiteOfCollection"].str.contains("skin", case = False, na = False)
@@ -213,7 +220,7 @@ def _within_90_days(age_spec: float | None, age_diag: float | None) -> bool:
     return abs(age_spec - age_diag) <= (90 / 365.25)
 
 
-def _hist_clean(txt) -> str:
+def _hist_clean(txt: str) -> str:
     return re.sub(r"[^A-Za-z]", "", str(txt)).lower()
 
 
@@ -239,26 +246,28 @@ def _select_diagnosis_C(dx_patient: pd.DataFrame, spec_row: pd.Series, meta_pati
         # Proximity tie‑break by site
         if prox.any():
             site_match = dxp["PrimaryDiagnosisSite"].str.lower() == spec_row["SpecimenSiteOfCollection"].lower()
-            if site_match.any():
-                return dxp[prox & site_match].iloc[0]
+            match_rows = dxp[prox & site_match]
+            if len(match_rows) == 1:
+                return match_rows.iloc[0]
 
         # Histology match
         hist_spec = _hist_clean(spec_row["Histology/Behavior"])
         dxp["_hist_clean"] = dxp["Histology"].apply(_hist_clean)
         hist_match = dxp["_hist_clean"] == hist_spec
-        if hist_match.any():
+        if hist_match.sum() == 1:
             return dxp[hist_match].iloc[0]
 
     else:  # metastatic specimen pathway
         site_coll = spec_row["SpecimenSiteOfCollection"].lower()
+        
+        # Non-node / non-soft-tissue -> earliest diagnosis
         if not re.search(r"soft tissues|lymph node", site_coll):
             return dxp.sort_values("AgeAtDiagnosis").iloc[0]
 
-        if "soft tissues" in site_coll and _within_90_days(
-            age_spec, _float(dxp["AgeAtDiagnosis"].iloc[0])
-        ):
+        # Soft tissue within 90 days
+        if "soft tissues" in site_coll:
             prox = dxp["AgeAtDiagnosis"].apply(_float).apply(lambda x: _within_90_days(age_spec, x))
-            if prox.any():
+            if prox.sum() == 1:
                 return dxp[prox].iloc[0]
 
         if "lymph node" in site_coll:
@@ -302,7 +311,26 @@ def stage_cutaneous(spec: pd.Series, dx: pd.Series, meta_patient: pd.DataFrame) 
     clin_stage = str(dx.get("ClinGroupStage", "")).upper()
     site_coll = spec["SpecimenSiteOfCollection"].lower()
     primary_met = spec["Primary/Met"].lower()
+    age_spec = _float(spec["Age At Specimen Collection"])
 
+    # Helper: filter meta‑disease rows up to specimen age
+    if meta_patient is not None and not meta_patient.empty:
+        meta_rows = meta_patient.copy()
+        meta_rows["_age"] = meta_rows["AgeAtMetastaticSite"].apply(_float)
+        meta_rows = meta_rows[pd.isna(meta_rows["_age"]) | (meta_rows["_age"] <= age_spec)]
+    else:
+        meta_rows = pd.DataFrame()
+
+    def _meta_yes(kind_pat: str, site_pat: str, distant: Optional[bool] = None) -> bool:
+        if meta_rows.empty:
+            return False
+        ok = meta_rows["MetsDzPrimaryDiagnosisSite"].str.contains(kind_pat, case = False, na = False)
+        ok &= meta_rows["MetastaticDiseaseSite"].str.contains(site_pat, case = False, na = False)
+        if distant is not None:
+            ind_pat = "Yes - Distant" if distant else r"Yes - Regional|Yes - NOS"
+            ok &= meta_rows["MetastaticDiseaseInd"].str.contains(ind_pat, case = False, na = False)
+        return ok.any()
+    
     # --- RULE CUT‑1: PathGroupStage contains IV --------------------------------
     if "IV" in path_stage:
         return "IV", "CUT1"
@@ -316,25 +344,12 @@ def stage_cutaneous(spec: pd.Series, dx: pd.Series, meta_patient: pd.DataFrame) 
 
     # --- RULE CUT‑3: Metastatic specimen from non‑skin/non‑node site -----------
     if primary_met == "metastatic" and not (
-        _contains(site_coll, r"skin|lymph node|soft tissues|muscle|parotid|chest wall|head")
+        _contains(site_coll, r"skin|lymph node|soft tissues|muscle|parotid|chest wall|head|scalp")
     ):
         return "IV", "CUT3"
 
     # Lymph node helper booleans
     is_node_spec = bool(NODE_REGEX.search(site_coll))
-
-    # Gather meta‑disease snippets for quick filters
-    meta_rows = meta_patient if meta_patient is not None else pd.DataFrame()
-
-    def _meta_yes(kind_pat: str, site_pat: str, distant: bool | None = None):
-        if meta_rows.empty:
-            return False
-        ok = meta_rows["MetsDzPrimaryDiagnosisSite"].str.contains(kind_pat, case = False, na = False)
-        ok &= meta_rows["MetastaticDiseaseSite"].str.contains(site_pat, case = False, na = False)
-        if distant is not None:
-            ind_pat = "Yes - Distant" if distant else r"Yes - Regional|Yes - NOS"
-            ok &= meta_rows["MetastaticDiseaseInd"].str.contains(ind_pat, case = False, na = False)
-        return ok.any()
 
     # --- RULE CUT‑4: Node specimen, stage III at diagnosis ---------------------
     if (
@@ -344,8 +359,8 @@ def stage_cutaneous(spec: pd.Series, dx: pd.Series, meta_patient: pd.DataFrame) 
     ):
         return "III", "CUT4"
 
-    # --- RULE CUT‑5: Node specimen, early stage at diagnosis → now stage III ---
-    if is_node_spec and not any(s in path_stage for s in ("III", "IV")) and "IV" not in clin_stage:
+    # ---------------- CUT‑5 ------------------------
+    if is_node_spec and ("III" not in path_stage) and ("IV" not in path_stage) and ("IV" not in clin_stage):
         return "III", "CUT5"
 
     # --- RULE CUT‑6: Node specimen, distant nodal recurrence → stage IV --------
@@ -357,38 +372,26 @@ def stage_cutaneous(spec: pd.Series, dx: pd.Series, meta_patient: pd.DataFrame) 
         return "IV", "CUT6"
 
     # --- RULE CUT‑7: Parotid specimen distant recurrence → stage IV ------------
-    if PAROTID_REGEX.search(site_coll) and _meta_yes(r"skin|ear|eyelid|vulva", "parotid", distant = True):
-        return "IV", "CUT7"
-
     # --- RULE CUT‑8: Parotid specimen regional → stage III ---------------------
-    if PAROTID_REGEX.search(site_coll) and _meta_yes(r"skin|ear|eyelid|vulva", r"parotid|lymph node", distant = False):
-        return "III", "CUT8"
+    if PAROTID_REGEX.search(site_coll):
+        if _meta_yes(r"skin|ear|eyelid|vulva", "parotid", distant=True):
+            return "IV", "CUT7"
+        if _meta_yes(r"skin|ear|eyelid|vulva", r"parotid|lymph node", distant=False):
+            return "III", "CUT8"
 
     # --- RULE CUT‑9: Distant cutaneous recurrence → stage IV -------------------
-    if (
-        _contains(site_coll, r"skin|ear|eyelid|head|soft tissues|muscle|chest wall|vulva")
-        and primary_met == "metastatic"
-        and "IV" not in path_stage
-        and (
-            _meta_yes(r"skin|ear|eyelid|vulva", r"skin|ear|eyelid|head|soft tissues|muscle|chest wall", distant = True)
-            or _meta_yes(r"skin|ear|eyelid|vulva", r".*", distant = True)
-        )
-    ):
-        return "IV", "CUT9"
-
     # --- RULE CUT‑10: Regional cutaneous recurrence → stage III ---------------
-    if (
-        _contains(site_coll, r"skin|ear|eyelid|head|soft tissues|muscle|chest wall|vulva")
-        and primary_met == "metastatic"
-        and "IV" not in path_stage
-    ):
+    cut_site_pat = r"skin|ear|eyelid|head|soft tissues|muscle|chest wall|vulva"
+    if _contains(site_coll, cut_site_pat) and primary_met == "metastatic" and "IV" not in path_stage:
+        if _meta_yes(r"skin|ear|eyelid|vulva", cut_site_pat, distant=True) or _meta_yes(
+            r"skin|ear|eyelid|vulva", r".*", distant=True
+        ):
+            return "IV", "CUT9"
         return "III", "CUT10"
 
     # --- RULE CUT‑11: Primary specimen after interval distant mets → stage IV --
-    if (
-        primary_met == "primary"
-        and _contains(site_coll, r"skin|ear|eyelid|head|soft tissues|muscle|chest wall|vulva")
-        and _meta_yes(r"skin|ear|eyelid|vulva", r".*", distant = True)
+    if primary_met == "primary" and _contains(site_coll, cut_site_pat) and _meta_yes(
+        r"skin|ear|eyelid|vulva", r".*", distant=True
     ):
         return "IV", "CUT11"
 
@@ -405,7 +408,7 @@ def stage_cutaneous(spec: pd.Series, dx: pd.Series, meta_patient: pd.DataFrame) 
 def stage_ocular(spec: pd.Series, dx: pd.Series, meta_patient: pd.DataFrame) -> Tuple[str, str]:
     path_stage = str(dx.get("PathGroupStage", "")).upper()
     clin_stage = str(dx.get("ClinGroupStage", "")).upper()
-    site_coll = spec["SpecimenSiteOfOrigin"].lower() if pd.notna(spec["SpecimenSiteOfOrigin"]) else ""
+    age_spec = _float(spec["Age At Specimen Collection"])
 
     if "IV" in path_stage:
         return "IV", "OC1"
@@ -414,27 +417,13 @@ def stage_ocular(spec: pd.Series, dx: pd.Series, meta_patient: pd.DataFrame) -> 
 
     # Interval development of distant disease → stage IV
     if meta_patient is not None and not meta_patient.empty:
-        distant = meta_patient[
-            meta_patient["MetastaticDiseaseInd"].str.contains("Yes - Distant", na = False)
-        ]
-        for _, row in distant.iterrows():
-            age_met = _float(row["AgeAtMetastaticSite"])
-            age_spec = _float(spec["Age At Specimen Collection"])
-            if age_met is None or age_spec is None:
-                continue
-            if age_met <= age_spec:
-                return "IV", "OC3"
-
-        regional = meta_patient[
-            meta_patient["MetastaticDiseaseInd"].str.contains(r"Yes - Regional|Yes - NOS", na = False)
-        ]
-        for _, row in regional.iterrows():
-            age_met = _float(row["AgeAtMetastaticSite"])
-            age_spec = _float(spec["Age At Specimen Collection"])
-            if age_met is None or age_spec is None:
-                continue
-            if age_met <= age_spec:
-                return "III", "OC4"
+        meta_patient["_age"] = meta_patient["AgeAtMetastaticSite"].apply(_float)
+        distant = meta_patient[(meta_patient["MetastaticDiseaseInd"].str.contains("Yes - Distant", na = False)) & (pd.isna(meta_patient["_age"]) | (meta_patient["_age"] <= age_spec))]
+        if not distant.empty:
+            return "IV", "OC3"
+        regional = meta_patient[(meta_patient["MetastaticDiseaseInd"].str.contains(r"Yes - Regional|Yes - NOS", na = False)) & (pd.isna(meta_patient["_age"]) | (meta_patient["_age"] <= age_spec))]
+        if not regional.empty:
+            return "III", "OC4"
 
     return "Unknown", "OC‑UNK"
 
@@ -442,6 +431,7 @@ def stage_ocular(spec: pd.Series, dx: pd.Series, meta_patient: pd.DataFrame) -> 
 def stage_mucosal(spec: pd.Series, dx: pd.Series, meta_patient: pd.DataFrame) -> Tuple[str, str]:
     path_stage = str(dx.get("PathGroupStage", "")).upper()
     clin_stage = str(dx.get("ClinGroupStage", "")).upper()
+    age_spec = _float(spec["Age At Specimen Collection"])
 
     if "IV" in path_stage:
         return "IV", "MU1"
@@ -455,14 +445,10 @@ def stage_mucosal(spec: pd.Series, dx: pd.Series, meta_patient: pd.DataFrame) ->
                 return m.group(1), rule
 
     if meta_patient is not None and not meta_patient.empty:
-        distant = meta_patient[meta_patient["MetastaticDiseaseInd"].str.contains("Yes - Distant", na = False)]
-        for _, row in distant.iterrows():
-            age_met = _float(row["AgeAtMetastaticSite"])
-            age_spec = _float(spec["Age At Specimen Collection"])
-            if age_met is None or age_spec is None:
-                continue
-            if age_met <= age_spec:
-                return "IV", "MU4"
+        meta_patient["_age"] = meta_patient["AgeAtMetastaticSite"].apply(_float)
+        distant = meta_patient[(meta_patient["MetastaticDiseaseInd"].str.contains("Yes - Distant", na = False)) & (pd.isna(meta_patient["_age"]) | (meta_patient["_age"] <= age_spec))]
+        if not distant.empty:
+            return "IV", "MU4"
 
     return "Unknown", "MU‑UNK"
 
@@ -508,8 +494,7 @@ def main():
         '''
         if dx_patient.empty:
             logging.warning(
-                "Skipping AvatarKey %s: %d tumour specimen(s) but no "
-                "melanoma Diagnosis rows after filtering – unable to pair.",
+                "Skipping AvatarKey %s: %d tumour specimen(s) but no melanoma Diagnosis rows after filtering – unable to pair.",
                 avatar,
                 len(specs),
             )
@@ -522,10 +507,13 @@ def main():
             diag_row = dx_patient.iloc[0]
         elif group in ("B", "D"):
             spec_row = _select_specimen_B(specs)
-            if group == "B":
-                diag_row = dx_patient.iloc[0]
-            else:  # D
-                diag_row = _select_diagnosis_C(dx_patient, spec_row, meta_patient)
+            if spec_row is None:
+                logging.info("AvatarKey %s excluded: no specimen passes RNA-seq rule.", avatar)
+                continue
+            diag_row = (
+                dx_patient.iloc[0]
+                if group == "B" else _select_diagnosis_C(dx_patient, spec_row, meta_patient)
+            )
         elif group == "C":
             spec_row = specs.iloc[0]
             diag_row = _select_diagnosis_C(dx_patient, spec_row, meta_patient)
