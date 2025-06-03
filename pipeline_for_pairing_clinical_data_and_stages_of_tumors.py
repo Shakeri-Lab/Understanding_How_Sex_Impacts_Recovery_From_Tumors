@@ -326,10 +326,16 @@ def _select_specimen_B(patient_cm: pd.DataFrame) -> pd.Series:
 # SELECTION HELPERS – GROUP C (choose diagnosis)
 ################################################
 
-def _within_90_days(age_spec: float | None, age_diag: float | None) -> bool:
+# 90 days *after* diagnosis (directional)
+def _within_90_days_after(age_spec: float | None, age_diag: float | None) -> bool:
+    """
+    Return True when the specimen was collected **0–90 days AFTER** the
+    diagnosis age, per ORIEN rules.
+    """
     if age_spec is None or age_diag is None:
         return False
-    return abs(age_spec - age_diag) <= (90 / 365.25)
+    diff = age_spec - age_diag
+    return 0 <= diff <= (90 / 365.25)
 
 
 def _hist_clean(txt: str) -> str:
@@ -351,7 +357,7 @@ def _select_diagnosis_C(dx_patient: pd.DataFrame, spec_row: pd.Series, meta_pati
 
     if primary_met == "primary":
         # 90‑day proximity unique → pick that diagnosis
-        prox = dxp["AgeAtDiagnosis"].apply(_float).apply(lambda x: _within_90_days(age_spec, x))
+        prox = dxp["AgeAtDiagnosis"].apply(_float).apply(lambda x: _within_90_days_after(age_spec, x))
         if prox.sum() == 1:
             return dxp[prox].iloc[0]
 
@@ -362,7 +368,7 @@ def _select_diagnosis_C(dx_patient: pd.DataFrame, spec_row: pd.Series, meta_pati
             if len(match_rows) == 1:
                 return match_rows.iloc[0]
 
-        # Histology match
+        # Histology tie-break *only when* no prox-match succeeded
         hist_spec = _hist_clean(spec_row["Histology/Behavior"])
         dxp["_hist_clean"] = dxp["Histology"].apply(_hist_clean)
         hist_match = dxp["_hist_clean"] == hist_spec
@@ -376,9 +382,9 @@ def _select_diagnosis_C(dx_patient: pd.DataFrame, spec_row: pd.Series, meta_pati
         if not re.search(r"soft tissues|lymph node", site_coll):
             return dxp.sort_values("AgeAtDiagnosis").iloc[0]
 
-        # Soft tissue within 90 days
+        # Soft-tissue specimen within 90 days AFTER diagnosis
         if "soft tissues" in site_coll:
-            prox = dxp["AgeAtDiagnosis"].apply(_float).apply(lambda x: _within_90_days(age_spec, x))
+            prox = dxp["AgeAtDiagnosis"].apply(_float).apply(lambda x: _within_90_days_after(age_spec, x))
             if prox.sum() == 1:
                 return dxp[prox].iloc[0]
 
