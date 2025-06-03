@@ -609,12 +609,33 @@ def stage_mucosal(spec: pd.Series, dx: pd.Series, meta_patient: pd.DataFrame) ->
 
 
 def stage_unknown_primary(spec, dx, meta) -> Tuple[str, str]:
+    '''
+    Rules UN-1 ... UN-4  (spec section 4.4)
+
+    UN-1 : PathGroupStage contains IV
+    UN-2 : ClinGroupStage contains IV  AND PathGroupStage unknown / not-applicable
+    UN-3P: PathGroupStage contains I / II / III            ← new
+    UN-3C: ClinGroupStage contains I / II / III (when Path unknown)  ← new
+    UN-UNK: otherwise
+    '''
     path_stage = str(dx.get("PathGroupStage", "")).upper()
     clin_stage = str(dx.get("ClinGroupStage", "")).upper()
     if "IV" in path_stage:
         return "IV", "UN1"
     if "IV" in clin_stage and path_stage.lower() in UNKNOWN_PATH_STAGE_VALUES:
         return "IV", "UN2"
+    
+    # ---- UN-3  (fallback to the earliest numeric stage in Path → Clin) -------
+    stage_re = re.compile(r"\b([I]{1,3})\b")          # captures I, II or III only
+    m_path = stage_re.search(path_stage)
+    if m_path:
+        return m_path.group(1), "UN3P"
+
+    if path_stage.lower() in UNKNOWN_PATH_STAGE_VALUES:
+        m_clin = stage_re.search(clin_stage)
+        if m_clin:
+            return m_clin.group(1), "UN3C"
+    
     return "Unknown", "UN‑UNK"
 
 ################################################################################
