@@ -276,33 +276,50 @@ def patient_group(row) -> str:
 
 def _select_specimen_B(patient_cm: pd.DataFrame) -> pd.Series:
     '''
-    Return a single specimen row for a Group B/D patient or None if patient should be dropped.
+    Select a single tumor specimen for a Group B / D patient, following the exact precedence order in the ORIEN rule set.
+    
+    1. Exclude the patient if no tumor has RNA sequencing.
+    2. If exactly 1 tumor has RNA sequencing, pick it.
+    3. When 2 or more tumors with RNA sequencing exist, restrict all subsequent logic to the subset of tumors with RNA sequencing.
+    4. If 1 or more tumors have a site with "skin" and no tumor has a site with "lymph node" or "soft tissue", pick a tumor with a site with "skin".
+    5. If 1 or more tumors have a site with "lymph node" and no tumor has a site with "skin" or "soft tissue", pick a tumor with a site with "lymph node".
+    6. If the patient has tumors with sites with "skin" or "soft tissue" and tumors with sites with "lymph node", pick the tumor with the earliest Age At Specimen Collection among tumors with sites with "skin" or "soft tissue".
+    7. Otherwise, pick the tumor with the earliest age.
     '''
     cm = patient_cm.copy()
     
+    # RNA sequencing gate
     if cm["RNASeq"].notna().sum() == 0:
         return None
     
-    # 1. Keep only RNA‑seq‑enabled tumours if possible
-    if cm["RNASeq"].notna().any():
-        cm_rna = cm[cm["RNASeq"].notna()]
-        if len(cm_rna) == 1:
-            return cm_rna.iloc[0]
+    # Keep only RNA‑seq‑enabled tumours if possible
+    cm_rna = cm[cm["RNASeq"].notna()]
+    candidates = cm_rna if not cm_rna.empty else cm
+    if len(candidates) == 1:
+        return candidates.iloc[0]
 
-    # 2. Skin taking precedence (no nodes/soft tissue present)
-    has_skin = cm["SpecimenSiteOfCollection"].str.contains("skin", case = False, na = False)
-    has_node_or_st = cm["SpecimenSiteOfCollection"].str.contains("lymph node|soft tissue", case = False, na = False)
-    if has_skin.any() and not has_node_or_st.any():
-        return cm[has_skin].iloc[0]
+    # Site category masks
+    is_skin = candidates["SpecimenSiteOfCollection"].str.contains("skin", case = False, na = False)
+    is_soft = candidates["SpecimenSiteOfCollection"].str.contains(r"soft tissue", case = False, na = False)
+    is_node = candidates["SpecimenSiteOfCollection"].str.contains(r"lymph node", case = False, na = False)
 
-    # 3. Prefer lymph node when no skin / soft‑tissue
-    has_node = cm["SpecimenSiteOfCollection"].str.contains("lymph node", case = False, na = False)
-    if not has_skin.any() and has_node.any():
-        return cm[has_node].iloc[0]
+    # 4. Skin precedence when alone
+    if has_skin.any() and not (is_node.any() or is_soft.any()):
+        return candidates[is_skin].iloc[0]
 
-    # 4. Earliest AgeAtSpecimenCollection
-    cm["_age"] = cm["Age At Specimen Collection"].astype(float)
-    return cm.sort_values("_age").iloc[0]
+    # 5. Node precedence when alone
+    if is_node.any() and not (is_skin.any() or is_soft.any()):
+        return candidates[is_node].iloc[0]
+    
+    # 6. Tie-breaker: earliest among skin or soft tissue or node
+    if (is_skin.any() or is_soft.any()) and is_node.any():
+        tie = candidates[is_skin | is_soft | is_node].copy()
+        tie["_age"] = tie["Age At Specimen Collection"].astype(float)
+        return tie.sort_values("_age").iloc[0]
+
+    # 7. Fallback: earliest age (handles only soft tissue and other sites)
+    candidates["_age"] = candidates["Age At Specimen Collection"].astype(float)
+    return candidates.sort_values("_age").iloc[0]
 
 
 ################################################
