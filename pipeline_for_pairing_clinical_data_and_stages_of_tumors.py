@@ -123,6 +123,26 @@ def _contains(value: str | float | int | None, pattern: str | re.Pattern) -> boo
     return bool(re.search(pattern, str(value).lower()))
 
 
+def _filter_meta(meta_patient: pd.DataFrame, age_spec: float | None) -> pd.DataFrame:
+    '''
+    Retain metastatic-disease rows that occurred on/before the specimen age
+    OR whose age is "Age Unknown/Not Recorded".
+    This guarantees correct behaviour for rules that say
+        "... AgeAtMetastaticSite <= AgeAtSpecimenCollection OR Age Unknown/Not Recorded".
+    '''
+    if meta_patient is None or meta_patient.empty:
+        return pd.DataFrame()
+
+    m = meta_patient.copy()
+    m["_age"] = m["AgeAtMetastaticSite"].apply(_float)   # _float->None for "Unknown..."
+
+    if age_spec is None:
+        # If specimen age is missing, keep only age-unknown rows
+        return m[pd.isna(m["_age"])]
+
+    return m[pd.isna(m["_age"]) | (m["_age"] <= age_spec)]
+
+
 def _float(val) -> float | None:
     try:
         return float(val)
@@ -338,13 +358,8 @@ def stage_cutaneous(spec: pd.Series, dx: pd.Series, meta_patient: pd.DataFrame) 
     primary_met = spec["Primary/Met"].lower()
     age_spec = _float(spec["Age At Specimen Collection"])
 
-    # Helper: filter meta‑disease rows up to specimen age
-    if meta_patient is not None and not meta_patient.empty:
-        meta_rows = meta_patient.copy()
-        meta_rows["_age"] = meta_rows["AgeAtMetastaticSite"].apply(_float)
-        meta_rows = meta_rows[pd.isna(meta_rows["_age"]) | (meta_rows["_age"] <= age_spec)]
-    else:
-        meta_rows = pd.DataFrame()
+    # Meta rows with age <= specimen or "Unknown/Not Recorded"
+    meta_rows = _filter_meta(meta_patient, age_spec)
 
     def _meta_yes(kind_pat: str, site_pat: str, distant: Optional[bool] = None) -> bool:
         if meta_rows.empty:
@@ -440,14 +455,12 @@ def stage_ocular(spec: pd.Series, dx: pd.Series, meta_patient: pd.DataFrame) -> 
     if "IV" in clin_stage and path_stage.lower() in UNKNOWN_PATH_STAGE_VALUES:
         return "IV", "OC2"
 
-    # Interval development of distant disease → stage IV
-    if meta_patient is not None and not meta_patient.empty:
-        meta_patient["_age"] = meta_patient["AgeAtMetastaticSite"].apply(_float)
-        distant = meta_patient[(meta_patient["MetastaticDiseaseInd"].str.contains("Yes - Distant", na = False)) & (pd.isna(meta_patient["_age"]) | (meta_patient["_age"] <= age_spec))]
-        if not distant.empty:
+    # Interval metastatic disease (≤ specimen age OR unknown)
+    meta_rows = _filter_meta(meta_patient, age_spec)
+    if not meta_rows.empty:
+        if not meta_rows[meta_rows["MetastaticDiseaseInd"].str.contains("Yes - Distant", na=False)].empty:
             return "IV", "OC3"
-        regional = meta_patient[(meta_patient["MetastaticDiseaseInd"].str.contains(r"Yes - Regional|Yes - NOS", na = False)) & (pd.isna(meta_patient["_age"]) | (meta_patient["_age"] <= age_spec))]
-        if not regional.empty:
+        if not meta_rows[meta_rows["MetastaticDiseaseInd"].str.contains(r"Yes - Regional|Yes - NOS", na=False)].empty:
             return "III", "OC4"
 
     return "Unknown", "OC‑UNK"
@@ -469,11 +482,9 @@ def stage_mucosal(spec: pd.Series, dx: pd.Series, meta_patient: pd.DataFrame) ->
             if m and m.group(1) != "IV":
                 return m.group(1), rule
 
-    if meta_patient is not None and not meta_patient.empty:
-        meta_patient["_age"] = meta_patient["AgeAtMetastaticSite"].apply(_float)
-        distant = meta_patient[(meta_patient["MetastaticDiseaseInd"].str.contains("Yes - Distant", na = False)) & (pd.isna(meta_patient["_age"]) | (meta_patient["_age"] <= age_spec))]
-        if not distant.empty:
-            return "IV", "MU4"
+    meta_rows = _filter_meta(meta_patient, age_spec)
+    if not meta_rows.empty and not meta_rows[meta_rows["MetastaticDiseaseInd"].str.contains("Yes - Distant", na=False)].empty:
+        return "IV", "MU4"
 
     return "Unknown", "MU‑UNK"
 
