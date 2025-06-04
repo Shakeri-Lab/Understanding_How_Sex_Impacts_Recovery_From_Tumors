@@ -40,6 +40,13 @@ import re
 from typing import Dict, List, Tuple
 
 
+##########
+# SETTINGS
+##########
+
+STRICT: bool = False
+
+
 ###########
 # CONSTANTS
 ###########
@@ -95,7 +102,7 @@ PAROTID_REGEX = re.compile(r"parotid", re.I) # regular expression object
 SITE_KEYWORDS = {
     "cutaneous": r"skin|ear|eyelid|vulva|head|scalp",
     "ocular": r"choroid|ciliary body|conjunctiva|eye",
-    "mucosal": r"sinus|gum|nasal|urethra",
+    "mucosal": r"sinus|gum|nasal|urethra|anorect|anus|rectum|anal canal|oropharynx|oral|vagina|esophagus|palate",
     "unknown": r"unknown"
 }
 
@@ -129,8 +136,6 @@ def _assign_icb_status(
     age_spec = _float(spec_row.get("Age At Specimen Collection"))
     if therapy_patient is None:
         return "Unknown"
-    
-    age_col = "AgeAtMedStart"
     
     icb_rows = therapy_patient[
         therapy_patient["Medication"].str.contains(ICB_PATTERN, na = False)
@@ -423,6 +428,8 @@ def assign_primary_site(primary_diagnosis_site: str) -> str:
     for site, pat in SITE_KEYWORDS.items():
         if re.search(pat, txt):
             return site
+    if STRICT:
+        raise ValueError(f"Unrecognized primary diagnosis site: '{primary_diagnosis_site}'. Run without --strict to coerce to 'unknown'.")
     return "unknown"
 
 
@@ -646,13 +653,16 @@ def stage_unknown_primary(spec, dx, meta) -> Tuple[str, str]:
 ################################################################################
 
 def main():
-    parser = argparse.ArgumentParser(description = "Pair melanoma tumours with stages.")
+    parser = argparse.ArgumentParser(description = "Pair melanoma tumours with AJCC stages.")
     parser.add_argument("--clinmol", required = True, type = Path)
     parser.add_argument("--diagnosis", required = True, type = Path)
     parser.add_argument("--metadisease", required = True, type = Path)
     parser.add_argument("--therapy", required = False, type = Path, help = "ORIEN Therapy CSV (optional; used for ICB status)")
     parser.add_argument("--out", required = True, type = Path)
+    parser.add_argument("--strict", action = "store_true", help = "Abort if a primary site cannot be classified.")
     args = parser.parse_args()
+    
+    globals()["STRICT"] = args.strict
 
     logging.basicConfig(level = logging.INFO, format = "%(levelname)s: %(message)s")
 
