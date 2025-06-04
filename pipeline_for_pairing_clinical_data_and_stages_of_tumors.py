@@ -1,37 +1,30 @@
 #!/usr/bin/env python3
 
 '''
-Tumor‑Stage Pairing Pipeline
-=================================
-Pairs melanoma clinical diagnoses with sequenced tumor specimens and assigns an
-AJCC stage (I, II, III, IV) at the time of specimen collection, exactly as
-described in "ORIEN Data Rules for Tumor Clinical Pairing".
+`pipeline_for_pairing_clinical_data_and_stages_of_tumors.py`
 
-A melanoma clinical diagnosis is a row in the Diagnosis CSV file describes a case of skin cancer for a patient.
-TODO: How can a medical clinical diagnosis be paired?
-A sequenced tumor specimen is a row in the Clinical Molecular Linkage CSV file with value "Tumor" for field "Tumor/Germline" that represents a biological sample for which at least Whole Exome Sequencing (WES) or RNA sequencing data were generated.
-TODO: How can a sequenced tumor specimen be paired?
-An AJCC stage is a grouping defined by the American Joint Committee on Cancer. AJCC stage may be I, II, III, or IV. An AJCC stage corresponds to fields `ClinGroupStage` and `PathGroupStage` in table Diagnosis. `ClinGroupStage` represents AJCC stages determined during clinical assessments. `PathGroupStage` represents AJCC stages determined during pathological assessments.
-TODO: What does an AJCC stage signify?
+This module is based on "ORIEN Data Rules for Tumor Clinical Pairing". The purpose of this module is to produce, for every patient, rows of melanoma diagnosis information and melanoma tumor information, each enriched. A patient is identified by values in fields 'ORIENAvatarKey` in a Clinical Molecular Linkage table and/or `AvatarKey` in Diagnosis, Metastatic Disease, and Medications tables. A row is enriched with a primary site, an AJCC stage at the time of specimen collection, an identifier of the rule used to determine the stage, and an ICB status. A primary site may be "cutaneous", "ocular", "mucosal", or "unknown". An AJCC stage may be "I", "II", "III", or "IV". An ICB status may be "Pre-ICB", "Post-ICB", "No-ICB", or "Unknown".
 
-This single script
-    1.  reads Clinical Molecular Linkage, Diagnosis, and Metastatic Disease CSV files;
-    2.  filters to melanoma diagnoses (ICD‑O‑3 codes) and tumor specimens;
-        TODO: How does this script identify melanoma diagnoses?
-        TODO: How does this script identify tumor specimens?
-        TODO: How does this script filter to melanoma diagnoses and tumor specimens?
-    3.  derives per‑patient summary metrics (MelanomaDiagnosisCount /
-        SequencedTumorCount) and assigns patients to Group A, B, C, or D;
-        TODO: How are patients assigned to Group A, B, C, or D?
-    4.  reduces each patient to one (specimen, diagnosis) pair using the selection logic for that patient's group, dropping a patient if no valid pairing can be found (e.g., if all tumors lack RNA sequencing data);
-        TODO: What is a specimen?
-        TODO: What is a diagnosis?
-    5.  assigns a value to `AssignedPrimarySite` equal to "cutaneous", "ocular", "mucosal", or "unknown";
-    6.  assigns an `AssignedStage` using a rule set that is specific to a primary site;
-    7.  assigns a code (StageRuleHit) identifying which rule produced the stage; and
-    8.  emits one row per paired specimen with traceability fields.
-        TODO: What is a paired specimen?
-        TODO: What is a traceability field?
+Melanoma diagnosis information is a row in the Diagnosis CSV file whose value of field `HistologyCode` is a ICD-O-3 code for melanoma. ICD-O-3 stands for International Classification of Disease for Oncology 3. Melanoma diagnosis information describes a case of skin cancer for a patient. Distinct diagnoses information for a patient are identified by pairs of values of fields `AgeAtDiagnosis` and `PrimaryDiagnosisSite`.
+
+Melanoma tumor information is a row in the Clinical Molecular Linkage CSV file with value "Tumor" for field "Tumor/Germline". Melanoma tumor information represents a melanoma tumor for which at least Whole Exome Sequencing (WES) or RNA sequencing data were generated. Distinct tumor information for a patient are identified by pairs of values of fields `ORIENSpecimenID` and `ORIENAvatarKey` in table Clinical Molecular Linkage.
+
+An AJCC stage is a grouping defined by the American Joint Committee on Cancer. An AJCC stage corresponds to fields `ClinGroupStage` and `PathGroupStage` in table Diagnosis. `ClinGroupStage` represents AJCC stages determined during clinical assessments. `PathGroupStage` represents AJCC stages determined during pathological assessments. AJCC stages indicate how much melanoma is in the body and where it is located.
+
+A patient is in Group A if the patient has 1 diagnosis and 1 tumor. A patient is in Group B if the patient has 1 diagnosis and more than 1 tumor. A patient is in Group C if the patient has more than 1 diagnosis and 1 tumor. A patient is in Group D if a patienr has more than 1 diagnosis and more than 1 tumor.
+
+This module
+    1. loads Clinical Molecular Linkage, Diagnosis, and Metastatic Disease, and Medication CSV files;
+    2. filters table Diagnosis to melanoma diagnosis information and table Clinical Molecular Linkage to melanoma tumor information;
+    3. derives a melanoma diagnosis count equal to the number of unique pairs of values of fields `AgeAtDiagnosis` and `PrimaryDiagnosisSite` in table Diagnosis;
+    4. derives a tumor count equal to the number of unique pairs of values of fields `ORIENSpecimenID` and `ORIENAvatarKey` in table Clinical Molecular Linkage;
+    5. assigns patients in groups A, B, C, and D;
+    6. reduces each patient to one row of a subset of diagnosis information and a subset of tumor information using the selection logic for that patient's group, dropping a patient if no valid pairing can be found (e.g., if all tumors lack RNA sequencing data);
+    7.  enriches a patient's row with a primary site;
+    8.  enriches a patient's row with an AJCC stage using a rule set that is specific to a primary site;
+    9.  enriches a patient's row with an identifier of the rule used to determine the stage;
+    10. enriches a patient's row with an ICB status by comparing age of patient when specimen was collected to earliest ICB therapy; and
+    11. writes rows to an output CSV file.
         
 Usage:
 
@@ -110,8 +103,7 @@ SKINLIKE_SITES = [
     "skin", "ear", "eyelid", "head", "soft tissues", "muscle", "chest wall", "vulva"
 ]
 
-UNKNOWN_PATH_STAGE_VALUES = {
-    # TODO: What does "PATH" mean?
+UNKNOWN_PATHOLOGICAL_STAGE_VALUES = {
     "unknown/not reported",
     "no tnm applicable for this site/histology combination",
     "unknown/not applicable"
@@ -479,7 +471,7 @@ def stage_cutaneous(spec: pd.Series, dx: pd.Series, meta_patient: pd.DataFrame) 
     # --- RULE CUT‑2: Clin contains IV & Path unknown ---------------------------
     if (
         "IV" in clin_stage
-        and path_stage.lower() in UNKNOWN_PATH_STAGE_VALUES
+        and path_stage.lower() in UNKNOWN_PATHOLOGICAL_STAGE_VALUES
     ):
         return "IV", "CUT2"
 
@@ -567,7 +559,7 @@ def stage_ocular(spec: pd.Series, dx: pd.Series, meta_patient: pd.DataFrame) -> 
     # OC-1 / OC-2: Stage IV at diagnosis
     if "IV" in path_stage:
         return "IV", "OC1"
-    if "IV" in clin_stage and path_stage.lower() in UNKNOWN_PATH_STAGE_VALUES:
+    if "IV" in clin_stage and path_stage.lower() in UNKNOWN_PATHOLOGICAL_STAGE_VALUES:
         return "IV", "OC2"
 
     # Prepare metastatic disease rows (<= specimen age or unknown)
@@ -594,7 +586,7 @@ def stage_mucosal(spec: pd.Series, dx: pd.Series, meta_patient: pd.DataFrame) ->
 
     if "IV" in path_stage:
         return "IV", "MU1"
-    if "IV" in clin_stage and path_stage.lower() in UNKNOWN_PATH_STAGE_VALUES:
+    if "IV" in clin_stage and path_stage.lower() in UNKNOWN_PATHOLOGICAL_STAGE_VALUES:
         return "IV", "MU2"
 
     # ─── MU-3P / MU-3C — Primary specimen, stage I-III numerical fallback ───
@@ -633,7 +625,7 @@ def stage_unknown_primary(spec, dx, meta) -> Tuple[str, str]:
     clin_stage = str(dx.get("ClinGroupStage", "")).upper()
     if "IV" in path_stage:
         return "IV", "UN1"
-    if "IV" in clin_stage and path_stage.lower() in UNKNOWN_PATH_STAGE_VALUES:
+    if "IV" in clin_stage and path_stage.lower() in UNKNOWN_PATHOLOGICAL_STAGE_VALUES:
         return "IV", "UN2"
     
     # ---- UN-3  (fallback to the earliest numeric stage in Path → Clin) -------
@@ -642,7 +634,7 @@ def stage_unknown_primary(spec, dx, meta) -> Tuple[str, str]:
     if m_path:
         return m_path.group(1), "UN3P"
 
-    if path_stage.lower() in UNKNOWN_PATH_STAGE_VALUES:
+    if path_stage.lower() in UNKNOWN_PATHOLOGICAL_STAGE_VALUES:
         m_clin = stage_re.search(clin_stage)
         if m_clin:
             return m_clin.group(1), "UN3C"
