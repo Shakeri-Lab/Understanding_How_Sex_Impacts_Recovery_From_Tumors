@@ -671,9 +671,91 @@ def stage_unknown_primary(spec, dx, meta) -> Tuple[str, str]:
     
     return "Unknown", "UN‑UNK"
 
+
 ################################################################################
-# DRIVER
+# PUBLIC ENTRY POINT (for tests & other callers)
 ################################################################################
+
+def run_pipeline(
+    clinmol: Path,
+    diagnosis: Path,
+    metadisease: Path,
+    therapy: Path | None = None,
+    strict: bool = False,
+) -> pd.DataFrame:
+    """
+    Execute the full pairing → staging → ICB assignment pipeline and
+    return the resulting dataframe **instead of writing it to disk**.
+
+    It contains the same columns that would normally be written to the
+    `--out` CSV in CLI mode.
+    """
+    globals()["STRICT"] = strict
+
+    cm, dx, md, th = load_inputs(clinmol, diagnosis, metadisease, therapy)
+    cm, dx = add_counts(cm, dx)
+
+    # Everything that follows is byte-for-byte identical to the old `main()`
+    cm["MelanomaDiagnosisCount"] = cm["MelanomaDiagnosisCount"].fillna(0).astype(int)
+    cm["SequencedTumorCount"]   = cm["SequencedTumorCount"].fillna(0).astype(int)
+    cm["Group"] = cm.apply(patient_group, axis=1)
+
+    output_rows: list[dict] = []
+
+    for avatar, specs in cm.groupby("ORIENAvatarKey"):
+        dx_patient = dx[dx["AvatarKey"] == avatar]
+        if dx_patient.empty:
+            logging.warning(
+                "Skipping AvatarKey %s: %d tumour specimen(s) but no melanoma Diagnosis rows after filtering – unable to pair.",
+                avatar, len(specs),
+            )
+            continue
+
+        meta_patient    = md[md["AvatarKey"] == avatar]
+        therapy_patient = th[th["AvatarKey"] == avatar] if th is not None else None
+        group           = specs["Group"].iloc[0]
+
+        if group == "A":
+            spec_row, diag_row = specs.iloc[0], dx_patient.iloc[0]
+        elif group in ("B", "D"):
+            spec_row = _select_specimen_B(specs)
+            if spec_row is None:                       # no RNA-Seq specimen
+                continue
+            diag_row = (
+                dx_patient.iloc[0] if group == "B"
+                else _select_diagnosis_C(dx_patient, spec_row, meta_patient)
+            )
+        elif group == "C":
+            spec_row  = specs.iloc[0]
+            diag_row  = _select_diagnosis_C(dx_patient, spec_row, meta_patient)
+        else:
+            raise RuntimeError(f"Unknown group: {group}")
+
+        primary_site = assign_primary_site(diag_row["PrimaryDiagnosisSite"])
+        if   primary_site == "cutaneous": stage, rule = stage_cutaneous(spec_row, diag_row, meta_patient)
+        elif primary_site == "ocular":    stage, rule = stage_ocular   (spec_row, diag_row, meta_patient)
+        elif primary_site == "mucosal":   stage, rule = stage_mucosal  (spec_row, diag_row, meta_patient)
+        else:                             stage, rule = stage_unknown_primary(spec_row, diag_row, meta_patient)
+
+        output_rows.append(
+            dict(
+                AvatarKey            = avatar,
+                ORIENSpecimenID      = spec_row["ORIENSpecimenID"],
+                DiagnosisIndex       = int(diag_row.name),
+                AgeAtSpecimenCollection = spec_row["Age At Specimen Collection"],
+                AssignedPrimarySite  = primary_site,
+                AssignedStage        = stage,
+                StageRuleHit         = rule,
+                ICBStatus            = _assign_icb_status(spec_row, therapy_patient),
+            )
+        )
+
+    return pd.DataFrame(output_rows)
+
+
+############
+# CLI DRIVER
+############
 
 def main():
     parser = argparse.ArgumentParser(description = "Pair melanoma tumours with AJCC stages.")
@@ -689,77 +771,14 @@ def main():
 
     logging.basicConfig(level = logging.INFO, format = "%(levelname)s: %(message)s")
 
-    cm, dx, md, th = load_inputs(args.clinmol, args.diagnosis, args.metadisease, args.therapy)
-    cm, dx = add_counts(cm, dx)
+    out_df = run_pipeline(
+        clinmol     = args.clinmol,
+        diagnosis   = args.diagnosis,
+        metadisease = args.metadisease,
+        therapy     = args.therapy,
+        strict      = args.strict,
+    )
 
-    # Attach group labels to CM rows (one per specimen)
-    cm["MelanomaDiagnosisCount"] = cm["MelanomaDiagnosisCount"].fillna(0).astype(int)
-    cm["SequencedTumorCount"] = cm["SequencedTumorCount"].fillna(0).astype(int)
-    cm["Group"] = cm.apply(patient_group, axis=1)
-
-    output_rows: List[Dict] = []
-
-    for avatar, specs in cm.groupby("ORIENAvatarKey"):
-        dx_patient = dx[dx["AvatarKey"] == avatar]
-        '''
-        If a patient has no melanoma diagnoses that survived our histology filter, we cannot assign a stage unambiguously.
-        Rather than crashing later, log it and move on to the next patient.
-        '''
-        if dx_patient.empty:
-            logging.warning(
-                "Skipping AvatarKey %s: %d tumour specimen(s) but no melanoma Diagnosis rows after filtering – unable to pair.",
-                avatar,
-                len(specs),
-            )
-            continue
-        meta_patient = md[md["AvatarKey"] == avatar]
-        therapy_patient = th[th["AvatarKey"] == avatar] if th is not None else None
-        group = specs["Group"].iloc[0]
-
-        if group == "A":
-            spec_row = specs.iloc[0]
-            diag_row = dx_patient.iloc[0]
-        elif group in ("B", "D"):
-            spec_row = _select_specimen_B(specs)
-            if spec_row is None:
-                logging.info("AvatarKey %s excluded: no specimen passes RNA-seq rule.", avatar)
-                continue
-            diag_row = (
-                dx_patient.iloc[0]
-                if group == "B" else _select_diagnosis_C(dx_patient, spec_row, meta_patient)
-            )
-        elif group == "C":
-            spec_row = specs.iloc[0]
-            diag_row = _select_diagnosis_C(dx_patient, spec_row, meta_patient)
-        else:
-            raise RuntimeError(f"Unknown group: {group}")
-
-        primary_site = assign_primary_site(diag_row["PrimaryDiagnosisSite"])
-        if primary_site == "cutaneous":
-            stage, rule = stage_cutaneous(spec_row, diag_row, meta_patient)
-        elif primary_site == "ocular":
-            stage, rule = stage_ocular(spec_row, diag_row, meta_patient)
-        elif primary_site == "mucosal":
-            stage, rule = stage_mucosal(spec_row, diag_row, meta_patient)
-        else:
-            stage, rule = stage_unknown_primary(spec_row, diag_row, meta_patient)
-
-        icb_status = _assign_icb_status(spec_row, therapy_patient)
-
-        output_rows.append(
-            {
-                "AvatarKey": avatar,
-                "ORIENSpecimenID": spec_row["ORIENSpecimenID"],
-                "DiagnosisIndex": int(diag_row.name),
-                "AgeAtSpecimenCollection": spec_row["Age At Specimen Collection"],
-                "AssignedPrimarySite": primary_site,
-                "AssignedStage": stage,
-                "StageRuleHit": rule,
-                "ICBStatus": icb_status,
-            }
-        )
-
-    out_df = pd.DataFrame(output_rows)
     logging.info("Writing %s rows → %s", len(out_df), args.out)
     out_df.to_csv(args.out, index=False)
 

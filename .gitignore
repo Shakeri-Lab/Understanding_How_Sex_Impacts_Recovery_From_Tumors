@@ -6,6 +6,7 @@ miniconda3
 output
 output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors.csv
 output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors.txt
+output_of_test_pipeline_for_pairing_clinical_data_and_stages_of_tumors.txt
 output_old/analysis/plots
 output_old/analysis/*.csv
 output_old/cd8_analysis/cd8_groups_analysis
