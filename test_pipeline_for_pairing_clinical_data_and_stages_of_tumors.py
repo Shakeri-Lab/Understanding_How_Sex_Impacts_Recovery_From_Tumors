@@ -14,12 +14,12 @@ from pipeline_for_pairing_clinical_data_and_stages_of_tumors import run_pipeline
 ###############################################################################
 # CONFIG – adjust to your file layout once per project
 ###############################################################################
-DATA_ROOT = Path("/sfs/gpfs/tardis/project/orien/data/Avatar_CLINICAL_Data")
+DATA_ROOT = Path("/sfs/gpfs/tardis/project/orien/data/aws/24PRJ217UVA_IORIG/Clinical_Data/24PRJ217UVA_NormalizedFiles")
 
-CSV_CM  = DATA_ROOT / "20250317_UVA_ClinicalMolLinkage_V4.csv"
-CSV_DX  = DATA_ROOT / "NormalizedFiles/20250317_UVA_Diagnosis_V4.csv"
-CSV_MD  = DATA_ROOT / "NormalizedFiles/20250317_UVA_MetastaticDisease_V4.csv"
-CSV_TH  = DATA_ROOT / "NormalizedFiles/20250317_UVA_Medications_V4.csv"
+CSV_CM  = DATA_ROOT / "24PRJ217UVA_20241112_ClinicalMolLinkage_V4.csv"
+CSV_DX  = DATA_ROOT / "24PRJ217UVA_20241112_Diagnosis_V4.csv"
+CSV_MD  = DATA_ROOT / "24PRJ217UVA_20241112_MetastaticDisease_V4.csv"
+CSV_TH  = DATA_ROOT / "24PRJ217UVA_20241112_Medications_V4.csv"
 
 
 ###############################################################################
@@ -33,7 +33,7 @@ def paired_df() -> pd.DataFrame:
         diagnosis   = CSV_DX,
         metadisease = CSV_MD,
         therapy     = CSV_TH,
-        strict      = False,          # keep behaviour identical to production
+        strict      = True
     )
 
 
