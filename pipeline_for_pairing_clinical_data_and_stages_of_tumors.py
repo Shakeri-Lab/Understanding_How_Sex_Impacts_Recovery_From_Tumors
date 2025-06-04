@@ -541,7 +541,7 @@ def stage_cutaneous(spec: pd.Series, dx: pd.Series, meta_patient: pd.DataFrame) 
     # CUT-11 – primary specimen collected *after* interval distant mets
     if (primary_met == "primary"
         and _contains(site_coll, cut_site_pat)
-        and _meta_yes(meta_after, r"skin|ear|eyelid|vulva", r".*", "distant_nos")):
+        and _meta_yes(meta_before, r"skin|ear|eyelid|vulva", r".*", "distant_nos")):
         return "IV", "CUT11"
 
     # --- RULE CUT‑12: Fallback to numeric stage -------------------------------
