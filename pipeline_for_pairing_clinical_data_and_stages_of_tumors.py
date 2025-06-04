@@ -324,7 +324,7 @@ def _select_specimen_B(patient_cm: pd.DataFrame) -> pd.Series:
     
     # 6. Tie-breaker: earliest among skin or soft tissue or node
     if (is_skin.any() or is_soft.any()) and is_node.any():
-        tie = candidates[is_skin | is_soft | is_node].copy()
+        tie = candidates[is_skin | is_soft].copy()
         tie["_age"] = tie["Age At Specimen Collection"].astype(float)
         return tie.sort_values("_age").iloc[0]
 
@@ -368,7 +368,8 @@ def _select_diagnosis_C(dx_patient: pd.DataFrame, spec_row: pd.Series, meta_pati
 
     if primary_met == "primary":
         # 90‑day proximity unique → pick that diagnosis
-        prox = dxp["AgeAtDiagnosis"].apply(_float).apply(lambda x: _within_90_days_after(age_spec, x))
+        age_diag = dxp["AgeAtDiagnosis"].apply(_float)
+        prox = age_diag.apply(lambda x: _within_90_days_after(age_spec, x))
         if prox.sum() == 1:
             return dxp[prox].iloc[0]
 
@@ -380,7 +381,7 @@ def _select_diagnosis_C(dx_patient: pd.DataFrame, spec_row: pd.Series, meta_pati
                 return match_rows.iloc[0]
 
         # Histology tie-break *only when EVERY diagnosis is > 90 d (or unknown)*
-        if prox.sum() == 0:
+        if (prox.sum() == 0) or age_diag.isna().any():
             hist_spec = _hist_clean(spec_row["Histology/Behavior"])
             dxp["_hist_clean"] = dxp["Histology"].apply(_hist_clean)
             hist_match = dxp["_hist_clean"] == hist_spec
