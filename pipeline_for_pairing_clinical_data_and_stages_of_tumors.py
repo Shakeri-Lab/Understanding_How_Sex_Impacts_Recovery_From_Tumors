@@ -382,12 +382,13 @@ def _select_diagnosis_C(dx_patient: pd.DataFrame, spec_row: pd.Series, meta_pati
             if len(match_rows) == 1:
                 return match_rows.iloc[0]
 
-        # Histology tie-break *only when* no prox-match succeeded
-        hist_spec = _hist_clean(spec_row["Histology/Behavior"])
-        dxp["_hist_clean"] = dxp["Histology"].apply(_hist_clean)
-        hist_match = dxp["_hist_clean"] == hist_spec
-        if hist_match.sum() == 1:
-            return dxp[hist_match].iloc[0]
+        # Histology tie-break *only when EVERY diagnosis is > 90 d (or unknown)*
+        if prox.sum() == 0:
+            hist_spec = _hist_clean(spec_row["Histology/Behavior"])
+            dxp["_hist_clean"] = dxp["Histology"].apply(_hist_clean)
+            hist_match = dxp["_hist_clean"] == hist_spec
+            if hist_match.sum() == 1:
+                return dxp[hist_match].iloc[0]
 
     else:  # metastatic specimen pathway
         site_coll = spec_row["SpecimenSiteOfCollection"].lower()
@@ -403,17 +404,19 @@ def _select_diagnosis_C(dx_patient: pd.DataFrame, spec_row: pd.Series, meta_pati
                 return dxp[prox].iloc[0]
 
         if "lymph node" in site_coll:
-            # Positive nodes only one?
-            pos_node = ~dxp["PathNStage"].str.contains(r"\bN0\b|Nx|unknown/not applicable|no tnm", case = False, na = False)
-            if pos_node.sum() == 1:
-                return dxp[pos_node].iloc[0]
-            # PrimaryDiagnosisSite matched to MetsDz…
-            if meta_patient is not None and not meta_patient.empty:
+            prox = dxp["AgeAtDiagnosis"].apply(_float).apply(lambda x: _within_90_days_after(age_spec, x))
+            # Positive node rule - *only when there IS a <= 90 d match*
+            if prox.any():
+                pos_node = ~dxp["PathNStage"].str.contains(r"\\bN0\\b|Nx|unknown/not applicable|no tnm", case = False, na = False, regex = True)
+                if pos_node.sum() == 1:
+                    return dxp[pos_node].iloc[0]
+            # Site match rule - *only when NO diagnosis is within 90 d*
+            if prox.sum() == 0 and meta_patient is not None and not meta_patient.empty:
                 match_site = meta_patient["MetsDzPrimaryDiagnosisSite"].str.lower().unique()
                 site_match = dxp["PrimaryDiagnosisSite"].str.lower().isin(match_site)
                 if site_match.sum() == 1:
                     return dxp[site_match].iloc[0]
-
+            
     # Fallback – earliest diagnosis
     dxp["_age"] = dxp["AgeAtDiagnosis"].astype(float)
     return dxp.sort_values("_age").iloc[0]
@@ -519,7 +522,6 @@ def stage_cutaneous(spec: pd.Series, dx: pd.Series, meta_patient: pd.DataFrame) 
         if _meta_yes(meta_before, r"skin|ear|eyelid|vulva", r"parotid|lymph node", "regional_nos"):
             return "III", "CUT8"
 
-    # --- RULE CUT‑9: Distant cutaneous recurrence → stage IV -------------------
     cut_site_pat = r"skin|ear|eyelid|head|soft tissues|muscle|chest wall|vulva"
     if (_contains(site_coll, cut_site_pat)
         and primary_met == "metastatic"
