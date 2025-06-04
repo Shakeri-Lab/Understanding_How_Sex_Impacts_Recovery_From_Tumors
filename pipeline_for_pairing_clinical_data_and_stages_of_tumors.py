@@ -524,9 +524,7 @@ def stage_cutaneous(spec: pd.Series, dx: pd.Series, meta_patient: pd.DataFrame) 
     # --- RULE CUT-3 -----------------------------------------------------------
     # metastatic specimen from a site that is NOT skin, lymph-node, soft-tissue,
     # muscle, *or* parotid (explicitly).
-    if (primary_met == "metastatic"
-        and not _contains(site_coll,
-            r"skin|lymph node|soft tissue|muscle|parotid|chest wall|head|scalp")):
+    if primary_met == "metastatic" and not _contains(site_coll, r"skin|lymph node|soft tissue|muscle|parotid|chest wall|head|scalp"):
         return "IV", "CUT3"
 
     # Lymph node helper booleans
@@ -747,21 +745,31 @@ def run_pipeline(
             raise RuntimeError(f"Unknown group: {group}")
 
         primary_site = assign_primary_site(diag_row["PrimaryDiagnosisSite"])
-        if   primary_site == "cutaneous": stage, rule = stage_cutaneous(spec_row, diag_row, meta_patient)
-        elif primary_site == "ocular":    stage, rule = stage_ocular   (spec_row, diag_row, meta_patient)
-        elif primary_site == "mucosal":   stage, rule = stage_mucosal  (spec_row, diag_row, meta_patient)
-        else:                             stage, rule = stage_unknown_primary(spec_row, diag_row, meta_patient)
+        if primary_site == "cutaneous": stage, rule = stage_cutaneous(spec_row, diag_row, meta_patient)
+        elif primary_site == "ocular": stage, rule = stage_ocular(spec_row, diag_row, meta_patient)
+        elif primary_site == "mucosal": stage, rule = stage_mucosal(spec_row, diag_row, meta_patient)
+        else: stage, rule = stage_unknown_primary(spec_row, diag_row, meta_patient)
 
+        '''
+        5. from ORIEN Data Rules for Tumor Clinical Pairing
+        5. AssignedPrimarySite: {cutaneous, ocular, mucosal, unknown}
+        - Based on the parameters outlined below, this will be the primary site variable used for the analysis
+        
+        6. from ORIEN Data Rules for Tumor Clinical Pairing
+        6. AssignedStage: {I, II, III, IV}
+        - Based on the parameters outlined below; this will be the stage variable used for the analysis
+        '''
+        
         output_rows.append(
             dict(
-                AvatarKey            = avatar,
-                ORIENSpecimenID      = spec_row["DeidSpecimenID"],
-                DiagnosisIndex       = int(diag_row.name),
+                AvatarKey = avatar,
+                ORIENSpecimenID = spec_row["DeidSpecimenID"],
+                DiagnosisIndex = int(diag_row.name),
                 AgeAtSpecimenCollection = spec_row["Age At Specimen Collection"],
-                AssignedPrimarySite  = primary_site,
-                AssignedStage        = stage,
-                StageRuleHit         = rule,
-                ICBStatus            = _assign_icb_status(spec_row, therapy_patient),
+                AssignedPrimarySite = primary_site,
+                AssignedStage = stage,
+                StageRuleHit = rule,
+                ICBStatus = _assign_icb_status(spec_row, therapy_patient),
             )
         )
 
