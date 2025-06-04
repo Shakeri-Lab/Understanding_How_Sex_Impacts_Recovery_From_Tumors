@@ -597,17 +597,26 @@ def stage_mucosal(spec: pd.Series, dx: pd.Series, meta_patient: pd.DataFrame) ->
     if "IV" in clin_stage and path_stage.lower() in UNKNOWN_PATH_STAGE_VALUES:
         return "IV", "MU2"
 
+    # ─── MU-3P / MU-3C — Primary specimen, stage I-III numerical fallback ───
     if spec["Primary/Met"].lower() == "primary":
         for src, rule in ((path_stage, "MU3P"), (clin_stage, "MU3C")):
             m = re.match(r"([IV]+)", src)
             if m and m.group(1) != "IV":
                 return m.group(1), rule
 
+    # ─── Metastatic-specimen pathway ─────────────────────────────────────────
     meta_rows = _filter_meta_before(meta_patient, age_spec)
-    if not meta_rows.empty and not meta_rows[meta_rows["MetastaticDiseaseInd"].str.contains("Yes - Distant", na=False)].empty:
+
+    # MU-4 — distant mets present  → stage IV
+    if not meta_rows.empty and \
+       meta_rows["MetastaticDiseaseInd"].str.contains("Yes - Distant", na=False).any():
         return "IV", "MU4"
 
-    return "Unknown", "MU‑UNK"
+    # MU-3M — metastatic specimen without distant mets → stage III
+    if spec["Primary/Met"].lower() == "metastatic" and "IV" not in path_stage:
+        return "III", "MU3M"
+
+    return "Unknown", "MU-UNK"
 
 
 def stage_unknown_primary(spec, dx, meta) -> Tuple[str, str]:
