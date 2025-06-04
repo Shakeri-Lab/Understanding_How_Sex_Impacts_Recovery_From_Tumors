@@ -263,6 +263,7 @@ def add_counts(cm: pd.DataFrame, dx: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Dat
         - Create using the number of unique [AgeAtDiagnosis and PrimaryDiagnosisSite combinations] for each patient
         - This approach may work best since a few patients have multiple melanomas diagnosed at the same age, so it [AgeAtDiagnosis] cannot be used on its own.
             - Example with multiple diagnoses at same age with same stage: ILE2DL0KMW
+            ["ILE2DL0KMW" is a value of column ORIENAvatarKey in `/sfs/gpfs/tardis/project/orien/data/aws/24PRJ217UVA_IORIG/Clinical_Data/24PRJ217UVA_NormalizedFiles/24PRJ217UVA_20241112_ClinicalMolLinkage_V4.csv`]
     
     Add MelanomaDiagnosisCount and SequencedTumorCount to CM and DX frames.
     '''
@@ -536,7 +537,7 @@ def stage_cutaneous(spec: pd.Series, dx: pd.Series, meta_patient: pd.DataFrame) 
         return "III", "CUT4"
 
     # ---------------- CUT‑5 ------------------------
-    if is_node_spec and ("III" not in path_stage) and ("IV" not in path_stage) and ("IV" not in clin_stage):
+    if is_node_spec and ("III" not in path_stage) and ("IV" not in path_stage) and ("IV" not in clin_stage) and not _meta_yes(meta_before, r"skin|ear|eyelid|vulva", "lymph node", "distant"):
         return "III", "CUT5"
 
     # --- RULE CUT‑6: Node specimen, distant nodal recurrence → stage IV --------
