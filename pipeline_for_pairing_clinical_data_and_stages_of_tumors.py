@@ -258,30 +258,34 @@ def load_inputs(
 def add_counts(cm: pd.DataFrame, dx: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
     '''
     3. from ORIEN Data Rules for Tumor Clinical Pairing
-    3. New variables to create
-    - MelanomaDiagnosisCount: count for number of melanoma clinical diagnoses for a patient
+    - 3. MelanomaDiagnosisCount: count for number of melanoma clinical diagnoses for a patient
         - Create using the number of unique [AgeAtDiagnosis and PrimaryDiagnosisSite combinations] for each patient
         - This approach may work best since a few patients have multiple melanomas diagnosed at the same age, so it [AgeAtDiagnosis] cannot be used on its own.
             - Example with multiple diagnoses at same age with same stage: ILE2DL0KMW
             ["ILE2DL0KMW" is a value of column ORIENAvatarKey in `/sfs/gpfs/tardis/project/orien/data/aws/24PRJ217UVA_IORIG/Clinical_Data/24PRJ217UVA_NormalizedFiles/24PRJ217UVA_20241112_ClinicalMolLinkage_V4.csv`]
     
+    4. from ORIEN Data Rules for Tumor Clinical Pairing
+    - 4. SequencedTumorCount: count for number of sequenced tumor samples for a patient
+        - Create using the number of unique [DeidSpecimenID and Avatar Key combinations] for each patient
+        - This approach may work best since a few patients have multiple sequenced tumors at the same age (or stage, etc), so these variables cannot be used on their own.
+            - Example with multiple tumors sequenced at same age/stage: 59OP5X1AZL
+    
     Add MelanomaDiagnosisCount and SequencedTumorCount to CM and DX frames.
     '''
     diag_counts = (
-        dx.drop_duplicates(["AvatarKey", "AgeAtDiagnosis", "PrimaryDiagnosisSite"])
+        dx.drop_duplicates(["AvatarKey", "AgeAtDiagnosis", "PrimaryDiagnosisSite"]) # Ensure that (Avatar, AgeAtDiagnosis, PrimaryDiagnosisSite) represents 1 diagnosis.
           .groupby("AvatarKey")
           .size()
           .rename("MelanomaDiagnosisCount")
     )
     tumor_counts = (
-        cm.drop_duplicates(["ORIENAvatarKey", "DeidSpecimenID"])
+        cm.drop_duplicates(["ORIENAvatarKey", "DeidSpecimenID"]) # Ensure that (ORIENAvatarKey, DeidSpecimenID) represents 1 tumor.
           .groupby("ORIENAvatarKey")
           .size()
           .rename("SequencedTumorCount")
     )
-    cm = cm.join(tumor_counts, on = "ORIENAvatarKey")
+    cm = cm.join(tumor_counts, on = "ORIENAvatarKey") # Logic that uses both diagnosis count and tumor count is executed while iterating over rows in cm.
     cm = cm.join(diag_counts, on = "ORIENAvatarKey")
-    dx = dx.join(diag_counts, on = "AvatarKey")
     return cm, dx
 
 
