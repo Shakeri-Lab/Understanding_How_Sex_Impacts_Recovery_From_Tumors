@@ -5,6 +5,11 @@
 
 This module is based on "ORIEN Data Rules for Tumor Clinical Pairing". The purpose of this module is to produce, for every patient, rows of melanoma diagnosis information and melanoma tumor information, each enriched. A patient is identified by values in fields 'ORIENAvatarKey` in a Clinical Molecular Linkage table and/or `AvatarKey` in Diagnosis, Metastatic Disease, and Medications tables. A row is enriched with a primary site, an AJCC stage at the time of specimen collection, an identifier of the rule used to determine the stage, and an ICB status. A primary site may be "cutaneous", "ocular", "mucosal", or "unknown". An AJCC stage may be "I", "II", "III", or "IV". An ICB status may be "Pre-ICB", "Post-ICB", "No-ICB", or "Unknown".
 
+2. from "ORIEN Data Rules for Tumor Clinical Pairing"
+2. Definitions
+- Melanoma diagnosis (Diagnosis file): HistologyCode = {list of melanoma codes previously sent}
+- Tumor sequenced (Molecular Linkage file): Tumor/Germline variable = Tumor
+
 Melanoma diagnosis information is a row in the Diagnosis CSV file whose value of field `HistologyCode` is a ICD-O-3 code for melanoma. ICD-O-3 stands for International Classification of Disease for Oncology 3. Melanoma diagnosis information describes a case of skin cancer for a patient. Distinct diagnoses information for a patient are identified by pairs of values of fields `AgeAtDiagnosis` and `PrimaryDiagnosisSite`.
 
 Melanoma tumor information is a row in the Clinical Molecular Linkage CSV file with value "Tumor" for field "Tumor/Germline". Melanoma tumor information represents a melanoma tumor for which at least Whole Exome Sequencing (WES) or RNA sequencing data were generated. Distinct tumor information for a patient are identified by pairs of values of fields `ORIENSpecimenID` and `ORIENAvatarKey` in table Clinical Molecular Linkage.
@@ -27,8 +32,7 @@ This module
     11. writes rows to an output CSV file.
         
 Usage:
-
-python pipeline_for_pairing_clinical_data_and_stages_of_tumors.py --clinmol ../../../Avatar_CLINICAL_Data/20250317_UVA_ClinicalMolLinkage_V4.csv --diagnosis ../../../Avatar_CLINICAL_Data/NormalizedFiles/20250317_UVA_Diagnosis_V4.csv --metadisease ../../../Avatar_CLINICAL_Data/NormalizedFiles/20250317_UVA_MetastaticDisease_V4.csv --therapy ../../../Avatar_CLINICAL_Data/NormalizedFiles/20250317_UVA_Medications_V4.csv --out output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors.csv > output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors.txt 2>&1
+python pipeline_for_pairing_clinical_data_and_stages_of_tumors.py --clinmol ../Clinical_Data/24PRJ217UVA_NormalizedFiles/24PRJ217UVA_20241112_ClinicalMolLinkage_V4.csv --diagnosis ../Clinical_Data/24PRJ217UVA_NormalizedFiles/24PRJ217UVA_20241112_Diagnosis_V4.csv --metadisease ../Clinical_Data/24PRJ217UVA_NormalizedFiles/24PRJ217UVA_20241112_MetastaticDisease_V4.csv --therapy ../Clinical_Data/24PRJ217UVA_NormalizedFiles/24PRJ217UVA_20241112_Medications_V4.csv --out output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors.csv > output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors.txt 2>&1
 '''
 
 from __future__ import annotations
@@ -216,6 +220,13 @@ def load_inputs(
     meta_csv: Path,
     therapy_csv: Optional[Path] = None,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, Optional[pd.DataFrame]]:
+    '''
+    1. from "ORIEN Data Rules for Tumor Clinical Pairing"
+    1. Using data from:
+    - Molecular Linkage file (main file)
+    - Diagnosis file (for primary site and stage info)
+    - Metastatic Disease (to help assign stage)
+    '''
     logging.info("Loading Clinical‑Molecular Linkage...")
     cm = pd.read_csv(clinmol_csv, dtype = str)
     _strip_cols(cm)
@@ -231,7 +242,7 @@ def load_inputs(
     _strip_cols(md)
 
     if therapy_csv is not None:
-        logging.info("Loading Therapy ...")
+        logging.info("Loading Therapy...")
         th = pd.read_csv(therapy_csv, dtype=str)
         _strip_cols(th)
     else:
@@ -246,6 +257,13 @@ def load_inputs(
 
 def add_counts(cm: pd.DataFrame, dx: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
     '''
+    3. from ORIEN Data Rules for Tumor Clinical Pairing
+    3. New variables to create
+    - MelanomaDiagnosisCount: count for number of melanoma clinical diagnoses for a patient
+        - Create using the number of unique [AgeAtDiagnosis and PrimaryDiagnosisSite combinations] for each patient
+        - This approach may work best since a few patients have multiple melanomas diagnosed at the same age, so it [AgeAtDiagnosis] cannot be used on its own.
+            - Example with multiple diagnoses at same age with same stage: ILE2DL0KMW
+    
     Add MelanomaDiagnosisCount and SequencedTumorCount to CM and DX frames.
     '''
     diag_counts = (
@@ -255,7 +273,7 @@ def add_counts(cm: pd.DataFrame, dx: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Dat
           .rename("MelanomaDiagnosisCount")
     )
     tumor_counts = (
-        cm.drop_duplicates(["ORIENAvatarKey", "ORIENSpecimenID"])
+        cm.drop_duplicates(["ORIENAvatarKey", "DeidSpecimenID"])
           .groupby("ORIENAvatarKey")
           .size()
           .rename("SequencedTumorCount")
@@ -672,10 +690,6 @@ def stage_unknown_primary(spec, dx, meta) -> Tuple[str, str]:
     return "Unknown", "UN‑UNK"
 
 
-################################################################################
-# PUBLIC ENTRY POINT (for tests & other callers)
-################################################################################
-
 def run_pipeline(
     clinmol: Path,
     diagnosis: Path,
@@ -683,13 +697,9 @@ def run_pipeline(
     therapy: Path | None = None,
     strict: bool = False,
 ) -> pd.DataFrame:
-    """
-    Execute the full pairing → staging → ICB assignment pipeline and
-    return the resulting dataframe **instead of writing it to disk**.
-
-    It contains the same columns that would normally be written to the
-    `--out` CSV in CLI mode.
-    """
+    '''
+    Execute the full pairing, staging, and ICB assignment pipeline and return the resulting data frame.
+    '''
     globals()["STRICT"] = strict
 
     cm, dx, md, th = load_inputs(clinmol, diagnosis, metadisease, therapy)
@@ -740,7 +750,7 @@ def run_pipeline(
         output_rows.append(
             dict(
                 AvatarKey            = avatar,
-                ORIENSpecimenID      = spec_row["ORIENSpecimenID"],
+                ORIENSpecimenID      = spec_row["DeidSpecimenID"],
                 DiagnosisIndex       = int(diag_row.name),
                 AgeAtSpecimenCollection = spec_row["Age At Specimen Collection"],
                 AssignedPrimarySite  = primary_site,
@@ -753,12 +763,8 @@ def run_pipeline(
     return pd.DataFrame(output_rows)
 
 
-############
-# CLI DRIVER
-############
-
 def main():
-    parser = argparse.ArgumentParser(description = "Pair melanoma tumours with AJCC stages.")
+    parser = argparse.ArgumentParser(description = "Pair clinical data and stages of tumors.")
     parser.add_argument("--clinmol", required = True, type = Path)
     parser.add_argument("--diagnosis", required = True, type = Path)
     parser.add_argument("--metadisease", required = True, type = Path)
@@ -766,21 +772,19 @@ def main():
     parser.add_argument("--out", required = True, type = Path)
     parser.add_argument("--strict", action = "store_true", help = "Abort if a primary site cannot be classified.")
     args = parser.parse_args()
-    
-    globals()["STRICT"] = args.strict
 
     logging.basicConfig(level = logging.INFO, format = "%(levelname)s: %(message)s")
 
     out_df = run_pipeline(
-        clinmol     = args.clinmol,
-        diagnosis   = args.diagnosis,
+        clinmol = args.clinmol,
+        diagnosis = args.diagnosis,
         metadisease = args.metadisease,
-        therapy     = args.therapy,
-        strict      = args.strict,
+        therapy = args.therapy,
+        strict = args.strict,
     )
 
-    logging.info("Writing %s rows → %s", len(out_df), args.out)
-    out_df.to_csv(args.out, index=False)
+    logging.info("Writing %s rows to %s", len(out_df), args.out)
+    out_df.to_csv(args.out, index = False)
 
 
 if __name__ == "__main__":
