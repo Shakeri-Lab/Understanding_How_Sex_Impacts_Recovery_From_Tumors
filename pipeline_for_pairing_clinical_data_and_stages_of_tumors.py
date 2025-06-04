@@ -389,10 +389,12 @@ def _select_diagnosis_C(dx_patient: pd.DataFrame, spec_row: pd.Series, meta_pati
 
         # Histology tie-break – spec fires when **no** diagnosis is within
         # 90 d *OR* at least one diagnosis has an unknown age.
-        if (prox.sum() == 0) and age_diag.isna().any():
-            hist_spec = _hist_clean(spec_row["Histology/Behavior"])
-            dxp["_hist_clean"] = dxp["Histology"].apply(_hist_clean)
-            hist_match = dxp["_hist_clean"] == hist_spec
+        #   –  Case 1: *all* diagnoses > 90 d after specimen  →  tie-break, regardless of histology
+        #   –  Case 2: ≥ 1 diagnosis age unknown **and** the diagnoses are heterogeneous in histology
+        histologies_differ = dxp["Histology"].apply(_hist_clean).nunique() > 1
+        if (prox.sum() == 0) or (age_diag.isna().any() and histologies_differ):
+            hist_spec   = _hist_clean(spec_row["Histology/Behavior"])
+            hist_match  = dxp["Histology"].apply(_hist_clean) == hist_spec
             if hist_match.sum() == 1:
                 return dxp[hist_match].iloc[0]
 
