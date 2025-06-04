@@ -322,15 +322,16 @@ def _select_specimen_B(patient_cm: pd.DataFrame) -> pd.Series:
     if is_node.any() and not (is_skin.any() or is_soft.any()):
         return candidates[is_node].iloc[0]
     
-    # 6. Tie-breaker: earliest among skin or soft tissue or node
+    # 6. Tie-breaker: earliest among skin or soft tissue
     if (is_skin.any() or is_soft.any()) and is_node.any():
         tie = candidates[is_skin | is_soft].copy()
-        tie["_age"] = tie["Age At Specimen Collection"].astype(float)
-        return tie.sort_values("_age").iloc[0]
+        tie["_age"] = tie["Age At Specimen Collection"].apply(_float)  # robust → NaN
+        # Put NaNs last so we never accidentally pick an “Unknown”-age specimen
+        return tie.sort_values("_age", na_position="last").iloc[0]
 
     # 7. Fallback: earliest age (handles only soft tissue and other sites)
-    candidates["_age"] = candidates["Age At Specimen Collection"].astype(float)
-    return candidates.sort_values("_age").iloc[0]
+    candidates["_age"] = candidates["Age At Specimen Collection"].apply(_float)
+    return candidates.sort_values("_age", na_position="last").iloc[0]
 
 
 ################################################
@@ -380,8 +381,9 @@ def _select_diagnosis_C(dx_patient: pd.DataFrame, spec_row: pd.Series, meta_pati
             if len(match_rows) == 1:
                 return match_rows.iloc[0]
 
-        # Histology tie-break *only when EVERY diagnosis is > 90 d (or unknown)*
-        if (prox.sum() == 0) or age_diag.isna().any():
+        # Histology tie-break – trigger only when **no** diagnosis is within
+        # 90 d of the specimen (unknown-age rows count as “not within 90 d”).
+        if prox.sum() == 0:
             hist_spec = _hist_clean(spec_row["Histology/Behavior"])
             dxp["_hist_clean"] = dxp["Histology"].apply(_hist_clean)
             hist_match = dxp["_hist_clean"] == hist_spec
@@ -575,14 +577,16 @@ def stage_ocular(spec: pd.Series, dx: pd.Series, meta_patient: pd.DataFrame) -> 
     if meta_rows.empty:
         return "Unknown", "OC-UNK"
     
-    # OC-3: interval distant metastases
-    if not meta_rows[meta_rows["MetastaticDiseaseInd"].str.contains("Yes - Distant", na = False)].empty:
-        return "IV", "OC3"
-    
-    # OC-4: lymph-node speciment and regional / Not Otherwise Specified metastases
+    # OC-4: lymph-node specimen **with Regional/NOS mets and NO distant mets**
     is_node_spec = bool(NODE_REGEX.search(site_coll))
-    if is_node_spec and not meta_rows[meta_rows["MetastaticDiseaseInd"].str.contains(r"Yes - Regional|Yes - NOS", na = False)].empty:
+    has_distant = meta_rows["MetastaticDiseaseInd"].str.contains("Yes - Distant", na=False).any()
+    reg_nos     = meta_rows["MetastaticDiseaseInd"].str.contains(r"Yes - Regional|Yes - NOS", na=False).any()
+    if is_node_spec and reg_nos and not has_distant:
         return "III", "OC4"
+    
+    # OC-3: interval distant metastases (runs *after* OC-4 so OC-4 can win when appropriate)
+    if has_distant:
+        return "IV", "OC3"
 
     return "Unknown", "OC‑UNK"
 
@@ -612,9 +616,13 @@ def stage_mucosal(spec: pd.Series, dx: pd.Series, meta_patient: pd.DataFrame) ->
        meta_rows["MetastaticDiseaseInd"].str.contains("Yes - Distant", na=False).any():
         return "IV", "MU4"
 
-    # MU-3M — metastatic specimen without distant mets → stage III
+    # MU-3M — metastatic specimen **without** distant mets (past *or* future) → III
     if spec["Primary/Met"].lower() == "metastatic" and "IV" not in path_stage:
-        return "III", "MU3M"
+        meta_after = _filter_meta_after(meta_patient, age_spec)
+        no_future_distant = meta_after.empty or \
+            not meta_after["MetastaticDiseaseInd"].str.contains("Yes - Distant", na=False).any()
+        if no_future_distant:
+            return "III", "MU3M"
 
     return "Unknown", "MU-UNK"
 
