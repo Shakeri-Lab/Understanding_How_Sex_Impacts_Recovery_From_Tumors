@@ -374,16 +374,22 @@ def _select_diagnosis_C(dx_patient: pd.DataFrame, spec_row: pd.Series, meta_pati
         if prox.sum() == 1:
             return dxp[prox].iloc[0]
 
-        # Proximity tie‑break by site
+        # Proximity tie-break by site
         if prox.any():
-            site_match = dxp["PrimaryDiagnosisSite"].str.lower() == spec_row["SpecimenSiteOfCollection"].lower()
-            match_rows = dxp[prox & site_match]
-            if len(match_rows) == 1:
-                return match_rows.iloc[0]
+            site_match = (
+                dxp["PrimaryDiagnosisSite"].str.lower()
+                == spec_row["SpecimenSiteOfCollection"].lower()
+            )
+            match_rows = dxp[prox & site_match].copy()
+            if not match_rows.empty:
+                # choose deterministically: earliest AgeAtDiagnosis with known age
+                match_rows["_age"] = match_rows["AgeAtDiagnosis"].apply(_float)
+                best = match_rows.sort_values("_age", na_position="last").iloc[0]
+                return best.drop(labels="_age")
 
         # Histology tie-break – spec fires when **no** diagnosis is within
         # 90 d *OR* at least one diagnosis has an unknown age.
-        if (prox.sum() == 0) or age_diag.isna().any():
+        if (prox.sum() == 0) and age_diag.isna().any():
             hist_spec = _hist_clean(spec_row["Histology/Behavior"])
             dxp["_hist_clean"] = dxp["Histology"].apply(_hist_clean)
             hist_match = dxp["_hist_clean"] == hist_spec
