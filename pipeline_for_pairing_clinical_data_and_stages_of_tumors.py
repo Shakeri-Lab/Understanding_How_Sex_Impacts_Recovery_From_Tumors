@@ -381,9 +381,9 @@ def _select_diagnosis_C(dx_patient: pd.DataFrame, spec_row: pd.Series, meta_pati
             if len(match_rows) == 1:
                 return match_rows.iloc[0]
 
-        # Histology tie-break – trigger only when **no** diagnosis is within
-        # 90 d of the specimen (unknown-age rows count as “not within 90 d”).
-        if prox.sum() == 0:
+        # Histology tie-break – spec fires when **no** diagnosis is within
+        # 90 d *OR* at least one diagnosis has an unknown age.
+        if (prox.sum() == 0) or age_diag.isna().any():
             hist_spec = _hist_clean(spec_row["Histology/Behavior"])
             dxp["_hist_clean"] = dxp["Histology"].apply(_hist_clean)
             hist_match = dxp["_hist_clean"] == hist_spec
@@ -405,9 +405,14 @@ def _select_diagnosis_C(dx_patient: pd.DataFrame, spec_row: pd.Series, meta_pati
 
         if "lymph node" in site_coll:
             prox = dxp["AgeAtDiagnosis"].apply(_float).apply(lambda x: _within_90_days_after(age_spec, x))
-            # Positive node rule - *only when there IS a <= 90 d match*
+            # Positive-node rule – specimen must be within 90-day window **and**
+            # the diagnosis must have PathNStage ≠ N0/Nx/unknown.
             if prox.any():
-                pos_node = ~dxp["PathNStage"].str.contains(r"\\bN0\\b|Nx|unknown/not applicable|no tnm", case = False, na = False, regex = True)
+                pos_node = ~dxp["PathNStage"].str.contains(
+                    r"\bN0\b|Nx|unknown/not applicable|no tnm",
+                    case=False, na=False, regex=True,
+                )
+                pos_node &= prox                    # <-- spec-compliant intersection
                 if pos_node.sum() == 1:
                     return dxp[pos_node].iloc[0]
             # Site match rule - *only when NO diagnosis is within 90 d*
@@ -577,11 +582,12 @@ def stage_ocular(spec: pd.Series, dx: pd.Series, meta_patient: pd.DataFrame) -> 
     if meta_rows.empty:
         return "Unknown", "OC-UNK"
     
-    # OC-4: lymph-node specimen **with Regional/NOS mets and NO distant mets**
-    is_node_spec = bool(NODE_REGEX.search(site_coll))
-    has_distant = meta_rows["MetastaticDiseaseInd"].str.contains("Yes - Distant", na=False).any()
-    reg_nos     = meta_rows["MetastaticDiseaseInd"].str.contains(r"Yes - Regional|Yes - NOS", na=False).any()
-    if is_node_spec and reg_nos and not has_distant:
+    # OC-4 pre-condition: origin must be ocular AND specimen is a lymph-node.
+    origin_ocular = _contains(spec.get("SpecimenSiteOfOrigin"), r"eye|choroid|ciliary body|conjunctiva")
+    is_node_spec  = bool(NODE_REGEX.search(site_coll))
+    has_distant   = meta_rows["MetastaticDiseaseInd"].str.contains("Yes - Distant", na=False).any()
+    reg_nos       = meta_rows["MetastaticDiseaseInd"].str.contains(r"Yes - Regional|Yes - NOS", na=False).any()
+    if origin_ocular and is_node_spec and reg_nos and not has_distant:
         return "III", "OC4"
     
     # OC-3: interval distant metastases (runs *after* OC-4 so OC-4 can win when appropriate)
