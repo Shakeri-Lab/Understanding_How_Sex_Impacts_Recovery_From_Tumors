@@ -16,12 +16,15 @@ def load_clinical_data(base_path):
     """Load clinical data from CSV"""
     try:
         # Define possible locations for clinical data
+        '''
         possible_paths = [
             os.path.join(base_path, "processed_data/processed_clinical_molecular.csv"),
             os.path.join(base_path, "../processed_data/processed_clinical_molecular.csv"),
             os.path.join(base_path, "Clinical_Data/24PRJ217UVA_NormalizedFiles/24PRJ217UVA_20240112_UnifiedClinicallData_V4.csv"),
             os.path.join(base_path, "../Clinical_Data/24PRJ217UVA_NormalizedFiles/24PRJ217UVA_20240112_UnifiedClinicallData_V4.csv")
         ]
+        '''
+        possible_paths = [ "/sfs/gpfs/tardis/project/orien/data/aws/24PRJ217UVA_IORIG/output/melanoma_clinical_data.csv" ]
         
         # Check each possible path
         clinical_file = None

@@ -29,7 +29,7 @@ if __name__ == "__main__":
     
     # Set sys.argv to include only the script name and the base-path
     # This ensures the icb_main.py script receives the correct base path
-    sys.argv = [sys.argv[0], '--base-path', '/project/orien/data/aws/24PRJ217UVA_IORIG/codes']
+    sys.argv = [sys.argv[0], '--base-path', '/project/orien/data/aws/24PRJ217UVA_IORIG/Understanding_How_Sex_Impacts_Recovery_From_Tumors/data']
     
     # Add optional arguments if specified
     if args.by_type:

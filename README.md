@@ -7,7 +7,7 @@ This repository contains code for analyzing sex-based differences in immune chec
 ```
 project_root/
 ├── data/                  # Data directory
-│   └── processed/         # Processed data files
+│   └── processed_data     # Processed data files
 ├── docs/                  # Documentation
 ├── output/                # Analysis outputs and results
 ├── src/                   # Source code
