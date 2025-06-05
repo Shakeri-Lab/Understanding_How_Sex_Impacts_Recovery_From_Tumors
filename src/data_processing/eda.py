@@ -14,7 +14,7 @@ from pathlib import Path
 import re
 from typing import Dict, Iterable
 
-from utils import create_map_from_qc
+from data_processing.utils import create_map_from_qc
 
 import matplotlib
 matplotlib.use("Agg")

@@ -231,7 +231,6 @@ def load_cd8_group_scores(base_path):
         return cd8_scores
     except Exception as e:
         print(f"Error loading CD8 group scores: {e}")
-        import traceback
         traceback.print_exc()
         return None
 
@@ -283,8 +282,8 @@ def main():
             print("\nClinical file not found in standard locations. Will try generating from raw data.")
             # Import function to generate clinical data if needed
             try:
-                from data_processing.eda import load_clinical_data as load_raw_clinical_data
                 print("Attempting to load raw clinical data...")
+                from data_processing.eda import load_clinical_data as load_raw_clinical_data
                 clinical_data, _ = load_raw_clinical_data(base_path)
                 if clinical_data is not None:
                     print(f"Successfully loaded raw clinical data for {len(clinical_data)} patients")
@@ -445,7 +444,6 @@ def main():
                             cd8_scores = None
         except Exception as e:
             print(f"Error loading CD8 scores: {e}")
-            import traceback
             traceback.print_exc()
         
         # Now try to merge with clinical data and verify overlap

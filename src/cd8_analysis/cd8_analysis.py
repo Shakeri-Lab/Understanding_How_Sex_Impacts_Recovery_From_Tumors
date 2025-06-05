@@ -20,7 +20,7 @@ from sklearn.metrics import silhouette_score
 # Add parent directory to path to allow imports from other modules
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from immune_analysis.microenv import ImmuneAnalysis
+from immune_analysis.immune_analysis import ImmuneAnalysis
 from utils.shared_functions import load_rnaseq_data, load_clinical_data, filter_by_diagnosis
 
 class CD8Analysis(ImmuneAnalysis):
