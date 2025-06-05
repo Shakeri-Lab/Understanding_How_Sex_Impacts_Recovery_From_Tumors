@@ -587,7 +587,7 @@ def stage_cutaneous(spec: pd.Series, dx: pd.Series, meta_patient: pd.DataFrame) 
             return m.group(1), rule
 
     # Default unknown
-    return "Unknown", "CUT‑UNK"
+    return "Unknown", "CUT-UNK"
 
 
 def stage_ocular(spec: pd.Series, dx: pd.Series, meta_patient: pd.DataFrame) -> Tuple[str, str]:
@@ -623,7 +623,7 @@ def stage_ocular(spec: pd.Series, dx: pd.Series, meta_patient: pd.DataFrame) -> 
     if has_distant:
         return "IV", "OC3"
 
-    return "Unknown", "OC‑UNK"
+    return "Unknown", "OC-UNK"
 
 
 def stage_mucosal(spec: pd.Series, dx: pd.Series, meta_patient: pd.DataFrame) -> Tuple[str, str]:
@@ -690,7 +690,7 @@ def stage_unknown_primary(spec, dx, meta) -> Tuple[str, str]:
         if m_clin:
             return m_clin.group(1), "UN3C"
     
-    return "Unknown", "UN‑UNK"
+    return "Unknown", "UN-UNK"
 
 
 def run_pipeline(
