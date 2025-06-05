@@ -121,7 +121,7 @@ class PropensityScore:
         matched_data['matched_propensity_score'] = matched_data['propensity_score']
         matched_data.drop(columns=['propensity_score'], inplace=True)
             
-            return matched_data
+        return matched_data
 
 class ICBAnalysis:
     """Analyzes ICB medications and their relationship with CD8+ T cell signatures"""
@@ -493,7 +493,7 @@ class ICBAnalysis:
     def get_icb_class(self, patient_id, icb_data):
         """Stub for get_icb_class method"""
         print("Placeholder: get_icb_class")
-                return "None"
+        return "None"
             
     def merge_icb_with_clinical(self, icb_data, clinical_data):
         """
@@ -506,7 +506,7 @@ class ICBAnalysis:
         Returns:
             DataFrame containing merged data
         """
-            print("\nMerging ICB data with clinical data...")
+        print("\nMerging ICB data with clinical data...")
             
         # Check if either dataframe is None or empty
         if icb_data is None or clinical_data is None:
@@ -536,7 +536,7 @@ class ICBAnalysis:
             if id_cols:
                 print(f"Using {id_cols[0]} as PATIENT_ID in clinical data")
                 clinical_data = clinical_data.rename(columns={id_cols[0]: 'PATIENT_ID'})
-                else:
+            else:
                 print("No suitable ID column found in clinical data")
                 return pd.DataFrame({'PATIENT_ID': []})
         
@@ -727,18 +727,18 @@ class ICBAnalysis:
         
         # Print final statistics
         print(f"Final merged data: {len(merged_data)} patients, {len(merged_data.columns)} variables")
-            if 'ICB_status' in merged_data.columns:
+        if 'ICB_status' in merged_data.columns:
             status_counts = merged_data['ICB_status'].value_counts()
             print("ICB status distribution:")
             for status, count in status_counts.items():
                 print(f"  {status}: {count} patients")
         
-            return merged_data
+        return merged_data
             
     def plot_icb_status(self, merged_data):
         """Stub for plot_icb_status method"""
         print("Placeholder: plot_icb_status")
-            return None
+        return None
             
     def analyze_by_icb_type(self, merged_data, icb_data=None, cd8_scores=None):
         """Stub for analyze_by_icb_type method"""
@@ -763,12 +763,12 @@ class ICBAnalysis:
     def analyze_survival_by_icb_cd8_and_sex(self, merged_data, cd8_type='CD8_B'):
         """Stub for analyze_survival_by_icb_cd8_and_sex method"""
         print("Placeholder: analyze_survival_by_icb_cd8_and_sex")
-                return None
+        return None
     
     def analyze_survival_odds_by_treatment_and_sex(self, merged_data):
         """Stub for analyze_survival_odds_by_treatment_and_sex method"""
         print("Placeholder: analyze_survival_odds_by_treatment_and_sex")
-                return None
+        return None
             
     def analyze_tme_icb_survival_by_sex(self, matched_data, cd8_scores, tme_feature='CD8_G', 
                                  confounders=None, plot_dir=None):
@@ -872,7 +872,7 @@ class ICBAnalysis:
                 data['SEX'] = data['Gender']
             elif 'GENDER' in data.columns:
                 data['SEX'] = data['GENDER']
-                else:
+            else:
                 print("WARNING: No sex/gender column found. Cannot analyze by sex.")
                 
                 # Create a dummy SEX column with balanced Male/Female
@@ -1117,10 +1117,10 @@ class ICBAnalysis:
                 except Exception as e:
                     print(f"Error in Cox analysis for {group_label}: {e}")
         
-        except Exception as e:
+            except Exception as e:
                 print(f"Error analyzing TME survival for {group_label}: {e}")
-            import traceback
-            traceback.print_exc()
+                import traceback
+                traceback.print_exc()
         
         except Exception as e:
             print(f"Error analyzing TME survival for {group_label}: {e}")
@@ -1497,7 +1497,7 @@ class ICBAnalysis:
                 # Calculate standardized mean difference (SMD)
                 if pooled_sd_orig > 0:
                     smd_orig = abs(mean_t_orig - mean_c_orig) / pooled_sd_orig
-            else:
+                else:
                     smd_orig = 0
                 
                 # Check balance in matched data
@@ -1556,7 +1556,7 @@ class ICBAnalysis:
                     print("\nExcellent balance achieved! All standardized mean differences are below 0.1.")
                 elif balance_df['SMD_After'].max() < 0.25:
                     print("\nGood balance achieved. All standardized mean differences are below 0.25.")
-            else:
+                else:
                     print("\nWarning: Some imbalances remain after matching. Consider adjusting matching parameters.")
                     
                 # Save balance statistics
@@ -1601,7 +1601,7 @@ class ICBAnalysis:
                 
                 if p_after > 0.05:
                     print(f"Good balance achieved for {target_col} after matching (p > 0.05)")
-            else:
+                else:
                     print(f"Warning: {target_col} still differs significantly between groups after matching")
                     
             except Exception as e:
@@ -1918,7 +1918,7 @@ class ICBAnalysis:
                         elif ('treated', 'lower 0.95') in ci.columns:
                             hr_lower = np.exp(ci[('treated', 'lower 0.95')])
                             hr_upper = np.exp(ci[('treated', 'upper 0.95')])
-        else:
+                        else:
                             # Fall back to summary table approach
                             summary = cph.summary
                             if 'lower 0.95' in summary.columns:
@@ -1976,7 +1976,7 @@ class ICBAnalysis:
                 plt.savefig(cox_filename, dpi=300, bbox_inches='tight')
                 print(f"Saved Cox model survival curves to {cox_filename}")
                 
-        plt.close()
+                plt.close()
                 
             except Exception as e:
                 print(f"Error in Cox proportional hazards analysis: {e}")
@@ -2013,9 +2013,9 @@ class ICBAnalysis:
                     if 'ICB_status' in icb_data.columns and len(icb_data['ICB_status'].unique()) > 1:
                         print("Found both treated and untreated patients in the data")
                         return icb_data
-        else:
+                    else:
                         print("Data only contains one ICB status - will need to add control patients")
-            else:
+                else:
                     print(f"ERROR: Provided ICB file not found at {icb_file}")
                     # Fall through to try other paths
             
@@ -2204,7 +2204,7 @@ class ICBAnalysis:
                         # Print updated stats
                         print(f"Updated ICB data: {len(icb_data)} patients")
                         print(f"ICB status distribution: {icb_data['ICB_status'].value_counts().to_dict()}")
-                else:
+                    else:
                         # Create a balanced dataset with 50 patients of each type
                         treated_ids = [f'T{i:04d}' for i in range(50)]
                         naive_ids = [f'N{i:04d}' for i in range(50)]
@@ -2251,7 +2251,7 @@ class ICBAnalysis:
             
             return icb_data
             
-            except Exception as e:
+        except Exception as e:
             print(f"Error loading ICB data: {e}")
             import traceback
             traceback.print_exc()
@@ -2301,19 +2301,19 @@ class ICBAnalysis:
         if cd8_file is not None and os.path.exists(cd8_file):
             try:
                 print(f"Loading CD8 scores from provided file: {cd8_file}")
-            cd8_scores = pd.read_csv(cd8_file, index_col=0)
+                cd8_scores = pd.read_csv(cd8_file, index_col=0)
                 cd8_scores.reset_index(inplace=True)
                 if 'index' in cd8_scores.columns:
                     cd8_scores.rename(columns={'index': 'PATIENT_ID'}, inplace=True)
                 print(f"Loaded CD8 scores: {cd8_scores.shape[0]} rows, {cd8_scores.shape[1]} columns")
                 
                 # Make sure required columns exist
-            if 'CD8_G' not in cd8_scores.columns:
+                if 'CD8_G' not in cd8_scores.columns:
                     print("Warning: CD8_G column not found in the loaded file")
-                return None
+                    return None
                 
-            return cd8_scores
-        except Exception as e:
+                return cd8_scores
+            except Exception as e:
                 print(f"Error loading CD8 scores from provided file: {e}")
                 # Continue to try other methods
         
@@ -2354,27 +2354,27 @@ class ICBAnalysis:
                 
                 for path in potential_paths:
                     if os.path.exists(path):
-                try:
-                    print(f"Found CD8 scores at: {path}")
-                    cd8_scores = pd.read_csv(path, index_col=0)
-                    
-                    # Reset index to create PATIENT_ID column
-                    cd8_scores.reset_index(inplace=True)
-                    if 'index' in cd8_scores.columns:
-                        cd8_scores.rename(columns={'index': 'PATIENT_ID'}, inplace=True)
-                        
-                    print(f"Loaded CD8 scores: {cd8_scores.shape[0]} rows, {cd8_scores.shape[1]} columns")
-                    print(f"Columns: {cd8_scores.columns.tolist()}")
-                    
-                    # Ensure CD8_G column exists
-                    if 'CD8_G' not in cd8_scores.columns:
-                        print(f"Warning: CD8_G column not found in {path}")
-                        continue
-                        
-                    return cd8_scores
-                except Exception as e:
-                    print(f"Error loading CD8 scores from {path}: {e}")
-                    continue
+                        try:
+                            print(f"Found CD8 scores at: {path}")
+                            cd8_scores = pd.read_csv(path, index_col=0)
+
+                            # Reset index to create PATIENT_ID column
+                            cd8_scores.reset_index(inplace=True)
+                            if 'index' in cd8_scores.columns:
+                                cd8_scores.rename(columns={'index': 'PATIENT_ID'}, inplace=True)
+
+                            print(f"Loaded CD8 scores: {cd8_scores.shape[0]} rows, {cd8_scores.shape[1]} columns")
+                            print(f"Columns: {cd8_scores.columns.tolist()}")
+
+                            # Ensure CD8_G column exists
+                            if 'CD8_G' not in cd8_scores.columns:
+                                print(f"Warning: CD8_G column not found in {path}")
+                                continue
+
+                            return cd8_scores
+                        except Exception as e:
+                            print(f"Error loading CD8 scores from {path}: {e}")
+                            continue
         
         # As a last resort, embed the actual scores directly from the provided file
         print("Using directly embedded CD8 scores data...")
