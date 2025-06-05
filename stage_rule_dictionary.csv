@@ -16,7 +16,7 @@ CUT-UNK,This placeholder indicates that no cutaneous staging rule could be appli
 OC1,This rule applies when PathGroupStage contains IV and assigns stage IV for ocular melanoma.
 OC2,This rule applies when ClinGroupStage contains IV while PathGroupStage is unknown or inapplicable and assigns stage IV for ocular melanoma.
 OC3,This rule triggers when distant metastases are documented at or before specimen collection and assigns stage IV for ocular melanoma.
-OC4,This rule applies to a lymph-node specimen of ocular origin with regional or NOS recurrence and no distant metastasis and assigns stage III.
+OC4,This rule applies to a lymph-node specimen of ocular origin with regional or NOS recurrence and no distant metastases documented on or before specimen collection and assigns stage III.
 OC-UNK,This placeholder indicates that no ocular staging rule could be applied.
 MU1,This rule applies when PathGroupStage contains IV and assigns stage IV for mucosal melanoma.
 MU2,This rule applies when ClinGroupStage contains IV while PathGroupStage is unknown or inapplicable and assigns stage IV for mucosal melanoma.

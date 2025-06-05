@@ -12,7 +12,7 @@ This module is based on "ORIEN Data Rules for Tumor Clinical Pairing". The
 
 Melanoma diagnosis information is a row in the Diagnosis CSV file whose value of field `HistologyCode` is a ICD-O-3 code for melanoma. ICD-O-3 stands for International Classification of Disease for Oncology 3. Melanoma diagnosis information describes a case of skin cancer for a patient. Distinct diagnoses information for a patient are identified by pairs of values of fields `AgeAtDiagnosis` and `PrimaryDiagnosisSite`.
 
-Melanoma tumor information is a row in the Clinical Molecular Linkage CSV file with value "Tumor" for field "Tumor/Germline". Melanoma tumor information represents a melanoma tumor for which at least Whole Exome Sequencing (WES) or RNA sequencing data were generated. Distinct tumor information for a patient are identified by pairs of values of fields `ORIENSpecimenID` and `ORIENAvatarKey` in table Clinical Molecular Linkage.
+Melanoma tumor information is a row in the Clinical Molecular Linkage CSV file with value "Tumor" for field "Tumor/Germline". Melanoma tumor information represents a melanoma tumor for which at least Whole Exome Sequencing (WES) or RNA sequencing data were generated. Distinct tumor information for a patient are identified by pairs of values of fields `DeidSpecimenID` and `ORIENAvatarKey` in table Clinical Molecular Linkage.
 
 An AJCC stage is a grouping defined by the American Joint Committee on Cancer. An AJCC stage corresponds to fields `ClinGroupStage` and `PathGroupStage` in table Diagnosis. `ClinGroupStage` represents AJCC stages determined during clinical assessments. `PathGroupStage` represents AJCC stages determined during pathological assessments. AJCC stages indicate how much melanoma is in the body and where it is located.
 
@@ -22,7 +22,7 @@ This module
     1. loads Clinical Molecular Linkage, Diagnosis, and Metastatic Disease, and Medication CSV files;
     2. filters table Diagnosis to melanoma diagnosis information and table Clinical Molecular Linkage to melanoma tumor information;
     3. derives a melanoma diagnosis count equal to the number of unique pairs of values of fields `AgeAtDiagnosis` and `PrimaryDiagnosisSite` in table Diagnosis;
-    4. derives a tumor count equal to the number of unique pairs of values of fields `ORIENSpecimenID` and `ORIENAvatarKey` in table Clinical Molecular Linkage;
+    4. derives a tumor count equal to the number of unique pairs of values of fields `DeidSpecimenID` and `ORIENAvatarKey` in table Clinical Molecular Linkage;
     5. assigns patients in groups A, B, C, and D;
     6. reduces each patient to one row of a subset of diagnosis information and a subset of tumor information using the selection logic for that patient's group, dropping a patient if no valid pairing can be found (e.g., if all tumors lack RNA sequencing data);
     7.  enriches a patient's row with a primary site;
@@ -273,7 +273,7 @@ def add_counts(cm: pd.DataFrame, dx: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Dat
     Add MelanomaDiagnosisCount and SequencedTumorCount to CM and DX frames.
     '''
     diag_counts = (
-        dx.drop_duplicates(["AvatarKey", "AgeAtDiagnosis", "PrimaryDiagnosisSite"]) # Ensure that (Avatar, AgeAtDiagnosis, PrimaryDiagnosisSite) represents 1 diagnosis.
+        dx.drop_duplicates(["AvatarKey", "AgeAtDiagnosis", "PrimaryDiagnosisSite"]) # Ensure that (AvatarKey, AgeAtDiagnosis, PrimaryDiagnosisSite) represents 1 diagnosis.
           .groupby("AvatarKey")
           .size()
           .rename("MelanomaDiagnosisCount")
@@ -763,7 +763,7 @@ def run_pipeline(
         output_rows.append(
             dict(
                 AvatarKey = avatar,
-                ORIENSpecimenID = spec_row["DeidSpecimenID"],
+                DeidSpecimenID = spec_row["DeidSpecimenID"],
                 DiagnosisIndex = int(diag_row.name),
                 AgeAtSpecimenCollection = spec_row["Age At Specimen Collection"],
                 AssignedPrimarySite = primary_site,
