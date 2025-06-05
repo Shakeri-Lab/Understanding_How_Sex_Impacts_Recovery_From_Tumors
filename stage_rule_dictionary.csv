@@ -2,7 +2,7 @@ StageRuleHit,Description
 CUT1,This rule applies when PathGroupStage contains IV and assigns stage IV for cutaneous melanoma.
 CUT2,This rule applies when ClinGroupStage contains IV while PathGroupStage is unknown or inapplicable and assigns stage IV for cutaneous melanoma.
 CUT3,This rule applies to a metastatic specimen collected from a site that is not skin| lymph node| soft tissue| muscle| parotid| chest wall| head| or scalp and assigns stage IV for cutaneous melanoma.
-CUT4,This rule applies to a lymph-node specimen when regional or Not Otherwise Specified (NOS) nodal spread from a cutaneous primary tumor was present at or before specimen collection, and thus the value of field PathGroupStage is III| and assigns stage III.
+CUT4,This rule applies to a lymph-node specimen when regional or Not Otherwise Specified (NOS) nodal spread from a cutaneous primary tumor was present at or before specimen collection| and thus the value of field PathGroupStage is III| and assigns stage III.
 CUT5,This rule applies to a lymph-node specimen representing regional nodal recurrence in a patient| with a value of PathGroup stage not equal to III or IV| a value of ClinGroupStage not equal to IV| and no distant nodal metastases at or before specimen collection| and assigns stage III.
 CUT6,This rule applies to a lymph-node specimen that represents a distant nodal recurrence and whose value of PathGroupStage is not IV and assigns stage IV.
 CUT7,This rule applies to a parotid specimen that represents distant recurrence and assigns stage IV.
