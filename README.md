@@ -41,11 +41,7 @@ conda activate ici_sex
 
 ### Dependencies
 
-Install required packages:
-```bashsource miniconda3/etc/profile.d/conda.sh && conda activate ici_sex
-```bash
-pip install -r requirements.txt
-```
+Dependencies are installed by `setup.sh`.
 
 ## Modules
 
@@ -71,6 +67,7 @@ Each module can be run independently. For example:
 
 ```bash
 # Run ICB analysis
+/project/orien/data/aws/24PRJ217UVA_IORIG/Understanding_How_Sex_Impacts_Recovery_From_Tumors/miniconda3/envs/ici_sex/bin/python run_icb_analysis.py
 python -m src.icb_analysis.icb_main --verify-icb-targets
 
 # Run CD8 group analysis
