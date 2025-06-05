@@ -283,8 +283,7 @@ def main():
             # Import function to generate clinical data if needed
             try:
                 print("Attempting to load raw clinical data...")
-                from data_processing.eda import load_clinical_data as load_raw_clinical_data
-                clinical_data, _ = load_raw_clinical_data(base_path)
+                clinical_data = load_clinical_data(base_path)
                 if clinical_data is not None:
                     print(f"Successfully loaded raw clinical data for {len(clinical_data)} patients")
                     # Save the generated clinical data for future use

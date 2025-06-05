@@ -661,8 +661,12 @@ class ICBAnalysis:
                 else:
                     possible_cols = [col for col in merged_data.columns if 'event' in col.lower() or 'death' in col.lower() or 'dead' in col.lower()]
                     if possible_cols:
-                        print(f"Using '{possible_cols[0]}' as OS_EVENT")
-                        merged_data['OS_EVENT'] = merged_data[possible_cols[0]].astype(int)
+                        print(f"Using '{possible_cols[0]}' as OS_EVENT (coerced)")
+                        merged_data['OS_EVENT'] = (
+                            pd.to_numeric(merged_data[possible_cols[0]], errors="coerce")
+                              .fillna(0)           # treat unknown / NA as “no event”
+                              .astype(int)
+                        )
                     else:
                         print("Warning: No suitable column for OS_EVENT found. Creating dummy values.")
                         merged_data['OS_EVENT'] = np.random.binomial(1, 0.3, size=len(merged_data))
@@ -2433,9 +2437,6 @@ class ICBAnalysis:
             ["BKNQ12WAZE", 89.83267441860454, 30.619375, 0.34084518080959997, -1.5528115098821604],
             ["R2TNVTF684", 71.72889534883717, 45.69031249999999, 0.6369772641908739, -0.6506862160077564]
         ]
-        
-        # Combine the data
-        data.extend(more_data)
         
         # Create DataFrame with columns matching those in the file
         cd8_scores = pd.DataFrame(data, columns=['PATIENT_ID', 'CD8_B', 'CD8_G', 'CD8_GtoB_ratio', 'CD8_GtoB_log'])
