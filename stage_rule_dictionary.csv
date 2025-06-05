@@ -1,0 +1,32 @@
+StageRuleHit,Description
+CUT1,This rule applies when PathGroupStage contains IV and assigns stage IV for cutaneous melanoma.
+CUT2,This rule applies when ClinGroupStage contains IV while PathGroupStage is unknown or inapplicable and assigns stage IV for cutaneous melanoma.
+CUT3,This rule applies to a metastatic specimen collected from a site that is not skin, lymph node, soft tissue, muscle, parotid, chest wall, head, or scalp and assigns stage IV for cutaneous melanoma.
+CUT4,This rule applies to a lymph-node specimen when regional or Not Otherwise Specified (NOS) nodal spread from a cutaneous primary tumor was present at or before specimen collection, and thus the value of field PathGroupStage is III, and assigns stage III.
+CUT5,This rule applies to a lymph-node specimen representing regional nodal recurrence in a patient, with a value of PathGroup stage not equal to "III" or "IV", a value of ClinGroupStage not equal to "IV", and no distant nodal metastases at or before specimen collection, and assigns stage III.
+CUT6,This rule applies to a lymph-node specimen that represents a distant nodal recurrence and whose value of PathGroupStage is not "IV" and assigns stage IV.
+CUT7,This rule applies to a parotid specimen that represents distant recurrence and assigns stage IV.
+CUT8,This rule applies to a parotid specimen with regional or NOS nodal disease and assigns stage III.
+CUT9,This rule applies to a metastatic cutaneous or soft-tissue specimen associated with distant or NOS metastasis that occurred before specimen collection and assigns stage IV.
+CUT10,This rule applies to a metastatic cutaneous or soft-tissue specimen associated with regional or NOS metastasis and assigns stage III.
+CUT11,This rule applies to a primary cutaneous specimen collected at or after distant metastasis and assigns stage IV.
+CUT12P,This fallback rule uses the numeric stage recorded in PathGroupStage for cutaneous melanoma and yields stage I, II, or III, since CUT1 would have been applied if PathGroupStage contained IV.
+CUT12C,This fallback rule uses the numeric stage recorded in ClinGroupStage when PathGroupStage lacks a numerical stage for cutaneous melanoma and yields stage I, II, or III, since CUT2 would have been applied if ClinGroupStage contained IV and PathGroupStage lacks a numerical stage for cutaneous melanoma.
+CUT-UNK,This placeholder indicates that no cutaneous staging rule could be applied.
+OC1,This rule applies when PathGroupStage contains IV and assigns stage IV for ocular melanoma.
+OC2,This rule applies when ClinGroupStage contains IV while PathGroupStage is unknown or inapplicable and assigns stage IV for ocular melanoma.
+OC3,This rule triggers when distant metastases are documented at or before specimen collection and assigns stage IV for ocular melanoma.
+OC4,This rule applies to a lymph-node specimen of ocular origin with regional or NOS recurrence and no distant metastasis and assigns stage III.
+OC-UNK,This placeholder indicates that no ocular staging rule could be applied.
+MU1,This rule applies when PathGroupStage contains IV and assigns stage IV for mucosal melanoma.
+MU2,This rule applies when ClinGroupStage contains IV while PathGroupStage is unknown or inapplicable and assigns stage IV for mucosal melanoma.
+MU3P,This rule applies to a primary mucosal specimen if PathGroupStage contains I, II, or III and assigns the numeric stage I, II, or III from PathGroupStage.
+MU3C,This rule applies to a primary mucosal specimen when PathGroupStage lacks a numerical stage and assigns the numeric stage I, II, or III from ClinGroupStage.
+MU3M,This rule applies to a metastatic mucosal specimen with no evidence of past, present, or future distant metastases and with a value of PathGroupStage not equal to "IV" and assigns stage III.
+MU4,This rule applies when distant metastases are present in mucosal melanoma and assigns stage IV.
+MU-UNK,This placeholder indicates that no mucosal staging rule could be applied.
+UN1,This rule applies when PathGroupStage contains IV and assigns stage IV for melanoma with an unknown primary tumor.
+UN2,This rule applies when ClinGroupStage contains IV while PathGroupStage is unknown or inapplicable and assigns stage IV for melanoma with an unknown primary tumor.
+UN3P,This rule assigns the numeric stage I, II, or III from PathGroupStage for melanoma with an unknown primary tumor.
+UN3C,This rule assigns the numeric stage I, II, or III from ClinGroupStage when PathGroupStage lacks a numerical stage for melanoma with an unknown primary tumor.
+UN-UNK,This placeholder indicates that no staging rule could be applied for melanoma with an unknown primary tumor.
