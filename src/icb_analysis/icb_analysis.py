@@ -486,8 +486,74 @@ class ICBAnalysis:
                 return pd.DataFrame(columns=['PATIENT_ID', 'ICB_status', 'ICB_DRUG', 'ICB_start_age', 'ICB_class'])
     
     def get_icb_type(self, med_name):
-        """Stub for get_icb_type method"""
-        print("Placeholder: get_icb_type")
+        """
+        Return a canonical ICB drug name (or class keyword) for one
+        free-text medication entry.
+
+        * None  →   not an ICB agent
+        * “Pembrolizumab”, “Nivolumab”, … → canonical generic name
+        * “PD-1”, “PD-L1”, “CTLA-4” → mechanism keywords when only the
+          target is documented
+
+        The routine is **case-, spacing- and punctuation-insensitive** and
+        copes with combination strings such as
+        “Nivolumab / Ipilimumab” or “PD-1 + CTLA-4”.
+        """
+        if med_name is None or (isinstance(med_name, float) and np.isnan(med_name)):
+            return None
+
+        # Normalise: upper-case, strip accents & punctuation
+        name = str(med_name).upper()
+        # Quick wins for target keywords that sometimes appear alone
+        if re.search(r'\bPD[ \-]?1\b', name):
+            return 'PD-1'
+        if re.search(r'\bPD[ \-]?L1\b', name):
+            return 'PD-L1'
+        if re.search(r'\bCTLA[ \-]?4\b', name):
+            return 'CTLA-4'
+
+        # Canonical mapping table (alias → preferred generic name)
+        alias_map = {
+            # Anti-PD-1
+            'PEMBROLIZUMAB':      'Pembrolizumab',
+            'KEYTRUDA':           'Pembrolizumab',
+            'MK3475':             'Pembrolizumab',
+
+            'NIVOLUMAB':          'Nivolumab',
+            'OPDIVO':             'Nivolumab',
+            'BMS936558':          'Nivolumab',
+
+            'CEMIPLIMAB':         'Cemiplimab',
+            'LIBTAYO':            'Cemiplimab',
+
+            'DOSTARLIMAB':        'Dostarlimab',
+            'JEMPERLI':           'Dostarlimab',
+
+            # Anti-PD-L1
+            'ATEZOLIZUMAB':       'Atezolizumab',
+            'TECENTRIQ':          'Atezolizumab',
+
+            'DURVALUMAB':         'Durvalumab',
+            'IMFINZI':            'Durvalumab',
+
+            'AVELUMAB':           'Avelumab',
+            'BAVENCIO':           'Avelumab',
+
+            # Anti-CTLA-4
+            'IPILIMUMAB':         'Ipilimumab',
+            'YERVOY':             'Ipilimumab',
+
+            'TREMELIMUMAB':       'Tremelimumab',
+        }
+
+        # Many rows record multiple agents (“NIVO + IPI”, “PEMBRO/ATEZO”, …)
+        # → split on common separators and look each piece up.
+        pieces = re.split(r'[\s,+;/\\|-]+', name)
+        for piece in pieces:
+            if piece in alias_map:
+                return alias_map[piece]
+
+        # Fallback: no recognised ICB drug
         return None
     
     def classify_icb_mechanism(self, med_name):
