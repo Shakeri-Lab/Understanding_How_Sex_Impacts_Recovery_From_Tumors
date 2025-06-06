@@ -197,10 +197,15 @@ class ICBAnalysis:
                 return medication_data
                 
             # Try standard paths
+            '''
             standard_paths = [
                 "/sfs/gpfs/tardis/project/orien/data/aws/24PRJ217UVA_IORIG/processed_data/medications.csv",
                 "/sfs/gpfs/tardis/project/orien/data/aws/24PRJ217UVA_IORIG/data/medications.csv",
                 "/sfs/gpfs/tardis/project/orien/data/aws/24PRJ217UVA_IORIG/codes/processed_data/medications.csv"
+            ]
+            '''
+            standard_paths = [
+                "/sfs/gpfs/tardis/project/orien/data/aws/24PRJ217UVA_IORIG/Clinical_Data/24PRJ217UVA_NormalizedFiles/24PRJ217UVA_20241112_Medications_V4.csv"
             ]
             
             # Add paths based on self.base_path if available
