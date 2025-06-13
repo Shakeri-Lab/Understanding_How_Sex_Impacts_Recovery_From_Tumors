@@ -470,7 +470,8 @@ def main():
             
             if len(overlap) > 0:
                 # Filter to only include patients in the overlap
-                cd8_scores = cd8_scores[cd8_scores['PATIENT_ID'].isin(overlap)]
+                cd8_scores = cd8_scores[cd8_scores['PATIENT_ID'].isin(overlap)].drop_duplicates(subset = ["PATIENT_ID"], ignore_index = True)
+                # TODO: Consider averaging numbers for patient with multiple rows.
                 print(f"Filtered CD8 scores to {len(cd8_scores)} patients with clinical data")
             else:
                 print("No overlap between clinical patients and CD8 scores. Creating one-to-one mapping.")
