@@ -310,6 +310,20 @@ def main():
         clinical_data = None
 
     if clinical_data is not None:
+        '''
+        Create a column `OS_TIME` of overall survival times and `OS_EVENT` of survival event indicators for survival analysis.
+        In column `OS_EVENT`, 1 indicates an event of death and 0 indicates right censoring.
+        In column `OS_TIME`, a floating point number represents overall survival time in years.
+        When death is recorded, calculate overall survival time as the difference between age at death and age at diagnosis.
+        When death is not recorded, calculated overall survival time as the difference between age at last contact and age at diagnosis.
+        '''
+        clinical_data["AgeAtDeath"] = clinical_data["AgeAtDeath"].replace("Unknown/Not Applicable", pd.NA).replace("Age 90 or older", 90).astype(dtype = "Float32")
+        clinical_data["AgeAtDiagnosis"] = clinical_data["AgeAtDiagnosis"].replace("Age Unknown/Not Recorded", pd.NA).replace("Age 90 or older", 90).astype(dtype = "Float32")
+        clinical_data["AgeAtLastContact"] = clinical_data["AgeAtLastContact"].replace("Age 90 or older", 90).astype(dtype = "Float32")
+        clinical_data["OS_EVENT"] = np.where(clinical_data["VitalStatus"].str.lower() == "alive", 0, 1)
+        clinical_data["OS_TIME"] = np.where(clinical_data["OS_EVENT"] == 1, clinical_data["AgeAtDeath"] - clinical_data["AgeAtDiagnosis"], clinical_data["AgeAtLastContact"] - clinical_data["AgeAtDiagnosis"])
+        clinical_data.to_csv("clinical_data.csv")
+        
         # Filter for melanoma patients if cancer type information is available
         if 'CancerType' in clinical_data.columns:
             melanoma_patients = clinical_data[clinical_data['CancerType'] == 'Melanoma']
