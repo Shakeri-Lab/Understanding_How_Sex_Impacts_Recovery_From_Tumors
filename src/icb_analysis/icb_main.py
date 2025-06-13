@@ -322,7 +322,6 @@ def main():
         clinical_data["AgeAtLastContact"] = clinical_data["AgeAtLastContact"].replace("Age 90 or older", 90).astype(dtype = "Float32")
         clinical_data["OS_EVENT"] = np.where(clinical_data["VitalStatus"].str.lower() == "alive", 0, 1)
         clinical_data["OS_TIME"] = np.where(clinical_data["OS_EVENT"] == 1, clinical_data["AgeAtDeath"] - clinical_data["AgeAtDiagnosis"], clinical_data["AgeAtLastContact"] - clinical_data["AgeAtDiagnosis"])
-        clinical_data.to_csv("clinical_data.csv")
         
         # Filter for melanoma patients if cancer type information is available
         if 'CancerType' in clinical_data.columns:

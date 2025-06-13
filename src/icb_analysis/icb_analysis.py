@@ -1685,13 +1685,70 @@ class ICBAnalysis:
         return
     
     def simplify_stage(self, stage):
-        """Stub for simplify_stage method"""
-        print("Placeholder: simplify_stage")
-        return 0
-    
+        """
+        Convert a free-text stage string (‘Stage IIIA’, ‘pT2N1 IVB’, …) into a
+        *numeric* stage 0-4.  
+        Returns np.nan when the input is missing or unrecognisable.
+        """
+        if stage is None or (isinstance(stage, float) and np.isnan(stage)):
+            return np.nan
+
+        s = str(stage).upper()
+        s = re.sub(r'[^A-Z0-9]', ' ', s)          # keep only letters & digits
+        s = s.replace('STAGE', ' ')               # drop the word “STAGE”
+        s = ' '.join(s.split())                   # normalise whitespace
+
+        # 1. catch explicit Arabic “0/1/2/3/4” first
+        m_digit = re.search(r'\b[0-4]\b', s)
+        if m_digit:
+            return int(m_digit.group())
+
+        # 2. fall back to Roman numerals
+        _ROMAN_RE = re.compile(r'\b(0|IV|III|II|I)\b')   # greedy → IV before I etc.
+        m_roman = _ROMAN_RE.search(s)
+        if m_roman:
+            key = m_roman.group()
+            _ROMAN_TO_INT = {
+                '0': 0,
+                'I': 1, 'IA': 1, 'IB': 1,
+                'II': 2, 'IIA': 2, 'IIB': 2, 'IIC': 2,
+                'III': 3, 'IIIA': 3, 'IIIB': 3, 'IIIC': 3,
+                'IV': 4, 'IVA': 4, 'IVB': 4, 'IVC': 4
+            }
+            return _ROMAN_TO_INT.get(key, np.nan)
+
+        # 3. give up
+        return np.nan
+
     def create_stage_simple(self, data):
-        """Stub for create_stage_simple method"""
-        print("Placeholder: create_stage_simple")
+        """
+        Adds a numeric `STAGE_SIMPLE` column to *data* and returns the same
+        DataFrame.
+
+        Precedence of candidate columns (first non-null wins per row):
+        PathGroupStage → ClinGroupStage → StageAtDiagnosis → Stage
+        """
+        if not isinstance(data, pd.DataFrame):
+            raise TypeError("create_stage_simple expects a pandas DataFrame")
+
+        # columns seen across ORIEN & TCGA‐style files
+        candidate_cols = [
+            'PathGroupStage', 'ClinGroupStage',
+            'StageAtDiagnosis', 'STAGE', 'Stage', 'stage', 'stage_simple_raw'
+        ]
+        existing = [c for c in candidate_cols if c in data.columns]
+        if not existing:
+            # no stage columns at all – create an all-nan column and return
+            data['STAGE_SIMPLE'] = np.nan
+            return data
+
+        # row-by-row choose first non-null raw value
+        stage_raw = data[existing].bfill(axis=1).iloc[:, 0]
+        data['STAGE_RAW'] = stage_raw
+
+        # vectorised simplification
+        data['STAGE_SIMPLE'] = stage_raw.apply(self.simplify_stage).astype('float')
+
         return data
     
     def analyze_survival_by_icb_treatment(self, merged_data):
