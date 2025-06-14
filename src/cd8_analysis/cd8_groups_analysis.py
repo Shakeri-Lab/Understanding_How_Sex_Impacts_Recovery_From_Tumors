@@ -20,7 +20,7 @@ from sklearn.metrics import silhouette_score
 # Add parent directory to path to allow imports from other modules
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from cd8_analysis.cd8_analysis import CD8Analysis
+from cd8_analysis import CD8Analysis
 from utils.shared_functions import load_rnaseq_data, load_clinical_data, filter_by_diagnosis
 
 class CD8GroupAnalysis(CD8Analysis):
@@ -39,7 +39,23 @@ class CD8GroupAnalysis(CD8Analysis):
         for directory in [self.output_dir, self.plots_dir, self.results_dir]:
             os.makedirs(directory, exist_ok=True)
         
-        # Define CD8 T cell groups and their marker genes
+        '''
+        Define CD8 T cell groups and their marker genes
+        CD8_A is a classical cytotoxic / effector described in Sade-Feldman et al. 2018 and Li e al. 2023.
+        TODO: Reword "classical cytotoxic / effector".
+        CD8_B is an exhausted / inhibitory-receptor-hi described in Sade-Feldman et al. 2018.
+        TODO: Reword "exhausted / inhibitory-receptor-hi".
+        CD8_C is a TCM / TPEX (memory-like, IL-7R-hi) described in Beltra et al. 2020.
+        TODO: Reword "TCM / TPEX (memory-like, IL-7R-hi)".
+        CD8_D is an NR4A-driven exhaustion described in Chen et al. 2019.
+        TODO: Reword "NR4A-driven exhaustion".
+        CD8_E is a transitional / tissue-resident described in Wu et al. 2021.
+        TODO: Reword "transitional / tissue-resident".
+        CD8_F is a cytotoxic NK-like described in Guo et al. 2018.
+        TODO: Reword "cytotoxic NK-like".
+        CD8_G is a cycling / proliferative described in Li et al. 2023.
+        TODO: Reword "cycling / proliferative".
+        '''
         self.cd8_groups = {
             'CD8_A': ['CD8A', 'CD8B', 'GZMA', 'GZMB', 'PRF1', 'IFNG'],
             'CD8_B': ['ENTPD1', 'PDCD1', 'CTLA4', 'LAG3', 'HAVCR2', 'TIGIT'],
