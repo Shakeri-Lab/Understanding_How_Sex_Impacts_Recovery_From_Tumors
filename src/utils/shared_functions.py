@@ -272,6 +272,13 @@ def calculate_survival_months(df, age_at_diagnosis_col='AGE_AT_DIAGNOSIS',
             return result_df
         
         # Calculate survival months
+        for col in [age_at_diagnosis_col, age_at_last_contact_col, age_at_death_col]:
+            if col in result_df.columns:
+                result_df[col] = pd.to_numeric(result_df[col], errors = "coerce")
+                
+        if vital_status_col in result_df.columns:
+            result_df[vital_status_col] = result_df[vital_status_col].astype(str).str.strip().str.capitalize()
+        
         result_df['survival_months'] = np.nan
         
         # For deceased patients
@@ -292,8 +299,10 @@ def calculate_survival_months(df, age_at_diagnosis_col='AGE_AT_DIAGNOSIS',
         
         # Add event indicator (1 for death, 0 for censored)
         result_df['event'] = (result_df[vital_status_col] == 'Dead').astype(int)
+
+        result_df.loc[result_df["survival_months"] <= 0, "survival_months"] = np.nan
         
-        # Count patients with survival data
+        # Count patients with usable survival data
         survival_count = result_df['survival_months'].notna().sum()
         print(f"Calculated survival months for {survival_count} patients")
         

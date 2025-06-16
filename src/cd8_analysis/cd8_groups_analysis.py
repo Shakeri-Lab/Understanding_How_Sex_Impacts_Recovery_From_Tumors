@@ -21,7 +21,7 @@ from sklearn.metrics import silhouette_score
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from cd8_analysis import CD8Analysis
-from utils.shared_functions import load_rnaseq_data, load_clinical_data, filter_by_diagnosis, filter_by_primary_diagnosis_site, map_sample_ids
+from utils.shared_functions import calculate_survival_months, filter_by_diagnosis, filter_by_primary_diagnosis_site, load_clinical_data, load_rnaseq_data, map_sample_ids
 
 class CD8GroupAnalysis(CD8Analysis):
     """Analyzes CD8+ T cell signatures and groups"""
@@ -643,19 +643,21 @@ class CD8GroupAnalysis(CD8Analysis):
             # Initialize Kaplan-Meier fitter
             kmf = KaplanMeierFitter()
             
+            clean = merged.loc[:, ["OS_MONTHS", "event", group_col]].dropna(subset = ["OS_MONTHS", "event"]).query("OS_MONTHS > 0")
+            
             # Plot survival curve for each group
-            for group in sorted(merged[group_col].unique()):
-                group_data = merged[merged[group_col] == group]
+            for group in sorted(clean[group_col].unique()):
+                group_data = clean[clean[group_col] == group]
                 
-                # Skip if not enough samples
+                # Skip if not enough samples after cleaning
                 if len(group_data) < 10:
                     continue
                 
                 # Fit survival curve
                 kmf.fit(
-                    group_data['OS_MONTHS'],
-                    group_data['event'],
-                    label=f'{group} (n={len(group_data)})'
+                    durations = group_data['OS_MONTHS'].astype(float),
+                    event_observed = group_data['event'].astype(int),
+                    label = f"{group} (n={len(group_data)})"
                 )
                 
                 # Plot survival curve
@@ -728,6 +730,17 @@ class CD8GroupAnalysis(CD8Analysis):
             if clinical_data is None:
                 return None
             
+            clinical_data = calculate_survival_months(
+                clinical_data,
+                age_at_diagnosis_col = "AgeAtDiagnosis",
+                age_at_last_contact_col = "AgeAtLastContact",
+                age_at_death_col = "AgeAtDeath",
+                vital_status_col = "VitalStatus"
+            )
+            
+            clinical_data = clinical_data.rename(columns = {"survival_months": "OS_MONTHS"})
+            clinical_data["OS_STATUS"] = clinical_data["event"].map({1: "DECEASED", 0: "ALIVE"})
+            
             # Analyze clusters by sex
             self.analyze_clusters_by_sex(scores_with_clusters, clinical_data)
             
@@ -735,6 +748,8 @@ class CD8GroupAnalysis(CD8Analysis):
             self.analyze_clusters_by_diagnosis(scores_with_clusters, clinical_data)
             
             # Analyze survival by cluster
+            scores_with_clusters.to_csv("scores_with_clusters.csv")
+            clinical_data.to_csv("clinical_data.csv")
             self.analyze_survival_by_cluster(scores_with_clusters, clinical_data)
             
             print("\nCD8 group analysis complete!")
