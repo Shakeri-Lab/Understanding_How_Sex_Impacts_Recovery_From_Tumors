@@ -310,7 +310,7 @@ class CD8GroupAnalysis(CD8Analysis):
             # Create cluster distribution by sex
             cluster_by_sex = pd.crosstab(
                 merged['cluster'],
-                merged['SEX'],
+                merged['Sex'],
                 normalize='columns'
             ) * 100
             
@@ -333,7 +333,7 @@ class CD8GroupAnalysis(CD8Analysis):
             summary = []
             
             for sex in ['Male', 'Female']:
-                sex_data = merged[merged['SEX'] == sex]
+                sex_data = merged[merged['Sex'] == sex]
                 
                 for feature in ['CD8_B', 'CD8_G', 'CD8_GtoB_ratio', 'CD8_GtoB_log']:
                     if feature in sex_data.columns:
@@ -425,8 +425,8 @@ class CD8GroupAnalysis(CD8Analysis):
                     continue
                 
                 # Get data by sex
-                male = merged[merged['SEX'] == 'Male'][feature]
-                female = merged[merged['SEX'] == 'Female'][feature]
+                male = merged[merged['Sex'] == 'Male'][feature]
+                female = merged[merged['Sex'] == 'Female'][feature]
                 
                 # Skip if not enough samples
                 if len(male) < 10 or len(female) < 10:
