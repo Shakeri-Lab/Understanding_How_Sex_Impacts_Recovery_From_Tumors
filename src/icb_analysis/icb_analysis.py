@@ -15,6 +15,7 @@ from scipy import stats
 from lifelines import KaplanMeierFitter, CoxPHFitter
 from lifelines.statistics import logrank_test  # Correct import for logrank_test
 from lifelines.plotting import add_at_risk_counts
+from lifelines.exceptions import ConvergenceError
 from sklearn.linear_model import LogisticRegression
 from sklearn.neighbors import NearestNeighbors
 import re
@@ -22,6 +23,15 @@ from sklearn.preprocessing import StandardScaler
 import matplotlib.gridspec as gridspec
 import warnings
 import glob
+
+def _clean_design_matrix(df, duration_col, event_col):
+    X = df.drop([duration_col, event_col], axis = 1)
+    X = X.loc[:, X.apply(pd.Series.nunique) > 1]
+    corr = X.corr().abs()
+    upper = corr.where(np.triu(np.ones(corr.shape), k = 1).astype(bool))
+    cols_to_drop = [c for c in upper.columns if any(upper[c] == 1)]
+    X = X.drop(columns = cols_to_drop)
+    return pd.concat([df[[duration_col, event_col]], X], axis = 1)
 
 # Add parent directory to path to allow imports from other modules
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -1042,8 +1052,31 @@ class ICBAnalysis:
             print(f"Cox model formula: {formula}")
             
             # Use lifelines CoxPHFitter for the analysis
-            cph = CoxPHFitter()
-            cph.fit(data, duration_col='OS_TIME', event_col='OS_EVENT', formula=formula)
+            data["TME_binary"] = (data[tme_feature] > median_value).astype(int)
+            data["ICB_binary"] = (data["ICB_status"] == "Received").astype(int)
+            
+            data["TME_ICB"] = data["TME_binary"] * data["ICB_binary"]
+            data["TME_SEX"] = data["TME_binary"] * data["SEX_numeric"]
+            data["ICB_SEX"] = data["ICB_binary"] * data["SEX_numeric"]
+            data["TME_ICB_SEX"] = data["TME_binary"] * data["ICB_binary"] * data["SEX_numeric"]
+            
+            covariates = ["TME_binary", "ICB_binary", "SEX_numeric", "TME_ICB", "TME_SEX", "ICB_SEX", "TME_ICB_SEX"]
+            if "STAGE_SIMPLE" in data.columns:
+                data["STAGE_SIMPLE"] = pd.to_numeric(data["STAGE_SIMPLE"], errors = "coerce")
+                covariates.append("STAGE_SIMPLE")
+            
+            fit_cols = ["OS_TIME", "OS_EVENT"] + covariates
+            fit_data = data[fit_cols].apply(pd.to_numeric, errors = "coerce").dropna()
+            fit_data = _clean_design_matrix(fit_data, "OS_TIME", "OS_EVENT")
+            print(f"[Cox] fitting on {len(fit_data)} of {len(data)} rows after dropping rows with missing covariates")
+            
+            cph = CoxPHFitter(penalizer = 0.1)
+            try:
+                cph.fit(fit_data, duration_col = "OS_TIME", event_col = "OS_EVENT", robust = True)
+            except ConvergenceError:
+                if "TME_ICB_SEX" in fit_data.columns:
+                    fit_data = fit_data.drop(columns = ["TME_ICB_SEX"])
+                cph.fit(fit_data, duration_col = "OS_TIME", event_col = "OS_EVENT", robust = True)
             
             # Print results
             print(cph.summary)
@@ -1051,7 +1084,7 @@ class ICBAnalysis:
             # Store results
             results['cox_model'] = cph
             results['cox_summary'] = cph.summary
-            results['interaction_pvalue'] = cph.summary.loc['TME_binary:ICB_binary:SEX_numeric', 'p']
+            results['interaction_pvalue'] = cph.summary.loc["TME_ICB_SEX", "p"] if "TME_ICB_SEX" in cph.params_.index else np.nan
             
             # Save results to CSV
             try:
