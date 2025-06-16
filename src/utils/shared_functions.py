@@ -459,7 +459,14 @@ def create_id_mapping(base_path):
         print(traceback.format_exc())
         return {}
 
-def map_sample_ids(scores, base_path):
+def _clean_id(x: str) -> str:
+    '''
+    Remove run-specific affixes and standardize lab IDs.
+    '''
+    x = str(x)
+    return x.replace("-RNA", '').replace("FT-", '').replace("SA", "SL")
+    
+def map_sample_ids(scores: pd.DataFrame, base_path: str) -> pd.DataFrame:
     """
     Map RNA-seq sample IDs to patient IDs
     
@@ -479,8 +486,7 @@ def map_sample_ids(scores, base_path):
         print("\nMapping RNA-seq sample IDs to patient IDs...")
         
         # Load QC metrics file with correct name
-        qc_file = os.path.join(base_path, 
-                              "Manifest_and_QC_Files/24PRJ217UVA_20250130_RNASeq_QCMetrics.csv")
+        qc_file = os.path.join(base_path, "Manifest_and_QC_Files/24PRJ217UVA_20250130_RNASeq_QCMetrics.csv")
         qc_data = pd.read_csv(qc_file)
         
         # Print sample of QC data
@@ -488,17 +494,7 @@ def map_sample_ids(scores, base_path):
         print(qc_data[['SLID', 'ORIENAvatarKey']].head())
         
         # Create mapping dictionary
-        id_map = {}
-        for _, row in qc_data.iterrows():
-            lab_id = row['SLID']
-            # Remove -RNA suffix if present
-            lab_id = lab_id.replace('-RNA', '')
-            # Handle FT- prefix
-            if 'FT-' in lab_id:
-                lab_id = lab_id.replace('FT-', '')
-            # Handle SA/SL variations
-            lab_id = lab_id.replace('SA', 'SL')
-            id_map[lab_id] = row['ORIENAvatarKey']
+        id_map = {_clean_id(row["SLID"]): row["ORIENAvatarKey"] for _, row in qc_data.iterrows()}
         
         # Print sample of mapping
         print("\nSample ID mappings:")
@@ -507,10 +503,10 @@ def map_sample_ids(scores, base_path):
         
         # Clean score IDs
         orig_ids = scores.index.copy()
-        scores.index = scores.index.map(lambda x: x.replace('FT-', '').replace('SA', 'SL'))
+        scores.index = scores.index.map(_clean_id)
         
         # Map to patient IDs
-        scores.index = [id_map.get(x, x) for x in scores.index]
+        scores.index = scores.index.map(lambda x: id_map.get(x, x))
         
         # Print mapping results
         print("\nID mapping results:")
