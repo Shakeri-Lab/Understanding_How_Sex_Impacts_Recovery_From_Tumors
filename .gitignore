@@ -1,7 +1,6 @@
 __pycache__
 .ipynb_checkpoints
 aggregated_contents.txt
-data
 miniconda3
 output
 output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors.csv
@@ -36,5 +35,5 @@ output_old/plots/EDA
 output_old/processed_data
 output_old/sex_analysis
 output_old/*.csv
-src/processed_data
+processed_data
 src/icb_analysis/icb_analysis.py.bak

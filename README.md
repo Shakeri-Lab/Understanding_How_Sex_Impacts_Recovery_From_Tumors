@@ -6,19 +6,19 @@ This repository contains code for analyzing sex-based differences in immune chec
 
 ```
 project_root/
-├── data/                  # Data directory
-│   └── processed_data     # Processed data files
-├── docs/                  # Documentation
-├── output/                # Analysis outputs and results
-├── src/                   # Source code
-│   ├── cd8_analysis/      # CD8+ T cell analysis
-│   ├── data_processing/   # Data processing utilities
-│   ├── icb_analysis/      # Immune checkpoint blockade analysis
-│   ├── immune_analysis/   # Immune signature analysis
-│   ├── sex_stratified/    # Sex-stratified analysis
-│   └── utils/             # Shared utility functions
-├── requirements.txt       # Python dependencies
-└── setup.sh               # Environment setup script
+├── docs/                                   # Documentation
+├── output/                                 # Analysis outputs and results
+├── pair_clinical_data_and_stages_of_tumors # Pipeline for pairing clinical data and stages of tumors as well as specification, description, dictionary, and testing
+├── processed_data/                         # Processed data files
+├── src/                                    # Source code
+│   ├── cd8_analysis/                       # CD8+ T cell analysis
+│   ├── data_processing/                    # Data processing utilities
+│   ├── icb_analysis/                       # Immune checkpoint blockade analysis
+│   ├── immune_analysis/                    # Immune signature analysis
+│   ├── sex_stratified/                     # Sex-stratified analysis
+│   └── utils/                              # Shared utility functions
+├── requirements.txt                        # Python dependencies
+└── setup.sh                                # Environment setup script
 ```
 
 ## Setup
@@ -51,7 +51,7 @@ Analysis of CD8+ T cell signatures in RNA-seq data. See [CD8 Analysis README](do
 
 ### ICB Analysis
 
-Analysis of immune checkpoint blockade medications and their relationship with CD8+ T cell signatures. See [ICB Analysis README](docs/icb_cd8_report.md) for details.
+Analysis of immune checkpoint blockade medications and their relationship with CD8+ T cell signatures. See [ICB Analysis README](src/icb_analysis/README.md) for details.
 
 ### Immune Analysis
 
@@ -67,8 +67,7 @@ Each module can be run independently. For example:
 
 ```bash
 # Run ICB analysis
-/project/orien/data/aws/24PRJ217UVA_IORIG/Understanding_How_Sex_Impacts_Recovery_From_Tumors/miniconda3/envs/ici_sex/bin/python run_icb_analysis.py
-python -m src.icb_analysis.icb_main --verify-icb-targets
+python -m src.icb_analysis.icb_main
 
 # Run CD8 group analysis
 python src/cd8_analysis/cd8_groups_analysis.py
@@ -76,9 +75,9 @@ python src/cd8_analysis/cd8_groups_analysis.py
 
 See individual module READMEs for more details.
 
-## Data
+## Processed Data
 
-The data directory contains processed data files used in the analyses. Raw data is not included in this repository.
+The processed data directory contains processed data files used in the analyses. Raw data is not included in this repository.
 
 ## Results
 

@@ -4,17 +4,20 @@ This module contains scripts for analyzing immune checkpoint blockade (ICB) medi
 
 ## Files
 
-- `icb_main.py`: Main script for running ICB analysis.
+- `__init__.py`: ICB Analysis package initialization
+- `group_analysis.py`: ?
+- `group_data_loader.py`: ?
 - `icb_analysis.py`: Core ICB analysis functions.
 - `icb_data_loader.py`: Loads and processes data for ICB analysis.
-- `icb_treatment_identifier.py`: Identifies ICB treatments from medication data.
+- `icb_main.py`: Main script for running ICB analysis.
+- `README.md`: This document
 
 ## Usage
 
 Run ICB analysis from directory Understanding How Sex Impacts Recovery From Tumors via
 
 ```bash
-python -m src.icb_analysis.icb_main --base-path /project/orien/data/aws/24PRJ217UVA_IORIG/Understanding_How_Sex_Impacts_Recovery_From_Tumors/data
+python -m src.icb_analysis.icb_main
 ```
 
 ### Options
