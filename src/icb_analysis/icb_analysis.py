@@ -2022,8 +2022,20 @@ class ICBAnalysis:
                     cox_data['stage'] = np.concatenate([treated_stage, untreated_stage])
                 
                 # Fit Cox model
+                cox_data = cox_data.apply(pd.to_numeric, errors = "coerce")
+                
+                cox_data.replace([np.inf, -np.inf], np.nan, inplace = True)
+                
+                n0 = len(cox_data)
+                cox_data.dropna(inplace = True)
+                print(f"[Cox] removed {n0 - len(cox_data)} rows containing non-numeric or infinite values")
+                
+                if cox_data.empty:
+                    print("[Cox] no complete cases after cleaning - skipping Cox analysis")
+                    return results
+                
                 cph = CoxPHFitter()
-                cph.fit(cox_data, duration_col='time', event_col='event')
+                cph.fit(cox_data, duration_col = 'time', event_col = 'event')
                 
                 # Print summary
                 print("\nCox proportional hazards model results:")
