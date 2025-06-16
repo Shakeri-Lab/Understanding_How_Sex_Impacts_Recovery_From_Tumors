@@ -28,7 +28,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # Use absolute imports
 from icb_analysis.icb_analysis import ICBAnalysis
 from cd8_analysis.cd8_groups_analysis import CD8GroupAnalysis
-from utils.shared_functions import load_rnaseq_data, load_clinical_data
+from utils.shared_functions import load_rnaseq_data, load_clinical_data, map_sample_ids
 from data_processing.utils import create_map_from_qc
 
 def parse_args():
@@ -414,12 +414,12 @@ def main():
         print("Loading CD8 group scores...")
         
         # CD8 scores loading section
-        cd8_scores_path = None
+        cd8_scores_path = "/sfs/gpfs/tardis/project/orien/data/aws/24PRJ217UVA_IORIG/output/cd8_groups_analysis/results/cd8_group_scores.csv"
         cd8_scores = None
         
         try:
             # First try using the class method (our improved implementation)
-            cd8_scores = icb_analysis.load_cd8_scores(clinical_data=clinical_data)
+            cd8_scores = icb_analysis.load_cd8_scores(cd8_file = cd8_scores_path, clinical_data = clinical_data)
             
             # If that fails, fall back to manual loading
             if cd8_scores is None or len(cd8_scores) == 0:
@@ -473,6 +473,17 @@ def main():
                 print(f"Adding {args.tme_feature} as random values for testing...")
                 # Add as random values for testing
                 cd8_scores[args.tme_feature] = np.random.rand(len(cd8_scores))
+            
+            if "SAMPLE_ID" not in cd8_scores.columns and "PATIENT_ID" in cd8_scores.columns:
+                cd8_scores = cd8_scores.rename(columns = {"PATIENT_ID": "SAMPLE_ID"})
+            try:
+                _tmp = cd8_scores.set_index("SAMPLE_ID")
+                _tmp = map_sample_ids(_tmp, base_path)
+                _tmp["PATIENT_ID"] = _tmp.index
+                cd8_scores = _tmp.reset_index().rename(columns = {"index": "SAMPLE_ID"})
+            except Exception as e:
+                print(f"[WARN] sample-to-patient mapping failed ({e}); falling back to identity mapping.")
+                cd8_scores["PATIENT_ID"] = cd8_scores["SAMPLE_ID"]
             
             # Check overlap with clinical data
             clinical_patients = set(clinical_data['PATIENT_ID'])
@@ -624,11 +635,8 @@ def main():
                     icb_analysis.analyze_tme_icb_survival_by_sex(matched_data, cd8_scores, 'CD8_G',
                                                                 confounders=['AGE', 'STAGE_SIMPLE', 'TMB'])
 
-            # At the end of the analysis, verify ICB targets
-            if icb_data is not None:
-                icb_analysis.verify_icb_targets(icb_data)
-            else:
-                print("No medication data available for verifying ICB targets")
+            icb_data = icb_analysis.load_medication_data()
+            icb_analysis.verify_icb_targets(icb_data)
 
     print("\nICB analysis complete")
 

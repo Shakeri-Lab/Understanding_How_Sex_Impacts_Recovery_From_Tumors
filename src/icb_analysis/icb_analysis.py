@@ -27,7 +27,7 @@ import glob
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from cd8_analysis.cd8_groups_analysis import CD8GroupAnalysis
-from utils.shared_functions import load_rnaseq_data, load_clinical_data, filter_by_diagnosis, calculate_survival_months
+from utils.shared_functions import calculate_survival_months, filter_by_diagnosis, load_clinical_data, load_rnaseq_data
 
 class PropensityScore:
     """Class for propensity score matching to balance confounders between groups"""

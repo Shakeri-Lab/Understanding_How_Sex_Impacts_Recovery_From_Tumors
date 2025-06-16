@@ -475,7 +475,7 @@ def _clean_id(x: str) -> str:
     x = str(x)
     return x.replace("-RNA", '').replace("FT-", '').replace("SA", "SL")
     
-def map_sample_ids(scores: pd.DataFrame, base_path: str) -> pd.DataFrame:
+def map_sample_ids(scores: pd.DataFrame, base_path: str, id_col: str = "SAMPLE_ID") -> pd.DataFrame:
     """
     Map RNA-seq sample IDs to patient IDs
     
@@ -491,11 +491,12 @@ def map_sample_ids(scores: pd.DataFrame, base_path: str) -> pd.DataFrame:
     pd.DataFrame
         DataFrame with patient IDs as index
     """
+    
     try:
         print("\nMapping RNA-seq sample IDs to patient IDs...")
         
         # Load QC metrics file with correct name
-        qc_file = os.path.join(base_path, "Manifest_and_QC_Files/24PRJ217UVA_20250130_RNASeq_QCMetrics.csv")
+        qc_file = os.path.join(base_path, "/sfs/gpfs/tardis/project/orien/data/aws/24PRJ217UVA_IORIG/Manifest_and_QC_Files/24PRJ217UVA_20250130_RNASeq_QCMetrics.csv")
         qc_data = pd.read_csv(qc_file)
         
         # Print sample of QC data
