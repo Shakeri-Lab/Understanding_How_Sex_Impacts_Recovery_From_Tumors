@@ -11,15 +11,15 @@ This module contains scripts for analyzing immune checkpoint blockade (ICB) medi
 
 ## Usage
 
-To run the ICB analysis:
+Run ICB analysis from directory Understanding How Sex Impacts Recovery From Tumors via
 
 ```bash
-python icb_main.py [options]
+python -m src.icb_analysis.icb_main --base-path /project/orien/data/aws/24PRJ217UVA_IORIG/Understanding_How_Sex_Impacts_Recovery_From_Tumors/data
 ```
 
 ### Options
 
-- `--base-path PATH`: Base path for data files (default: `/project/orien/data/aws/24PRJ217UVA_IORIG`).
+- `--base-path PATH`: Base path for data files (default: `/project/orien/data/aws/24PRJ217UVA_IORIG/Understanding_How_Sex_Impacts_Recovery_From_Tumors`).
 - `--clinical-file PATH`: Path to clinical data file (default: searches in standard locations).
 - `--medication-file PATH`: Path to medication data file (default: searches in standard locations).
 - `--output-dir PATH`: Directory to save output files (default: `BASE_PATH/output/icb_analysis`).
