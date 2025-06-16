@@ -208,6 +208,52 @@ def filter_by_diagnosis(merged_data):
     
     return filtered_data
 
+# TODO: Integrate function `filter_by_primary_diagnosis_site` with function `filter_by_diagnosis`.
+def filter_by_primary_diagnosis_site(merged_data):
+    """
+    Filter out specific cancer types
+    
+    Parameters:
+    -----------
+    merged_data : pd.DataFrame
+        Merged data with clinical information
+        
+    Returns:
+    --------
+    pd.DataFrame
+        Filtered data
+    """
+    if 'PrimaryDiagnosisSite' not in merged_data.columns:
+        print("Warning: Cannot filter by diagnosis - PrimaryDiagnosisSite column not found")
+        return merged_data
+    
+    # Sites to exclude
+    exclude_sites = ['Prostate gland', 'Vulva, NOS']
+    
+    # Count before filtering
+    total_before = len(merged_data)
+    
+    # Filter out specified sites
+    filtered_data = merged_data[~merged_data['PrimaryDiagnosisSite'].isin(exclude_sites)]
+    
+    # Count after filtering
+    total_after = len(filtered_data)
+    excluded_count = total_before - total_after
+    
+    print(f"\nFiltering out specific cancer types:")
+    print(f"- Excluded: {exclude_sites}")
+    print(f"- Removed {excluded_count} patients ({excluded_count/total_before:.1%} of cohort)")
+    print(f"- Remaining: {total_after} patients")
+    
+    # Count by excluded site
+    if excluded_count > 0:
+        for site in exclude_sites:
+            site_count = len(merged_data[merged_data['PrimaryDiagnosisSite'] == site])
+            if site_count > 0:
+                print(f"  - {site}: {site_count} patients")
+    
+    return filtered_data
+
 def calculate_survival_months(df, age_at_diagnosis_col='AGE_AT_DIAGNOSIS', 
                              age_at_last_contact_col='AGE_AT_LAST_CONTACT',
                              age_at_death_col='AGE_AT_DEATH',

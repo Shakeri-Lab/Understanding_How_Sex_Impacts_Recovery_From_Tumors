@@ -21,7 +21,7 @@ from sklearn.metrics import silhouette_score
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from cd8_analysis import CD8Analysis
-from utils.shared_functions import load_rnaseq_data, load_clinical_data, filter_by_diagnosis
+from utils.shared_functions import load_rnaseq_data, load_clinical_data, filter_by_diagnosis, filter_by_primary_diagnosis_site, map_sample_ids
 
 class CD8GroupAnalysis(CD8Analysis):
     """Analyzes CD8+ T cell signatures and groups"""
@@ -305,7 +305,7 @@ class CD8GroupAnalysis(CD8Analysis):
             )
             
             # Filter by diagnosis
-            merged = filter_by_diagnosis(merged)
+            merged = filter_by_primary_diagnosis_site(merged)
             
             # Create cluster distribution by sex
             cluster_by_sex = pd.crosstab(
@@ -478,7 +478,7 @@ class CD8GroupAnalysis(CD8Analysis):
             )
             
             # Get top diagnoses
-            diagnosis_counts = merged['DIAGNOSIS'].value_counts()
+            diagnosis_counts = merged['PrimaryDiagnosisSite'].value_counts()
             top_diagnoses = diagnosis_counts[diagnosis_counts >= 20].index.tolist()
             
             if len(top_diagnoses) == 0:
@@ -486,12 +486,12 @@ class CD8GroupAnalysis(CD8Analysis):
                 return None
             
             # Filter to top diagnoses
-            merged_top = merged[merged['DIAGNOSIS'].isin(top_diagnoses)]
+            merged_top = merged[merged['PrimaryDiagnosisSite'].isin(top_diagnoses)]
             
             # Create cluster distribution by diagnosis
             cluster_by_diagnosis = pd.crosstab(
                 merged_top['cluster'],
-                merged_top['DIAGNOSIS'],
+                merged_top['PrimaryDiagnosisSite'],
                 normalize='columns'
             ) * 100
             
@@ -514,7 +514,7 @@ class CD8GroupAnalysis(CD8Analysis):
             summary = []
             
             for diagnosis in top_diagnoses:
-                diag_data = merged[merged['DIAGNOSIS'] == diagnosis]
+                diag_data = merged[merged['PrimaryDiagnosisSite'] == diagnosis]
                 
                 for feature in ['CD8_B', 'CD8_G', 'CD8_GtoB_ratio', 'CD8_GtoB_log']:
                     if feature in diag_data.columns:
@@ -601,7 +601,7 @@ class CD8GroupAnalysis(CD8Analysis):
             )
             
             # Filter by diagnosis
-            merged = filter_by_diagnosis(merged)
+            merged = filter_by_primary_diagnosis_site(merged)
             
             # Check if survival data is available
             if 'OS_MONTHS' not in merged.columns or 'OS_STATUS' not in merged.columns:
@@ -719,6 +719,7 @@ class CD8GroupAnalysis(CD8Analysis):
             
             # Cluster samples
             scores_with_clusters = self.cluster_samples(scores)
+            scores_with_clusters = map_sample_ids(scores_with_clusters, self.base_path)
             if scores_with_clusters is None:
                 return None
             
