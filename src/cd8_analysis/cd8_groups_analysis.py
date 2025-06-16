@@ -57,13 +57,60 @@ class CD8GroupAnalysis(CD8Analysis):
         TODO: Reword "cycling / proliferative".
         '''
         self.cd8_groups = {
-            'CD8_A': ['CD8A', 'CD8B', 'GZMA', 'GZMB', 'PRF1', 'IFNG'],
-            'CD8_B': ['ENTPD1', 'PDCD1', 'CTLA4', 'LAG3', 'HAVCR2', 'TIGIT'],
-            'CD8_C': ['IL7R', 'TCF7', 'CCR7', 'SELL', 'LEF1', 'CD27'],
-            'CD8_D': ['NR4A1', 'NR4A2', 'NR4A3', 'TOX', 'TOX2'],
-            'CD8_E': ['GZMK', 'GZMM', 'CD74', 'CD27', 'XCL1', 'XCL2'],
-            'CD8_F': ['FGFBP2', 'FCGR3A', 'CX3CR1', 'KLRG1', 'GNLY', 'NKG7'],
-            'CD8_G': ['MKI67', 'TOP2A', 'CDK1', 'PCNA', 'TYMS']
+            "CD8_A": [
+                "ENSG00000153563", # HGNC gene symbol is CD8A.
+                "ENSG00000172116", # CD8B
+                "ENSG00000145649", # GZMA
+                "ENSG00000100453", # GZMB
+                "ENSG00000180644", # PRF1
+                "ENSG00000111537" # IFNG
+            ],
+            "CD8_B": [
+                "ENSG00000138185", # ENTPD1
+                "ENSG00000188389", # PDCD1
+                "ENSG00000163599", # CTLA4
+                "ENSG00000089692", # LAG3
+                "ENSG00000135077", # HAVCR2
+                "ENSG00000181847" # TIGIT
+            ],
+            "CD8_C": [
+                "ENSG00000168685", # IL7R
+                "ENSG00000081059", # TCF7
+                "ENSG00000126353", # CCR7
+                "ENSG00000188404", # SELL
+                "ENSG00000138795", # LEF1
+                "ENSG00000139193" # CD27
+            ],
+            "CD8_D": [
+                "ENSG00000123358", # NR4A1
+                "ENSG00000153234", # NR4A2
+                "ENSG00000119508", # NR4A3
+                "ENSG00000198846", # TOX
+                "ENSG00000124191" # TOX2
+            ],
+            "CD8_E": [
+                "ENSG00000113088", # GZMK
+                "ENSG00000197540", # GZMM
+                "ENSG00000019582", # CD74
+                "ENSG00000139193", # CD27
+                "ENSG00000143184", # XCL1
+                "ENSG00000143185" # XCL2
+            ],
+            "CD8_F": [
+                "ENSG00000137441", # FGFBP2
+                "ENSG00000203747", # FCGR3A
+                "ENSG00000168329", # CX3CR1
+                "ENSG00000139187", # KLRG1
+                "ENSG00000115523", # GNLY
+                "ENSG00000105374" # NKG7
+            ],
+            "CD8_G": [
+                "ENSG00000148773", # MKI67
+                "ENSG00000131747", # TOP2A
+                "ENSG00000170312", # CDK1
+                "ENSG00000132646", # PCNA
+                "ENSG00000176890" # TYMS
+            ]
         }
         
         # Define cluster descriptions
@@ -79,13 +126,17 @@ class CD8GroupAnalysis(CD8Analysis):
         try:
             print("\nCalculating CD8 group scores...")
             
+            rnaseq_base = rnaseq_data.copy()
+            rnaseq_base.index = rnaseq_base.index.str.split('.').str[0]
+            rnaseq_base = rnaseq_base.groupby(rnaseq_base.index).mean()
+            
             # Initialize scores DataFrame
-            scores = pd.DataFrame(index=rnaseq_data.columns)
+            scores = pd.DataFrame(index = rnaseq_data.columns)
             
             # Calculate scores for each group
             for group, genes in self.cd8_groups.items():
                 # Filter to genes in the group that are present in the data
-                group_genes = [gene for gene in genes if gene in rnaseq_data.index]
+                group_genes = [gene for gene in genes if gene in rnaseq_base.index]
                 
                 if len(group_genes) == 0:
                     print(f"Warning: No genes found for group {group}")
@@ -94,7 +145,7 @@ class CD8GroupAnalysis(CD8Analysis):
                 print(f"Calculating {group} score using {len(group_genes)} genes")
                 
                 # Calculate mean expression across genes
-                scores[group] = rnaseq_data.loc[group_genes].mean()
+                scores[group] = rnaseq_base.loc[group_genes].mean()
             
             # Calculate ratio and log ratio
             if 'CD8_B' in scores.columns and 'CD8_G' in scores.columns:
