@@ -30,6 +30,7 @@ def output_of_pipeline() -> pd.DataFrame:
     )
 
 def test_that_output_of_pipeline_equals_key(output_of_pipeline: pd.DataFrame) -> None:
+    output_of_pipeline.to_csv("output_of_test_pipeline_for_pairing_clinical_data_and_stages_of_tumors.csv", index = False)
     orien_tumor_staging_key = pd.read_csv(KEY_CSV).sort_values(by = ["AvatarKey", "ORIENSpecimenID"]).reset_index(drop = True)
     if output_of_pipeline.shape != orien_tumor_staging_key.shape:
         print(f"Shapes of output of pipeline {output_of_pipeline.shape} and ORIEN Tumor Staging Key {orien_tumor_staging_key.shape} are mismatched.")

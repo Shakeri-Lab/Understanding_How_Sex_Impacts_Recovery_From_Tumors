@@ -19,21 +19,16 @@ import re
 from typing import Dict, List, Tuple
 
 
-##########
-# SETTINGS
-##########
+###############################
+# GLOBAL SETTINGS AND CONSTANTS
+###############################
 
+AGE_FUDGE = 0.005 # years, or approximately 1.8 days.
+_ROMAN_RE = re.compile(r"\b([IV]{1,3})(?:[ABCD])?\b", re.I)
 STRICT: bool = False
 
 
-###########
-# CONSTANTS
-###########
-
-ICB_PATTERN = re.compile(
-    r"immune checkpoint|pembrolizumab|nivolumab|ipilimumab|atezolizumab|durvalumab|avelumab|cemiplimab|relatlimab",
-    re.I,
-)
+ICB_PATTERN = re.compile(r"immune checkpoint|pembrolizumab|nivolumab|ipilimumab|atezolizumab|durvalumab|avelumab|cemiplimab|relatlimab", re.I)
 
 # ICD-O-3 malignant-melanoma morphology codes
 # Source refs: SEER “Cutaneous Melanoma” rules, Pathology Outlines, WHO ICD-O-3 lists
@@ -74,16 +69,30 @@ MELANOMA_HISTOLOGY_CODES: set[str] = {
     "8725/3",  # Malignant neuronevus / neural-type melanoma
 }
 
-NODE_REGEX = re.compile(r"lymph node", re.I) # regular expression object
+# All melanoma morphology codes begin with “87” in ICD-O-3.  The formal list
+# above is still authoritative, but the revised rules state that *every*
+# melanoma diagnosis must be retained.  Some partner centres occasionally
+# write in additional site-specific “878x/3”, “879x/3”, etc. codes that do not
+# appear in the historic list.  We therefore accept the full 87xx/3 range as a
+# fall-back.
 
-PAROTID_REGEX = re.compile(r"parotid", re.I) # regular expression object
+MEL_REGEX = re.compile(r"^87\d\d/3$")
 
 SITE_KEYWORDS = {
-    "cutaneous": "skin|ear|eyelid|vulva|head|scalp|trunk|face|neck|back|chest|shoulder|arm|leg|extremity|hand|foot|buttock|hip|soft tissue",
+    "cutaneous": "skin|ear|eyelid|vulva|head|scalp|trunk|face|neck|back|chest|shoulder|arm|leg|extremity|hand|foot|buttock|hip|soft tissue|breast",
     "ocular": "choroid|ciliary body|conjunctiva|eye",
     "mucosal": "sinus|gum|nasal|urethra|anorect|anus|rectum|anal canal|oropharynx|oral|palate|vagina",
     "unknown": "unknown"
 }
+
+CUTANEOUS_RE = re.compile(SITE_KEYWORDS["cutaneous"], re.I)
+NODE_RE       = re.compile(r"lymph node", re.I)
+PAROTID_RE    = re.compile(r"parotid", re.I)
+
+'''
+NODE_REGEX = re.compile(r"lymph node", re.I) # regular expression object
+PAROTID_REGEX = re.compile(r"parotid", re.I) # regular expression object
+REGEX_PRI_SITE_SKIN = r"skin|ear|eyelid|vulva"
 
 SKINLIKE_SITES = [
     "skin", "ear", "eyelid", "head", "soft tissues", "muscle", "chest wall", "vulva"
@@ -94,64 +103,12 @@ UNKNOWN_PATHOLOGICAL_STAGE_VALUES = {
     "no tnm applicable for this site/histology combination",
     "unknown/not applicable"
 }
+'''
 
 
 #################
-# UTILITY HELPERS
+# SMALL UTILITIES
 #################
-
-def _assign_icb_status(
-    spec_row: pd.Series,
-    therapy_patient: Optional[pd.DataFrame],
-) -> str:
-    """
-    Return Pre-ICB / Post-ICB / No-ICB / Unknown for this specimen.
-
-    Logic
-    • If therapy file not supplied (None) → Unknown
-    • Filter patient therapy rows whose Agent or Class matches ICB_PATTERN.
-    • Compare earliest AgeAtTherapyStart to Age At Specimen Collection.
-    """
-    age_spec = _float(spec_row.get("Age At Specimen Collection"))
-    if therapy_patient is None:
-        return "Unknown"
-    
-    icb_rows = therapy_patient[
-        therapy_patient["Medication"].str.contains(ICB_PATTERN, na = False)
-    ].copy()
-    if icb_rows.empty:
-        return "No-ICB"
-
-    icb_rows["_age"] = icb_rows["AgeAtMedStart"].apply(_float)
-    icb_rows = icb_rows[pd.notna(icb_rows["_age"])]
-    if icb_rows.empty or age_spec is None:
-        return "Unknown"
-
-    min_icb_age = icb_rows["_age"].min()
-    return "Post-ICB" if age_spec >= min_icb_age else "Pre-ICB"
-
-
-def _filter_meta_before(meta_patient: pd.DataFrame, age_spec: float | None) -> pd.DataFrame:
-    '''
-    Keep metastatic-disease rows that satisfy either condition:
-      • AgeAtMetastaticSite ≤ AgeAtSpecimenCollection
-      • AgeAtMetastaticSite is "Age Unknown/Not Recorded" (therefore we store it as NaN)
-
-    This matches the wording for OC-3 and MU-4, which explicitly
-    include unknown-age distant mets.
-    '''
-    if meta_patient is None or meta_patient.empty:
-        return pd.DataFrame()
-
-    m = meta_patient.copy()
-    m["_age"] = m["AgeAtMetastaticSite"].apply(_float)   # _float->None for "Unknown..."
-
-    # Unknown age rows (pd.isna) are **always** retained
-    if age_spec is None:
-        return m[pd.isna(m["_age"])]
-
-    return m[pd.isna(m["_age"]) | (m["_age"] <= age_spec)]
-    
 
 def _float(val) -> float | None:
     try:
@@ -159,7 +116,15 @@ def _float(val) -> float | None:
     except (TypeError, ValueError):
         return None
 
-
+    
+def _first_roman(stage_txt: str) -> Optional[str]:
+    '''
+    Return the first Roman-numeral stage (I–IV) found, else None.
+    '''
+    m = re.search(r"\b([IV]{1,3})\b", str(stage_txt).upper())
+    return m.group(1) if m else None
+    
+    
 #############
 # CSV LOADING
 #############
@@ -170,19 +135,13 @@ def _strip_cols(df: pd.DataFrame) -> None:
     '''
     df.columns = df.columns.str.strip()
 
+
 def load_inputs(
     clinmol_csv: Path,
     dx_csv: Path,
     meta_csv: Path,
     therapy_csv: Optional[Path] = None,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, Optional[pd.DataFrame]]:
-    '''
-    1. from "ORIEN Data Rules for Tumor Clinical Pairing"
-    1. Using data from:
-    - Molecular Linkage file (main file)
-    - Diagnosis file (for primary site and stage info)
-    - Metastatic Disease (to help assign stage)
-    '''
     logging.info("Loading Clinical‑Molecular Linkage...")
     cm = pd.read_csv(clinmol_csv, dtype = str)
     _strip_cols(cm)
@@ -191,18 +150,19 @@ def load_inputs(
     logging.info("Loading Diagnosis...")
     dx = pd.read_csv(dx_csv, dtype = str)
     _strip_cols(dx)
-    dx = dx[dx["HistologyCode"].isin(MELANOMA_HISTOLOGY_CODES)].copy()
+    is_exact = dx["HistologyCode"].isin(MELANOMA_HISTOLOGY_CODES)
+    is_any87 = dx["HistologyCode"].str.match(MEL_REGEX, na = False)
+    dx = dx[is_exact | is_any87].copy()
 
     logging.info("Loading Metastatic Disease...")
     md = pd.read_csv(meta_csv, dtype = str)
     _strip_cols(md)
 
+    th = None
     if therapy_csv is not None:
         logging.info("Loading Therapy...")
-        th = pd.read_csv(therapy_csv, dtype=str)
+        th = pd.read_csv(therapy_csv, dtype = str)
         _strip_cols(th)
-    else:
-        th = None
 
     return cm, dx, md, th
 
@@ -212,45 +172,19 @@ def load_inputs(
 #######################
 
 def add_counts(cm: pd.DataFrame, dx: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    '''
-    3. from ORIEN Data Rules for Tumor Clinical Pairing
-    - 3. MelanomaDiagnosisCount: count for number of melanoma clinical diagnoses for a patient
-        - Create using the number of unique [AgeAtDiagnosis and PrimaryDiagnosisSite combinations] for each patient
-        - This approach may work best since a few patients have multiple melanomas diagnosed at the same age, so it [AgeAtDiagnosis] cannot be used on its own.
-            - Example with multiple diagnoses at same age with same stage: ILE2DL0KMW
-            ["ILE2DL0KMW" is a value of column ORIENAvatarKey in `/sfs/gpfs/tardis/project/orien/data/aws/24PRJ217UVA_IORIG/Clinical_Data/24PRJ217UVA_NormalizedFiles/24PRJ217UVA_20241112_ClinicalMolLinkage_V4.csv`]
-    
-    4. from ORIEN Data Rules for Tumor Clinical Pairing
-    - 4. SequencedTumorCount: count for number of sequenced tumor samples for a patient
-        - Create using the number of unique [DeidSpecimenID and Avatar Key combinations] for each patient
-        - This approach may work best since a few patients have multiple sequenced tumors at the same age (or stage, etc), so these variables cannot be used on their own.
-            - Example with multiple tumors sequenced at same age/stage: 59OP5X1AZL
-    
-    Add MelanomaDiagnosisCount and SequencedTumorCount to CM and DX frames.
-    '''
-    diag_counts = (
-        dx.drop_duplicates(["AvatarKey", "AgeAtDiagnosis", "PrimaryDiagnosisSite"]) # Ensure that (AvatarKey, AgeAtDiagnosis, PrimaryDiagnosisSite) represents 1 diagnosis.
-          .groupby("AvatarKey")
-          .size()
-          .rename("MelanomaDiagnosisCount")
-    )
-    tumor_counts = (
-        cm.drop_duplicates(["ORIENAvatarKey", "DeidSpecimenID"]) # Ensure that (ORIENAvatarKey, DeidSpecimenID) represents 1 tumor.
-          .groupby("ORIENAvatarKey")
-          .size()
-          .rename("SequencedTumorCount")
-    )
+    diag_counts = dx.groupby("AvatarKey").size().rename("MelanomaDiagnosisCount")
+    tumor_counts = cm.drop_duplicates(["ORIENAvatarKey", "DeidSpecimenID"]).groupby("ORIENAvatarKey").size().rename("SequencedTumorCount")
     cm = cm.join(tumor_counts, on = "ORIENAvatarKey") # Logic that uses both diagnosis count and tumor count is executed while iterating over rows in cm.
     cm = cm.join(diag_counts, on = "ORIENAvatarKey")
     return cm, dx
 
 
-def patient_group(row) -> str:
+def _patient_group(row) -> str:
     '''
     Return A, B, C, or D according to diagnosis and tumor counts.
     '''
-    mdx = row["MelanomaDiagnosisCount"] or 0
-    mts = row["SequencedTumorCount"] or 0
+    mdx = int(row.get("MelanomaDiagnosisCount", 0) or 0)
+    mts = int(row.get("SequencedTumorCount",    0) or 0)
     if mdx == 1 and mts == 1:
         return "A"
     if mdx == 1 and mts > 1:
@@ -259,10 +193,169 @@ def patient_group(row) -> str:
         return "C"
     return "D"
 
+    
+def _assign_icb_status(
+    spec_row: pd.Series,
+    therapy_patient: Optional[pd.DataFrame]
+) -> str:
+    age_spec = _float(spec_row.get("Age At Specimen Collection"))
+    if therapy_patient is None:
+        return "Unknown"
+    icb_rows = therapy_patient[
+        therapy_patient["Medication"].str.contains(ICB_PATTERN, na = False)
+    ].copy()
+    if icb_rows.empty:
+        return "No-ICB"
+    icb_rows["_age"] = icb_rows["AgeAtMedStart"].apply(_float)
+    icb_rows = icb_rows[pd.notna(icb_rows["_age"])]
+    if icb_rows.empty or age_spec is None:
+        return "Unknown"
+    return "Post-ICB" if age_spec >= icb_rows["_age"].min() else "Pre-ICB"
 
-###############################################
-# SELECTION HELPERS – GROUP B (choose specimen)
-###############################################
+
+def _filter_meta_before(meta_patient: pd.DataFrame, age_spec: float | None, allow_unknown_age: bool = True) -> pd.DataFrame:
+    if meta_patient.empty:
+        return meta_patient.iloc[0:0]
+    m = meta_patient.copy()
+    m["_age"] = m["AgeAtMetastaticSite"].apply(_float)
+    if age_spec is None:
+        return m if allow_unknown_age else m[pd.notna(m["_age"])]
+    keep = m[pd.notna(m["_age"]) & (m["_age"] <= age_spec + AGE_FUDGE)]
+    if allow_unknown_age:
+        keep = pd.concat([keep, m[pd.isna(m["_age"])]]).drop_duplicates()
+    return keep
+
+
+#########################
+# PRIMARY‑SITE ASSIGNMENT
+#########################
+
+def assign_primary_site(primary_diagnosis_site: str) -> str:
+    txt = str(primary_diagnosis_site).lower()
+    for site, pat in SITE_KEYWORDS.items():
+        if re.search(pat, txt):
+            return site
+    if STRICT:
+        raise ValueError(f"Unrecognized primary diagnosis site: '{primary_diagnosis_site}'")
+    return "unknown"
+
+
+##############################################################################################
+# STAGING RULES
+# The first rule that matches wins.
+# A specimen is not evaluated against any rule later than a rule that applies to the specimen.
+##############################################################################################
+
+_SITE_LOCAL_RE = re.compile(r"skin|ear|eyelid|vulva|head|scalp|soft tissues|breast|lymph node|parotid", re.I)
+
+def stage_by_ordered_rules(
+    spec: pd.Series,
+    dx: pd.Series,
+    meta_patient: pd.DataFrame
+) -> Tuple[str, str]:
+    '''
+    Return (EKN Assigned Stage, NEW RULE) following Rule 1 to Rule 10 exactly in the order printed in "ORIEN Specimen Staging Revised Rules"..
+    '''
+
+    # Short aliases ----------------------------------------------------------
+    age_diag_txt = str(dx.get("AgeAtDiagnosis", "")).strip()
+    age_diag_f = _float(age_diag_txt)
+    path_stg = str(dx.get("PathGroupStage", "")).strip()
+    clin_stg = str(dx.get("ClinGroupStage", "")).strip()
+    site_coll = str(spec.get("SpecimenSiteOfCollection", "")).lower()
+    age_spec = _float(spec.get("Age At Specimen Collection"))
+
+    def _meta_prior_distant() -> bool:
+        if meta_patient is None or meta_patient.empty:
+            return False
+        m = _filter_meta_before(meta_patient, age_spec, allow_unknown_age = False)
+        if m.empty:
+            return False
+        distant = m["MetastaticDiseaseInd"].str.contains("Yes - Distant", na = False)
+        site_ok = m["MetsDzPrimaryDiagnosisSite"].str.contains(CUTANEOUS_RE, na = False)
+        return (distant & site_ok).any()
+
+    def _prior_skin_regional() -> bool:
+        if meta_patient is None or meta_patient.empty:
+            return False
+        m = _filter_meta_before(meta_patient, age_spec, allow_unknown_age = False)
+        if m.empty:
+            return False
+        site_ok = m["MetsDzPrimaryDiagnosisSite"].str.contains(CUTANEOUS_RE, na = False)
+        reg_ok  = m["MetastaticDiseaseInd"].str.contains(r"Yes - Regional|Yes - NOS", na = False)
+        return (site_ok & reg_ok).any()
+
+    def _skin_distant_unknown() -> bool:
+        if meta_patient.empty:
+            return False
+        site_ok = meta_patient["MetsDzPrimaryDiagnosisSite"].str.contains(CUTANEOUS_RE, na = False)
+        distant = meta_patient["MetastaticDiseaseInd"].str.contains(r"Yes - Distant|Yes - NOS", na = False)
+        unk_age = meta_patient["AgeAtMetastaticSite"].str.strip().str.lower().eq("age unknown/not recorded")
+        return (site_ok & distant & unk_age).any()
+    
+    # RULE 1 - AGE
+    if age_diag_txt.lower() == "age 90 or older":
+        return _first_roman(path_stg or clin_stg) or "Unknown", "AGE"
+
+    # RULE 2 - PATHIV
+    if "IV" in path_stg.upper():
+        return "IV", "PATHIV"
+
+    # RULE 3 - CLINIV
+    if "IV" in clin_stg.upper():
+        return "IV", "CLINIV"
+
+    # RULE 4 - METSITE
+    if not _SITE_LOCAL_RE.search(site_coll):
+        return "IV", "METSITE"
+
+    # RULE 5 - PRIORDISTANT
+    if _meta_prior_distant():
+        return "IV", "PRIORDISTANT"
+
+    # RULE 6 - NOMETS
+    if not meta_patient.empty and meta_patient["MetastaticDiseaseInd"].str.lower().eq("no").all():
+        if meta_patient["MetastaticDiseaseInd"].str.lower().eq("no").all():
+            return _first_roman(path_stg or clin_stg) or "Unknown", "NOMETS"
+
+    # RULE 7 - NODE
+    if NODE_RE.search(site_coll) or PAROTID_RE.search(site_coll):
+        return "III", "NODE"
+
+    # RULE 8 - SKINLESS90D
+    within90 = (
+        age_spec is not None and age_diag_f is not None and
+        0 <= (age_spec + AGE_FUDGE) - age_diag_f <= 90 / 365.25
+    )
+    if within90 and not _prior_skin_regional() and re.search(r"skin|ear|eyelid|vulva|head|soft tissues|breast", site_coll):
+        return _first_roman(path_stg or clin_stg) or "Unknown", "SKINLESS90D"
+
+    # RULE 9 - SKINREG
+    if re.search(r"skin|ear|eyelid|vulva|head|soft tissues|breast|lymph node", site_coll) and not _skin_distant_unknown():
+        return "III", "SKINREG"
+
+    # RULE 10 - SKINUNK
+    if _skin_distant_unknown():
+        return "IV", "SKINUNK"
+
+    # Fallback (should never be reached according to ORIEN Specimen Staging Revised Rules)
+    return "Unknown", "UNMATCHED"
+
+
+def _hist_clean(txt: str) -> str:
+    return re.sub(r"[^A-Za-z]", "", str(txt)).lower()
+
+
+def _within_90_days_after(age_spec: float | None, age_diag: float | None) -> bool:
+    """
+    Return True when the specimen was collected **0–90 days AFTER** the
+    diagnosis age, per ORIEN rules.
+    """
+    if age_spec is None or age_diag is None:
+        return False
+    diff = age_spec - age_diag
+    return 0 <= diff <= (90 / 365.25)
+
 
 def _select_specimen_B(patient_cm: pd.DataFrame) -> pd.Series:
     '''
@@ -307,52 +400,6 @@ def _select_specimen_B(patient_cm: pd.DataFrame) -> pd.Series:
     # 7. Fallback: earliest age (handles only soft tissue and other sites)
     candidates["_age"] = candidates["Age At Specimen Collection"].apply(_float)
     return candidates.sort_values("_age", na_position="last").iloc[0]
-
-
-def _select_specimen_D(patient_cm: pd.DataFrame) -> pd.Series:
-    cm = patient_cm.copy()
-    cm_rna = cm[cm["RNASeq"].notna()]
-
-    if len(cm_rna) == 1:
-        return cm_rna.iloc[0]
-    if len(cm_rna) > 1:
-        cm_rna["_age"] = cm_rna["Age At Specimen Collection"].apply(_float)
-        return cm_rna.sort_values("_age", na_position="last").iloc[0]
-
-    cm["_age"] = cm["Age At Specimen Collection"].apply(_float)
-    return cm.sort_values("_age", na_position="last").iloc[0]
-
-
-def _select_diagnosis_D(dx_patient: pd.DataFrame, spec_row: pd.Series) -> pd.Series:
-    site = spec_row["SpecimenSiteOfCollection"].lower()
-    dxp = dx_patient.copy()
-    dxp["_age"] = dxp["AgeAtDiagnosis"].apply(_float)
-
-    if re.search(r"lymph node", site):
-        return dxp.sort_values("_age", ascending=False).iloc[0]
-    if re.search(r"skin|soft tissue", site):
-        return dxp.sort_values("_age").iloc[0]
-    return dxp.sort_values("_age").iloc[0]
-
-
-################################################
-# SELECTION HELPERS – GROUP C (choose diagnosis)
-################################################
-
-# 90 days *after* diagnosis (directional)
-def _within_90_days_after(age_spec: float | None, age_diag: float | None) -> bool:
-    """
-    Return True when the specimen was collected **0–90 days AFTER** the
-    diagnosis age, per ORIEN rules.
-    """
-    if age_spec is None or age_diag is None:
-        return False
-    diff = age_spec - age_diag
-    return 0 <= diff <= (90 / 365.25)
-
-
-def _hist_clean(txt: str) -> str:
-    return re.sub(r"[^A-Za-z]", "", str(txt)).lower()
 
 
 def _select_diagnosis_C(dx_patient: pd.DataFrame, spec_row: pd.Series, meta_patient: pd.DataFrame) -> pd.Series:
@@ -436,130 +483,30 @@ def _select_diagnosis_C(dx_patient: pd.DataFrame, spec_row: pd.Series, meta_pati
     return dxp.sort_values("_age").iloc[0]
 
 
-#########################
-# PRIMARY‑SITE ASSIGNMENT
-#########################
+def _select_specimen_D(patient_cm: pd.DataFrame) -> pd.Series:
+    cm = patient_cm.copy()
+    cm_rna = cm[cm["RNASeq"].notna()]
 
-def assign_primary_site(primary_diagnosis_site: str) -> str:
-    txt = str(primary_diagnosis_site).lower()
-    for site, pat in SITE_KEYWORDS.items():
-        if re.search(pat, txt):
-            return site
-    if STRICT:
-        raise ValueError(f"Unrecognized primary diagnosis site: '{primary_diagnosis_site}'. Run without --strict to coerce to 'unknown'.")
-    return "unknown"
+    if len(cm_rna) == 1:
+        return cm_rna.iloc[0]
+    if len(cm_rna) > 1:
+        cm_rna["_age"] = cm_rna["Age At Specimen Collection"].apply(_float)
+        return cm_rna.sort_values("_age", na_position="last").iloc[0]
 
-
-##############################################################################################
-# STAGING RULES
-# The first rule that matches wins.
-# A specimen is not evaluated against any rule later than a rule that applies to the specimen.
-##############################################################################################
-
-_SITE_LOCAL_RE = re.compile(r"skin|ear|eyelid|vulva|head|scalp|soft tissues|breast|lymph node|parotid", re.I)
+    cm["_age"] = cm["Age At Specimen Collection"].apply(_float)
+    return cm.sort_values("_age", na_position="last").iloc[0]
 
 
-def _first_roman(stage_txt: str) -> Optional[str]:
-    '''
-    Return the first Roman-numeral stage (I–IV) found, else None.
-    '''
-    m = re.search(r"\b([IV]{1,3})\b", str(stage_txt).upper())
-    return m.group(1) if m else None
+def _select_diagnosis_D(dx_patient: pd.DataFrame, spec_row: pd.Series) -> pd.Series:
+    site = spec_row["SpecimenSiteOfCollection"].lower()
+    dxp = dx_patient.copy()
+    dxp["_age"] = dxp["AgeAtDiagnosis"].apply(_float)
 
-
-def stage_by_ordered_rules(
-    spec: pd.Series,
-    dx: pd.Series,
-    meta_patient: pd.DataFrame,
-) -> Tuple[str, str]:
-    '''
-    Implement Rule 1 to Rule 10 exactly in the order printed in "ORIEN Specimen Staging Revised Rules".
-    Return (EKN Assigned Stage, NEW RULE).
-    '''
-
-    # Short aliases ----------------------------------------------------------
-    age_diag = str(dx.get("AgeAtDiagnosis", "")).strip()
-    path_stg = str(dx.get("PathGroupStage", "")).strip()
-    clin_stg = str(dx.get("ClinGroupStage", "")).strip()
-    site_coll = str(spec.get("SpecimenSiteOfCollection", "")).lower()
-    age_spec = _float(spec.get("Age At Specimen Collection"))
-
-    # Helper for Meta rule #5 -----------------------------------------------
-    def _meta_prior_distant() -> bool:
-        if meta_patient is None or meta_patient.empty:
-            return False
-        m = _filter_meta_before(meta_patient, age_spec)
-        if m.empty:
-            return False
-        distant = m["MetastaticDiseaseInd"].str.contains("Yes - Distant", na = False)
-        primary_ok = m["MetsDzPrimaryDiagnosisSite"].str.contains(
-            r"skin|ear|eyelid|vulva|eye|choroid|ciliary body|conjunctiva|sinus|gum|nasal|urethra",
-            case = False,
-            na = False,
-        )
-        return (distant & primary_ok).any()
-
-    # ---------------- RULE #1  AGE -----------------------------------------
-    if age_diag.lower() == "age 90 or older":
-        return _first_roman(path_stg or clin_stg) or "Unknown", "AGE"
-
-    # ---------------- RULE #2  PATHIV ---------------------------------------
-    if "IV" in path_stg.upper():
-        return "IV", "PATHIV"
-
-    # ---------------- RULE #3  CLINIV --------------------------------------
-    if "IV" in clin_stg.upper():
-        return "IV", "CLINIV"
-
-    # ---------------- RULE #4  METSITE -------------------------------------
-    if not _SITE_LOCAL_RE.search(site_coll):
-        return "IV", "METSITE"
-
-    # ---------------- RULE #5  PRIORDISTANT --------------------------------
-    if _meta_prior_distant():
-        return "IV", "PRIORDISTANT"
-
-    # ---------------- RULE #6  NOMETS --------------------------------------
-    if meta_patient is not None and not meta_patient.empty:
-        if meta_patient["MetastaticDiseaseInd"].str.lower().eq("no").all():
-            return _first_roman(path_stg or clin_stg) or "Unknown", "NOMETS"
-
-    # ---------------- RULE #7  NODE ----------------------------------------
-    if re.search(r"lymph node|parotid", site_coll, re.I):
-        return "III", "NODE"
-
-    # ---------------- RULE #8  SKINLESS90D ---------------------------------
-    # Within ±0.005 rounding fudge the spec requires
-    try:
-        age_diag_f = float(age_diag)
-    except ValueError:
-        age_diag_f = None
-    within90 = (
-        age_diag_f is not None and age_spec is not None
-        and abs((age_spec + 0.005) - age_diag_f) <= 90 / 365.25
-    )
-    has_prior_skin_regional = (
-        meta_patient is not None
-        and _filter_meta_before(meta_patient, age_spec)
-              .query("MetastaticDiseaseInd.str.contains('Regional|NOS', na=False)", engine="python")
-              .empty
-    )
-    if within90 and has_prior_skin_regional:
-        return _first_roman(path_stg or clin_stg) or "Unknown", "SKINLESS90D"
-
-    # ---------------- RULE #9  SKINREG -------------------------------------
-    if "skin" in site_coll and not has_prior_skin_regional:
-        return "III", "SKINREG"
-
-    # ---------------- RULE #10 SKINUNK -------------------------------------
-    if meta_patient is not None and not meta_patient.empty:
-        if _filter_meta_before(meta_patient, age_spec) \
-                .query("AgeAtMetastaticSite == 'Age Unknown/Not Recorded' "
-                       "and MetastaticDiseaseInd.str.contains('Distant|NOS', na=False)",
-                       engine='python').any(axis=None):
-            return "IV", "SKINUNK"
-
-    return "Unknown", "UNMATCHED"
+    if re.search(r"lymph node", site):
+        return dxp.sort_values("_age", ascending=False).iloc[0]
+    if re.search(r"skin|soft tissue", site):
+        return dxp.sort_values("_age").iloc[0]
+    return dxp.sort_values("_age").iloc[0]
 
 
 def run_pipeline(
@@ -577,36 +524,23 @@ def run_pipeline(
     cm, dx, md, th = load_inputs(clinmol, diagnosis, metadisease, therapy)
     cm, dx = add_counts(cm, dx)
 
-    # Everything that follows is byte-for-byte identical to the old `main()`
-    cm["MelanomaDiagnosisCount"] = cm["MelanomaDiagnosisCount"].fillna(0).astype(int)
-    cm["SequencedTumorCount"]   = cm["SequencedTumorCount"].fillna(0).astype(int)
-    cm["Group"] = cm.apply(patient_group, axis=1)
+    cm["Group"] = cm.apply(_patient_group, axis = 1)
+    cm["MelanomaDiagnosisCount"] = cm["MelanomaDiagnosisCount"].fillna(0)
+    cm["SequencedTumorCount"] = cm["SequencedTumorCount"].fillna(0)
 
-    output_rows: list[dict] = []
+    output_rows: List[Dict[str, str]] = []
 
-    for avatar, specs in cm.groupby("ORIENAvatarKey"):
+    for avatar, specs in cm.groupby("ORIENAvatarKey", sort = False):
         dx_patient = dx[dx["AvatarKey"] == avatar]
-        if dx_patient.empty:
-            logging.warning(
-                "Skipping AvatarKey %s: %d tumour specimen(s) but no melanoma Diagnosis rows after filtering – unable to pair.",
-                avatar, len(specs),
-            )
-            continue
-
         meta_patient    = md[md["AvatarKey"] == avatar]
         therapy_patient = th[th["AvatarKey"] == avatar] if th is not None else None
         group           = specs["Group"].iloc[0]
 
         if group == "A":
             spec_row, diag_row = specs.iloc[0], dx_patient.iloc[0]
-        elif group in ("B", "D"):
+        elif group == "B":
             spec_row = _select_specimen_B(specs)
-            if spec_row is None:                       # no RNA-Seq specimen
-                continue
-            diag_row = (
-                dx_patient.iloc[0] if group == "B"
-                else _select_diagnosis_C(dx_patient, spec_row, meta_patient)
-            )
+            diag_row = dx_patient.iloc[0]
         elif group == "C":
             spec_row  = specs.iloc[0]
             diag_row  = _select_diagnosis_C(dx_patient, spec_row, meta_patient)
@@ -620,22 +554,17 @@ def run_pipeline(
         stage, rule = stage_by_ordered_rules(spec_row, diag_row, meta_patient)
         
         output_rows.append(
-            dict(
-                AvatarKey = avatar,
-                ORIENSpecimenID = spec_row["DeidSpecimenID"],
-                AssignedPrimarySite = primary_site,
-                Group = group,
-                EknAssignedStage = stage,
-                NewRule = rule
-            )
+            {
+                "AvatarKey": avatar,
+                "ORIENSpecimenID": spec_row["DeidSpecimenID"],
+                "AssignedPrimarySite": primary_site,
+                "Group": group,
+                "EKN Assigned Stage": stage,
+                "NEW RULE": rule
+            }
         )
-    
-    map_of_column_names = {
-        "EknAssignedStage": "EKN Assigned Stage",
-        "NewRule": "NEW RULE"
-    }
-    out_df = pd.DataFrame(output_rows).rename(columns = map_of_column_names)
-    out_df = out_df.sort_values(by = ["AvatarKey", "ORIENSpecimenID"]).reset_index(drop = True)
+
+    out_df = pd.DataFrame(output_rows).sort_values(by = ["AvatarKey", "ORIENSpecimenID"]).reset_index(drop = True)
     return out_df
 
 
@@ -644,14 +573,14 @@ def main():
     parser.add_argument("--clinmol", required = True, type = Path)
     parser.add_argument("--diagnosis", required = True, type = Path)
     parser.add_argument("--metadisease", required = True, type = Path)
-    parser.add_argument("--therapy", required = False, type = Path, help = "ORIEN Therapy CSV (optional; used for ICB status)")
+    parser.add_argument("--therapy", type = Path)
     parser.add_argument("--out", required = True, type = Path)
-    parser.add_argument("--strict", action = "store_true", help = "Abort if a primary site cannot be classified.")
+    parser.add_argument("--strict", action = "store_true")
     args = parser.parse_args()
 
     logging.basicConfig(level = logging.INFO, format = "%(levelname)s: %(message)s")
 
-    out_df = run_pipeline(
+    df = run_pipeline(
         clinmol = args.clinmol,
         diagnosis = args.diagnosis,
         metadisease = args.metadisease,
@@ -659,8 +588,8 @@ def main():
         strict = args.strict,
     )
 
-    logging.info("Writing %s rows to %s", len(out_df), args.out)
-    out_df.to_csv(args.out, index = False)
+    logging.info("Writing %d rows to %s", len(df), args.out)
+    df.to_csv(args.out, index = False)
 
 
 if __name__ == "__main__":
