@@ -16,7 +16,7 @@ import logging
 import pandas as pd
 from pathlib import Path
 import re
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 
 ###############################
@@ -119,10 +119,10 @@ def _float(val) -> float | None:
     
 def _first_roman(stage_txt: str) -> Optional[str]:
     '''
-    Return the first Roman-numeral stage (I–IV) found, else None.
+    Pick out the Roman component (I, II, III, IV) of a ClinGroupStage or PathGroupStage, ignoring any trailing letter (A–D).
     '''
-    m = re.search(r"\b([IV]{1,3})\b", str(stage_txt).upper())
-    return m.group(1) if m else None
+    m = _ROMAN_RE.search(str(stage_txt))
+    return None if m is None else m.group(1).upper()
     
     
 #############
@@ -172,7 +172,14 @@ def load_inputs(
 #######################
 
 def add_counts(cm: pd.DataFrame, dx: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    diag_counts = dx.groupby("AvatarKey").size().rename("MelanomaDiagnosisCount")
+    diag_unique  = dx.drop_duplicates(
+        subset=["AvatarKey", "AgeAtDiagnosis", "PrimaryDiagnosisSite"]
+    )
+    diag_counts  = (
+        diag_unique.groupby("AvatarKey")
+        .size()
+        .rename("MelanomaDiagnosisCount")
+    )
     tumor_counts = cm.drop_duplicates(["ORIENAvatarKey", "DeidSpecimenID"]).groupby("ORIENAvatarKey").size().rename("SequencedTumorCount")
     cm = cm.join(tumor_counts, on = "ORIENAvatarKey") # Logic that uses both diagnosis count and tumor count is executed while iterating over rows in cm.
     cm = cm.join(diag_counts, on = "ORIENAvatarKey")
@@ -272,7 +279,11 @@ def stage_by_ordered_rules(
         if m.empty:
             return False
         distant = m["MetastaticDiseaseInd"].str.contains("Yes - Distant", na = False)
-        site_ok = m["MetsDzPrimaryDiagnosisSite"].str.contains(CUTANEOUS_RE, na = False)
+        site_ok = m["MetsDzPrimaryDiagnosisSite"].str.contains(
+            r"skin|ear|eyelid|vulva|eye|choroid|ciliary body|conjunctiva|"
+            r"sinus|gum|nasal|urethra",
+            na=False, case=False
+        )
         return (distant & site_ok).any()
 
     def _prior_skin_regional() -> bool:
@@ -314,7 +325,7 @@ def stage_by_ordered_rules(
         return "IV", "PRIORDISTANT"
 
     # RULE 6 - NOMETS
-    if not meta_patient.empty and meta_patient["MetastaticDiseaseInd"].str.lower().eq("no").all():
+    if meta_patient.empty or meta_patient["MetastaticDiseaseInd"].str.lower().eq("no").all():
         if meta_patient["MetastaticDiseaseInd"].str.lower().eq("no").all():
             return _first_roman(path_stg or clin_stg) or "Unknown", "NOMETS"
 
@@ -324,8 +335,11 @@ def stage_by_ordered_rules(
 
     # RULE 8 - SKINLESS90D
     within90 = (
-        age_spec is not None and age_diag_f is not None and
-        0 <= (age_spec + AGE_FUDGE) - age_diag_f <= 90 / 365.25
+        age_spec is not None
+        and age_diag_f is not None
+        and 0
+        <= (age_spec + AGE_FUDGE) - age_diag_f
+        <= 90 / 365.25
     )
     if within90 and not _prior_skin_regional() and re.search(r"skin|ear|eyelid|vulva|head|soft tissues|breast", site_coll):
         return _first_roman(path_stg or clin_stg) or "Unknown", "SKINLESS90D"
