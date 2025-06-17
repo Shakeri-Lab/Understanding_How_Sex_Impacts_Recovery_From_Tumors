@@ -3,33 +3,8 @@
 '''
 `pipeline_for_pairing_clinical_data_and_stages_of_tumors.py`
 
-This module is based on "ORIEN Data Rules for Tumor Clinical Pairing". The purpose of this module is to produce, for every patient, rows of melanoma diagnosis information and melanoma tumor information, each enriched. A patient is identified by values in fields 'ORIENAvatarKey` in a Clinical Molecular Linkage table and/or `AvatarKey` in Diagnosis, Metastatic Disease, and Medications tables. A row is enriched with a primary site, an AJCC stage at the time of specimen collection, an identifier of the rule used to determine the stage, and an ICB status. A primary site may be "cutaneous", "ocular", "mucosal", or "unknown". An AJCC stage may be "I", "II", "III", or "IV". An ICB status may be "Pre-ICB", "Post-ICB", "No-ICB", or "Unknown".
-
-2. from "ORIEN Data Rules for Tumor Clinical Pairing"
-2. Definitions
-- Melanoma diagnosis (Diagnosis file): HistologyCode = {list of melanoma codes previously sent}
-- Tumor sequenced (Molecular Linkage file): Tumor/Germline variable = Tumor
-
-Melanoma diagnosis information is a row in the Diagnosis CSV file whose value of field `HistologyCode` is a ICD-O-3 code for melanoma. ICD-O-3 stands for International Classification of Disease for Oncology 3. Melanoma diagnosis information describes a case of skin cancer for a patient. Distinct diagnoses information for a patient are identified by pairs of values of fields `AgeAtDiagnosis` and `PrimaryDiagnosisSite`.
-
-Melanoma tumor information is a row in the Clinical Molecular Linkage CSV file with value "Tumor" for field "Tumor/Germline". Melanoma tumor information represents a melanoma tumor for which at least Whole Exome Sequencing (WES) or RNA sequencing data were generated. Distinct tumor information for a patient are identified by pairs of values of fields `DeidSpecimenID` and `ORIENAvatarKey` in table Clinical Molecular Linkage.
-
-An AJCC stage is a grouping defined by the American Joint Committee on Cancer. An AJCC stage corresponds to fields `ClinGroupStage` and `PathGroupStage` in table Diagnosis. `ClinGroupStage` represents AJCC stages determined during clinical assessments. `PathGroupStage` represents AJCC stages determined during pathological assessments. AJCC stages indicate how much melanoma is in the body and where it is located.
-
-A patient is in Group A if the patient has 1 diagnosis and 1 tumor. A patient is in Group B if the patient has 1 diagnosis and more than 1 tumor. A patient is in Group C if the patient has more than 1 diagnosis and 1 tumor. A patient is in Group D if a patienr has more than 1 diagnosis and more than 1 tumor.
-
-This module
-    1. loads Clinical Molecular Linkage, Diagnosis, and Metastatic Disease, and Medication CSV files;
-    2. filters table Diagnosis to melanoma diagnosis information and table Clinical Molecular Linkage to melanoma tumor information;
-    3. derives a melanoma diagnosis count equal to the number of unique pairs of values of fields `AgeAtDiagnosis` and `PrimaryDiagnosisSite` in table Diagnosis;
-    4. derives a tumor count equal to the number of unique pairs of values of fields `DeidSpecimenID` and `ORIENAvatarKey` in table Clinical Molecular Linkage;
-    5. assigns patients in groups A, B, C, and D;
-    6. reduces each patient to one row of a subset of diagnosis information and a subset of tumor information using the selection logic for that patient's group, dropping a patient if no valid pairing can be found (e.g., if all tumors lack RNA sequencing data);
-    7.  enriches a patient's row with a primary site;
-    8.  enriches a patient's row with an AJCC stage using a rule set that is specific to a primary site;
-    9.  enriches a patient's row with an identifier of the rule used to determine the stage;
-    10. enriches a patient's row with an ICB status by comparing age of patient when specimen was collected to earliest ICB therapy; and
-    11. writes rows to an output CSV file.
+This module is a pipeline implementing "ORIEN Specimen Staging Revised Rules" for pairing patients' melanoma tumor specimens
+with the appropriate primary diagnosis site, patient grouping, AJCC stage, and rule.
         
 Usage:
 python pipeline_for_pairing_clinical_data_and_stages_of_tumors.py --clinmol ../Clinical_Data/24PRJ217UVA_NormalizedFiles/24PRJ217UVA_20241112_ClinicalMolLinkage_V4.csv --diagnosis ../Clinical_Data/24PRJ217UVA_NormalizedFiles/24PRJ217UVA_20241112_Diagnosis_V4.csv --metadisease ../Clinical_Data/24PRJ217UVA_NormalizedFiles/24PRJ217UVA_20241112_MetastaticDisease_V4.csv --therapy ../Clinical_Data/24PRJ217UVA_NormalizedFiles/24PRJ217UVA_20241112_Medications_V4.csv --out output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors.csv > output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors.txt 2>&1
@@ -104,10 +79,10 @@ NODE_REGEX = re.compile(r"lymph node", re.I) # regular expression object
 PAROTID_REGEX = re.compile(r"parotid", re.I) # regular expression object
 
 SITE_KEYWORDS = {
-    "cutaneous": r"skin|ear|eyelid|vulva|head|scalp",
-    "ocular": r"choroid|ciliary body|conjunctiva|eye",
-    "mucosal": r"sinus|gum|nasal|urethra|anorect|anus|rectum|anal canal|oropharynx|oral|vagina|esophagus|palate",
-    "unknown": r"unknown"
+    "cutaneous": "skin|ear|eyelid|vulva|head|scalp|trunk|face|neck|back|chest|shoulder|arm|leg|extremity|hand|foot|buttock|hip|soft tissue",
+    "ocular": "choroid|ciliary body|conjunctiva|eye",
+    "mucosal": "sinus|gum|nasal|urethra|anorect|anus|rectum|anal canal|oropharynx|oral|palate|vagina",
+    "unknown": "unknown"
 }
 
 SKINLIKE_SITES = [
@@ -156,12 +131,6 @@ def _assign_icb_status(
     return "Post-ICB" if age_spec >= min_icb_age else "Pre-ICB"
 
 
-def _contains(value: str | float | int | None, pattern: str | re.Pattern) -> bool:
-    if pd.isna(value):
-        return False
-    return bool(re.search(pattern, str(value).lower()))
-
-
 def _filter_meta_before(meta_patient: pd.DataFrame, age_spec: float | None) -> pd.DataFrame:
     '''
     Keep metastatic-disease rows that satisfy either condition:
@@ -182,19 +151,7 @@ def _filter_meta_before(meta_patient: pd.DataFrame, age_spec: float | None) -> p
         return m[pd.isna(m["_age"])]
 
     return m[pd.isna(m["_age"]) | (m["_age"] <= age_spec)]
-
-
-def _filter_meta_after(meta_patient: pd.DataFrame, age_spec: float | None) -> pd.DataFrame:
-    '''
-    Rows with AgeAtMetastaticSite > specimen age (interval mets).
-    '''
-    if meta_patient is None or meta_patient.empty or age_spec is None:
-        return pd.DataFrame()
-
-    m = meta_patient.copy()
-    m["_age"] = m["AgeAtMetastaticSite"].apply(_float)
-    return m[pd.notna(m["_age"]) & (m["_age"] > age_spec)]
-
+    
 
 def _float(val) -> float | None:
     try:
@@ -203,16 +160,15 @@ def _float(val) -> float | None:
         return None
 
 
+#############
+# CSV LOADING
+#############
+
 def _strip_cols(df: pd.DataFrame) -> None:
     '''
     Trim whitespace from every column header in place.
     '''
     df.columns = df.columns.str.strip()
-    
-    
-#############
-# CSV LOADING
-#############
 
 def load_inputs(
     clinmol_csv: Path,
@@ -322,10 +278,6 @@ def _select_specimen_B(patient_cm: pd.DataFrame) -> pd.Series:
     '''
     cm = patient_cm.copy()
     
-    # RNA sequencing gate
-    if cm["RNASeq"].notna().sum() == 0:
-        return None
-    
     # Keep only RNA‑seq‑enabled tumours if possible
     cm_rna = cm[cm["RNASeq"].notna()]
     candidates = cm_rna if not cm_rna.empty else cm
@@ -355,6 +307,32 @@ def _select_specimen_B(patient_cm: pd.DataFrame) -> pd.Series:
     # 7. Fallback: earliest age (handles only soft tissue and other sites)
     candidates["_age"] = candidates["Age At Specimen Collection"].apply(_float)
     return candidates.sort_values("_age", na_position="last").iloc[0]
+
+
+def _select_specimen_D(patient_cm: pd.DataFrame) -> pd.Series:
+    cm = patient_cm.copy()
+    cm_rna = cm[cm["RNASeq"].notna()]
+
+    if len(cm_rna) == 1:
+        return cm_rna.iloc[0]
+    if len(cm_rna) > 1:
+        cm_rna["_age"] = cm_rna["Age At Specimen Collection"].apply(_float)
+        return cm_rna.sort_values("_age", na_position="last").iloc[0]
+
+    cm["_age"] = cm["Age At Specimen Collection"].apply(_float)
+    return cm.sort_values("_age", na_position="last").iloc[0]
+
+
+def _select_diagnosis_D(dx_patient: pd.DataFrame, spec_row: pd.Series) -> pd.Series:
+    site = spec_row["SpecimenSiteOfCollection"].lower()
+    dxp = dx_patient.copy()
+    dxp["_age"] = dxp["AgeAtDiagnosis"].apply(_float)
+
+    if re.search(r"lymph node", site):
+        return dxp.sort_values("_age", ascending=False).iloc[0]
+    if re.search(r"skin|soft tissue", site):
+        return dxp.sort_values("_age").iloc[0]
+    return dxp.sort_values("_age").iloc[0]
 
 
 ################################################
@@ -472,225 +450,116 @@ def assign_primary_site(primary_diagnosis_site: str) -> str:
     return "unknown"
 
 
-###############
+##############################################################################################
 # STAGING RULES
-###############
+# The first rule that matches wins.
+# A specimen is not evaluated against any rule later than a rule that applies to the specimen.
+##############################################################################################
 
-def stage_cutaneous(spec: pd.Series, dx: pd.Series, meta_patient: pd.DataFrame) -> Tuple[str, str]:
+_SITE_LOCAL_RE = re.compile(r"skin|ear|eyelid|vulva|head|scalp|soft tissues|breast|lymph node|parotid", re.I)
+
+
+def _first_roman(stage_txt: str) -> Optional[str]:
     '''
-    Return (stage, rule_id) for cutaneous primary.
+    Return the first Roman-numeral stage (I–IV) found, else None.
     '''
-    path_stage = str(dx.get("PathGroupStage", "")).upper()
-    clin_stage = str(dx.get("ClinGroupStage", "")).upper()
-    site_coll = spec["SpecimenSiteOfCollection"].lower()
-    primary_met = spec["Primary/Met"].lower()
-    age_spec = _float(spec["Age At Specimen Collection"])
+    m = re.search(r"\b([IV]{1,3})\b", str(stage_txt).upper())
+    return m.group(1) if m else None
 
-    meta_before = _filter_meta_before(meta_patient, age_spec)  # ≤ specimen age
-    meta_after  = _filter_meta_after(meta_patient, age_spec)   #   > specimen age
 
-    def _meta_yes(rows: pd.DataFrame,
-                  kind_pat: str,
-                  site_pat: str,
-                  ind_cat: str | None = None) -> bool:
-        """
-        ind_cat: 'distant', 'regional', 'regional_nos', 'distant_nos', or None (no filter)
-        """
-        if rows.empty:
+def stage_by_ordered_rules(
+    spec: pd.Series,
+    dx: pd.Series,
+    meta_patient: pd.DataFrame,
+) -> Tuple[str, str]:
+    '''
+    Implement Rule 1 to Rule 10 exactly in the order printed in "ORIEN Specimen Staging Revised Rules".
+    Return (EKN Assigned Stage, NEW RULE).
+    '''
+
+    # Short aliases ----------------------------------------------------------
+    age_diag = str(dx.get("AgeAtDiagnosis", "")).strip()
+    path_stg = str(dx.get("PathGroupStage", "")).strip()
+    clin_stg = str(dx.get("ClinGroupStage", "")).strip()
+    site_coll = str(spec.get("SpecimenSiteOfCollection", "")).lower()
+    age_spec = _float(spec.get("Age At Specimen Collection"))
+
+    # Helper for Meta rule #5 -----------------------------------------------
+    def _meta_prior_distant() -> bool:
+        if meta_patient is None or meta_patient.empty:
             return False
-        ok = rows["MetsDzPrimaryDiagnosisSite"].str.contains(kind_pat, case=False, na=False)
-        ok &= rows["MetastaticDiseaseSite"].str.contains(site_pat, case=False, na=False)
-        if ind_cat is not None:
-            ind_pat = {
-                "distant":        r"Yes - Distant",
-                "regional":       r"Yes - Regional",
-                "regional_nos":   r"Yes - Regional|Yes - NOS",
-                "distant_nos":    r"Yes - Distant|Yes - NOS",
-            }[ind_cat]
-            ok &= rows["MetastaticDiseaseInd"].str.contains(ind_pat, case=False, na=False)
-        return ok.any()
-    
-    # --- RULE CUT‑1: PathGroupStage contains IV --------------------------------
-    if "IV" in path_stage:
-        return "IV", "CUT1"
+        m = _filter_meta_before(meta_patient, age_spec)
+        if m.empty:
+            return False
+        distant = m["MetastaticDiseaseInd"].str.contains("Yes - Distant", na = False)
+        primary_ok = m["MetsDzPrimaryDiagnosisSite"].str.contains(
+            r"skin|ear|eyelid|vulva|eye|choroid|ciliary body|conjunctiva|sinus|gum|nasal|urethra",
+            case = False,
+            na = False,
+        )
+        return (distant & primary_ok).any()
 
-    # --- RULE CUT‑2: Clin contains IV & Path unknown ---------------------------
-    if (
-        "IV" in clin_stage
-        and path_stage.lower() in UNKNOWN_PATHOLOGICAL_STAGE_VALUES
-    ):
-        return "IV", "CUT2"
+    # ---------------- RULE #1  AGE -----------------------------------------
+    if age_diag.lower() == "age 90 or older":
+        return _first_roman(path_stg or clin_stg) or "Unknown", "AGE"
 
-    # --- RULE CUT-3 -----------------------------------------------------------
-    # metastatic specimen from a site that is NOT skin, lymph-node, soft-tissue,
-    # muscle, *or* parotid (explicitly).
-    if primary_met == "metastatic" and not _contains(site_coll, r"skin|lymph node|soft tissue|muscle|parotid|chest wall|head|scalp"):
-        return "IV", "CUT3"
+    # ---------------- RULE #2  PATHIV ---------------------------------------
+    if "IV" in path_stg.upper():
+        return "IV", "PATHIV"
 
-    # Lymph node helper booleans
-    is_node_spec = bool(NODE_REGEX.search(site_coll))
+    # ---------------- RULE #3  CLINIV --------------------------------------
+    if "IV" in clin_stg.upper():
+        return "IV", "CLINIV"
 
-    # --- RULE CUT‑4: Node specimen, stage III at diagnosis ---------------------
-    if (
-        is_node_spec
-        and _meta_yes(meta_before, r"skin|ear|eyelid|vulva", "lymph node", "regional_nos")
-        and "III" in path_stage
-    ):
-        return "III", "CUT4"
+    # ---------------- RULE #4  METSITE -------------------------------------
+    if not _SITE_LOCAL_RE.search(site_coll):
+        return "IV", "METSITE"
 
-    # ---------------- CUT‑5 ------------------------
-    if is_node_spec and ("III" not in path_stage) and ("IV" not in path_stage) and ("IV" not in clin_stage) and not _meta_yes(meta_before, r"skin|ear|eyelid|vulva", "lymph node", "distant"):
-        return "III", "CUT5"
+    # ---------------- RULE #5  PRIORDISTANT --------------------------------
+    if _meta_prior_distant():
+        return "IV", "PRIORDISTANT"
 
-    # --- RULE CUT‑6: Node specimen, distant nodal recurrence → stage IV --------
-    if (
-        is_node_spec
-        and _meta_yes(meta_before, r"skin|ear|eyelid|vulva", "lymph node", "distant")
-        and "IV" not in path_stage
-    ):
-        return "IV", "CUT6"
+    # ---------------- RULE #6  NOMETS --------------------------------------
+    if meta_patient is not None and not meta_patient.empty:
+        if meta_patient["MetastaticDiseaseInd"].str.lower().eq("no").all():
+            return _first_roman(path_stg or clin_stg) or "Unknown", "NOMETS"
 
-    # --- RULE CUT‑7: Parotid specimen distant recurrence → stage IV ------------
-    # --- RULE CUT‑8: Parotid specimen regional → stage III ---------------------
-    if PAROTID_REGEX.search(site_coll):
-        if _meta_yes(meta_before, r"skin|ear|eyelid|vulva", "parotid", "distant"):
-            return "IV", "CUT7"
-        if _meta_yes(meta_before, r"skin|ear|eyelid|vulva", r"parotid|lymph node", "regional_nos"):
-            return "III", "CUT8"
+    # ---------------- RULE #7  NODE ----------------------------------------
+    if re.search(r"lymph node|parotid", site_coll, re.I):
+        return "III", "NODE"
 
-    cut_site_pat = r"skin|ear|eyelid|head|soft tissues|muscle|chest wall|vulva"
-    if (_contains(site_coll, cut_site_pat)
-        and primary_met == "metastatic"
-        and "IV" not in path_stage):
+    # ---------------- RULE #8  SKINLESS90D ---------------------------------
+    # Within ±0.005 rounding fudge the spec requires
+    try:
+        age_diag_f = float(age_diag)
+    except ValueError:
+        age_diag_f = None
+    within90 = (
+        age_diag_f is not None and age_spec is not None
+        and abs((age_spec + 0.005) - age_diag_f) <= 90 / 365.25
+    )
+    has_prior_skin_regional = (
+        meta_patient is not None
+        and _filter_meta_before(meta_patient, age_spec)
+              .query("MetastaticDiseaseInd.str.contains('Regional|NOS', na=False)", engine="python")
+              .empty
+    )
+    if within90 and has_prior_skin_regional:
+        return _first_roman(path_stg or clin_stg) or "Unknown", "SKINLESS90D"
 
-        # CUT-9 – distant cutaneous recurrence (≤ specimen age, Distant or NOS)
-        if (_meta_yes(meta_before, r"skin|ear|eyelid|vulva", cut_site_pat, "distant_nos")
-            or _meta_yes(meta_before, r"skin|ear|eyelid|vulva", r".*", "distant_nos")):
-            return "IV", "CUT9"
+    # ---------------- RULE #9  SKINREG -------------------------------------
+    if "skin" in site_coll and not has_prior_skin_regional:
+        return "III", "SKINREG"
 
-        # CUT-10 – regional cutaneous recurrence (≤ specimen age, Regional or NOS)
-        if (_meta_yes(meta_before, r"skin|ear|eyelid|vulva", cut_site_pat, "regional_nos")
-            or _meta_yes(meta_before, r"skin|ear|eyelid|vulva", r".*", "regional_nos")):
-            return "III", "CUT10"
-   
-        
-    # CUT-11 – primary specimen collected *after* interval distant mets
-    if (primary_met == "primary"
-        and _contains(site_coll, cut_site_pat)
-        and _meta_yes(meta_before, r"skin|ear|eyelid|vulva", r".*", "distant_nos")):
-        return "IV", "CUT11"
+    # ---------------- RULE #10 SKINUNK -------------------------------------
+    if meta_patient is not None and not meta_patient.empty:
+        if _filter_meta_before(meta_patient, age_spec) \
+                .query("AgeAtMetastaticSite == 'Age Unknown/Not Recorded' "
+                       "and MetastaticDiseaseInd.str.contains('Distant|NOS', na=False)",
+                       engine='python').any(axis=None):
+            return "IV", "SKINUNK"
 
-    # --- RULE CUT‑12: Fallback to numeric stage -------------------------------
-    for src, rule in ((path_stage, "CUT12P"), (clin_stage, "CUT12C")):
-        m = re.match(r"([IV]+)", src)
-        if m:
-            return m.group(1), rule
-
-    # Default unknown
-    return "Unknown", "CUT-UNK"
-
-
-def stage_ocular(spec: pd.Series, dx: pd.Series, meta_patient: pd.DataFrame) -> Tuple[str, str]:
-    '''
-    Ocular primary staging (rules OC-1, OC-2, OC-3, and OC-4)
-    '''
-    
-    path_stage = str(dx.get("PathGroupStage", "")).upper()
-    clin_stage = str(dx.get("ClinGroupStage", "")).upper()
-    age_spec = _float(spec["Age At Specimen Collection"])
-    site_coll = str(spec["SpecimenSiteOfCollection"]).lower()
-
-    # OC-1 / OC-2: Stage IV at diagnosis
-    if "IV" in path_stage:
-        return "IV", "OC1"
-    if "IV" in clin_stage and path_stage.lower() in UNKNOWN_PATHOLOGICAL_STAGE_VALUES:
-        return "IV", "OC2"
-
-    # Prepare metastatic disease rows (<= specimen age or unknown)
-    meta_rows = _filter_meta_before(meta_patient, age_spec)
-    if meta_rows.empty:
-        return "Unknown", "OC-UNK"
-    
-    # OC-4 pre-condition: origin must be ocular AND specimen is a lymph-node.
-    origin_ocular = _contains(spec.get("SpecimenSiteOfOrigin"), r"eye|choroid|ciliary body|conjunctiva")
-    is_node_spec  = bool(NODE_REGEX.search(site_coll))
-    has_distant   = meta_rows["MetastaticDiseaseInd"].str.contains("Yes - Distant", na=False).any()
-    reg_nos       = meta_rows["MetastaticDiseaseInd"].str.contains(r"Yes - Regional|Yes - NOS", na=False).any()
-    if origin_ocular and is_node_spec and reg_nos and not has_distant:
-        return "III", "OC4"
-    
-    # OC-3: interval distant metastases (runs *after* OC-4 so OC-4 can win when appropriate)
-    if has_distant:
-        return "IV", "OC3"
-
-    return "Unknown", "OC-UNK"
-
-
-def stage_mucosal(spec: pd.Series, dx: pd.Series, meta_patient: pd.DataFrame) -> Tuple[str, str]:
-    path_stage = str(dx.get("PathGroupStage", "")).upper()
-    clin_stage = str(dx.get("ClinGroupStage", "")).upper()
-    age_spec = _float(spec["Age At Specimen Collection"])
-
-    if "IV" in path_stage:
-        return "IV", "MU1"
-    if "IV" in clin_stage and path_stage.lower() in UNKNOWN_PATHOLOGICAL_STAGE_VALUES:
-        return "IV", "MU2"
-
-    # ─── MU-3P / MU-3C — Primary specimen, stage I-III numerical fallback ───
-    if spec["Primary/Met"].lower() == "primary":
-        for src, rule in ((path_stage, "MU3P"), (clin_stage, "MU3C")):
-            m = re.match(r"([IV]+)", src)
-            if m and m.group(1) != "IV":
-                return m.group(1), rule
-
-    # ─── Metastatic-specimen pathway ─────────────────────────────────────────
-    meta_rows = _filter_meta_before(meta_patient, age_spec)
-
-    # MU-4 — distant mets present  → stage IV
-    if not meta_rows.empty and \
-       meta_rows["MetastaticDiseaseInd"].str.contains("Yes - Distant", na=False).any():
-        return "IV", "MU4"
-
-    # MU-3M — metastatic specimen **without** distant mets (past *or* future) → III
-    if spec["Primary/Met"].lower() == "metastatic" and "IV" not in path_stage:
-        meta_after = _filter_meta_after(meta_patient, age_spec)
-        no_future_distant = meta_after.empty or \
-            not meta_after["MetastaticDiseaseInd"].str.contains("Yes - Distant", na=False).any()
-        if no_future_distant:
-            return "III", "MU3M"
-
-    return "Unknown", "MU-UNK"
-
-
-def stage_unknown_primary(spec, dx, meta) -> Tuple[str, str]:
-    '''
-    Rules UN-1 ... UN-4  (spec section 4.4)
-
-    UN-1 : PathGroupStage contains IV
-    UN-2 : ClinGroupStage contains IV  AND PathGroupStage unknown / not-applicable
-    UN-3P: PathGroupStage contains I / II / III            ← new
-    UN-3C: ClinGroupStage contains I / II / III (when Path unknown)  ← new
-    UN-UNK: otherwise
-    '''
-    path_stage = str(dx.get("PathGroupStage", "")).upper()
-    clin_stage = str(dx.get("ClinGroupStage", "")).upper()
-    if "IV" in path_stage:
-        return "IV", "UN1"
-    if "IV" in clin_stage and path_stage.lower() in UNKNOWN_PATHOLOGICAL_STAGE_VALUES:
-        return "IV", "UN2"
-    
-    # ---- UN-3  (fallback to the earliest numeric stage in Path → Clin) -------
-    stage_re = re.compile(r"\b([I]{1,3})\b")          # captures I, II or III only
-    m_path = stage_re.search(path_stage)
-    if m_path:
-        return m_path.group(1), "UN3P"
-
-    if path_stage.lower() in UNKNOWN_PATHOLOGICAL_STAGE_VALUES:
-        m_clin = stage_re.search(clin_stage)
-        if m_clin:
-            return m_clin.group(1), "UN3C"
-    
-    return "Unknown", "UN-UNK"
+    return "Unknown", "UNMATCHED"
 
 
 def run_pipeline(
@@ -741,39 +610,33 @@ def run_pipeline(
         elif group == "C":
             spec_row  = specs.iloc[0]
             diag_row  = _select_diagnosis_C(dx_patient, spec_row, meta_patient)
+        elif group == "D":
+            spec_row = _select_specimen_D(specs)
+            diag_row = _select_diagnosis_D(dx_patient, spec_row)
         else:
             raise RuntimeError(f"Unknown group: {group}")
 
         primary_site = assign_primary_site(diag_row["PrimaryDiagnosisSite"])
-        if primary_site == "cutaneous": stage, rule = stage_cutaneous(spec_row, diag_row, meta_patient)
-        elif primary_site == "ocular": stage, rule = stage_ocular(spec_row, diag_row, meta_patient)
-        elif primary_site == "mucosal": stage, rule = stage_mucosal(spec_row, diag_row, meta_patient)
-        else: stage, rule = stage_unknown_primary(spec_row, diag_row, meta_patient)
-
-        '''
-        5. from ORIEN Data Rules for Tumor Clinical Pairing
-        5. AssignedPrimarySite: {cutaneous, ocular, mucosal, unknown}
-        - Based on the parameters outlined below, this will be the primary site variable used for the analysis
-        
-        6. from ORIEN Data Rules for Tumor Clinical Pairing
-        6. AssignedStage: {I, II, III, IV}
-        - Based on the parameters outlined below; this will be the stage variable used for the analysis
-        '''
+        stage, rule = stage_by_ordered_rules(spec_row, diag_row, meta_patient)
         
         output_rows.append(
             dict(
                 AvatarKey = avatar,
-                DeidSpecimenID = spec_row["DeidSpecimenID"],
-                DiagnosisIndex = int(diag_row.name),
-                AgeAtSpecimenCollection = spec_row["Age At Specimen Collection"],
+                ORIENSpecimenID = spec_row["DeidSpecimenID"],
                 AssignedPrimarySite = primary_site,
-                AssignedStage = stage,
-                StageRuleHit = rule,
-                ICBStatus = _assign_icb_status(spec_row, therapy_patient),
+                Group = group,
+                EknAssignedStage = stage,
+                NewRule = rule
             )
         )
-
-    return pd.DataFrame(output_rows)
+    
+    map_of_column_names = {
+        "EknAssignedStage": "EKN Assigned Stage",
+        "NewRule": "NEW RULE"
+    }
+    out_df = pd.DataFrame(output_rows).rename(columns = map_of_column_names)
+    out_df = out_df.sort_values(by = ["AvatarKey", "ORIENSpecimenID"]).reset_index(drop = True)
+    return out_df
 
 
 def main():
