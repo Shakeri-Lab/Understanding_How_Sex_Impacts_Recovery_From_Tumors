@@ -267,13 +267,20 @@ def stage_by_ordered_rules(
         return (distant & site_ok).any()
 
     def _prior_skin_regional() -> bool:
+        """
+        Any *regional or NOS* cutaneous mets dated **on/-before** the specimen?
+        """
         if meta_patient.empty:
             return False
         m = _filter_meta_before(meta_patient, age_spec, allow_unknown_age = False)
         if m.empty:
             return False
-        site_ok = m["MetsDzPrimaryDiagnosisSite"].str.contains(CUTANEOUS_RE, na = False)
-        reg_ok  = m["MetastaticDiseaseInd"].str.contains(r"Yes - Regional|Yes - NOS", na = False)
+        site_ok = m["MetsDzPrimaryDiagnosisSite"].str.contains(
+            r"skin|ear|eyelid|vulva", case=False, na=False
+        )
+        reg_ok = m["MetastaticDiseaseInd"].str.contains(
+            r"Yes - Regional|Yes - NOS", case=False, na=False
+        )
         return (site_ok & reg_ok).any()
 
     def _skin_distant_unknown() -> bool:
@@ -313,13 +320,24 @@ def stage_by_ordered_rules(
         return "III", "NODE"
 
     # RULE 8 - SKINLESS90D
-    within90 = (
-        age_spec is not None
-        and age_diag_f is not None
-        and 0 <= abs((age_spec + AGE_FUDGE) - age_diag_f) <= 90 / 365.25
+    within90 = _within_90_days_after(
+        age_spec + AGE_FUDGE if age_spec is not None else None,
+        age_diag_f
     )
-    if within90 and not _prior_skin_regional() and re.search(r"skin|ear|eyelid|vulva|head|soft tissue[s]?|breast", site_coll):
-        return _first_roman(path_stg or clin_stg) or "Unknown", "SKINLESS90D"
+
+    skin_site = re.search(
+        r"skin|ear|eyelid|vulva|head|soft tissue[s]?|breast",
+        site_coll
+    )
+
+    if within90 and skin_site and not _prior_skin_regional():
+        if path_stg in [
+            "Unknown/Not Reported",
+            "No TNM applicable for this site/histology combination",
+            "Unknown/Not Applicable",
+        ]:
+            return _first_roman(clin_stg) or "Unknown", "SKINLESS90D"
+        return _first_roman(path_stg) or "Unknown", "SKINLESS90D"
 
     # RULE 9 - SKINREG
     if re.search(r"skin|ear|eyelid|vulva|head|soft tissue[s]?|breast|lymph node", site_coll) and not _skin_distant_unknown():
