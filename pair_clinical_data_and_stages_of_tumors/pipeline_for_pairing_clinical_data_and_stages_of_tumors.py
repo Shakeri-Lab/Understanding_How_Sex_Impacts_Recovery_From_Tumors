@@ -250,6 +250,33 @@ def stage_by_ordered_rules(
     path_stg = str(dx.get("PathGroupStage", "")).strip()
     clin_stg = str(dx.get("ClinGroupStage", "")).strip()
     site_coll = str(spec.get("SpecimenSiteOfCollection", "")).lower()
+
+    if meta_patient.empty:
+        MetsDzPrimaryDiagnosisSite = ""
+        MetastaticDiseaseInd      = ""
+        AgeAtMetastaticSite       = None
+    else:
+        # ❶  Join all strings so later regex tests can still work.
+        MetsDzPrimaryDiagnosisSite = " ".join(
+            meta_patient["MetsDzPrimaryDiagnosisSite"]
+            .dropna()
+            .astype(str)
+        ).lower()
+
+        MetastaticDiseaseInd = " ".join(
+            meta_patient["MetastaticDiseaseInd"]
+            .dropna()
+            .astype(str)
+        ).lower()
+
+        # ❷  Convert every age entry to float (treat “Age 90 or older” as 90.0),
+        #     then take the earliest (minimum) non-null value.
+        ages = (
+            meta_patient["AgeAtMetastaticSite"]
+            .apply(lambda x: 90.0 if str(x).strip() == "Age 90 or older" else _float(x))
+        )
+        AgeAtMetastaticSite = ages.min() if ages.notna().any() else None
+    
     age_spec = _float(spec.get("Age At Specimen Collection"))
 
     def _meta_prior_distant() -> bool:
@@ -320,7 +347,7 @@ def stage_by_ordered_rules(
         return "III", "NODE"
 
     # RULE 8 - SKINLESS90D
-    within90 = _within_90_days_after(
+    within90 = _within_90_days(
         age_spec + AGE_FUDGE if age_spec is not None else None,
         age_diag_f
     )
@@ -330,7 +357,16 @@ def stage_by_ordered_rules(
         site_coll
     )
 
-    if within90 and skin_site and not _prior_skin_regional():
+    if (
+        within90 and
+        not (
+            re.search(r"skin|ear|eyelid|vulva", MetsDzPrimaryDiagnosisSite) and
+            re.search(r"Yes - Regional|Yes - NOS", MetastaticDiseaseInd) and
+            re.search(r"skin|ear|eyelid|vulva|head|soft tissues|breast", site_coll) and
+            (AgeAtMetastaticSite is not None and age_spec is not None and
+             AgeAtMetastaticSite <= age_spec + AGE_FUDGE)
+        )
+    ):
         if path_stg in [
             "Unknown/Not Reported",
             "No TNM applicable for this site/histology combination",
@@ -355,7 +391,18 @@ def _within_90_days_after(age_spec: float | None, age_diag: float | None) -> boo
     if age_spec is None or age_diag is None:
         return False
     diff = age_spec - age_diag
+    return 0 <= diff <= 90 / 365.25
+
+
+def _within_90_days(age_spec: float | None, age_diag: float | None) -> bool:
+    if age_spec is None or age_diag is None:
+        return False
+    diff = age_spec - age_diag
     return 0 <= abs(diff) <= 90 / 365.25
+
+
+def earliest(df):
+    return df.sort_values("Age At Specimen Collection", ascending = True).iloc[0]
 
 
 def _select_specimen_B(patient_cm: pd.DataFrame) -> pd.Series:
@@ -368,29 +415,29 @@ def _select_specimen_B(patient_cm: pd.DataFrame) -> pd.Series:
         - If RNAseq is available for just one tumor, select the tumor with RNAseq data (even if no WES)
         - If RNAseq data is available for > 1 tumors OR if only WES is available for all tumors:
     '''
+    cm = patient_cm.copy()
+    cm["_age"] = cm["Age At Specimen Collection"].apply(_float)
 
-    has_rna = patient_cm["RNASeq"].notna()
+    has_rna = cm["RNASeq"].notna() & cm["RNASeq"].str.strip().ne("")
     n_rna = has_rna.sum()
-
     if n_rna == 1:
-        return patient_cm.loc[has_rna].iloc[0]
+        return cm.loc[has_rna].iloc[0]
 
-    if n_rna > 1 or n_rna == 0:
+    has_wes = cm["WES"].notna() & cm["WES"].str.strip().ne("")
+    n_wes = has_wes.sum()
+    if n_rna > 1 or (n_rna == 0 and has_wes.all()):
+        
         site = patient_cm["SpecimenSiteOfCollection"].str.lower().fillna("")
         skin  = site.str.contains("skin")
         soft  = site.str.contains("soft tissue")
         lnode = site.str.contains("lymph node")
-
-        def earliest(df):
-            return df.sort_values("Age At Specimen Collection", ascending=True).iloc[0]
-
         if skin.any() and not (lnode.any() or soft.any()):
             return earliest(patient_cm[skin])
 
         if not (skin.any() or soft.any()) and lnode.any():
             return earliest(patient_cm[lnode])
 
-        if (skin | soft).any() and lnode.any():
+        if (skin.any() or soft.any()) and lnode.any():            
             candidates = patient_cm[skin | soft | lnode]
             earliest_age = candidates["Age At Specimen Collection"].min()
             same_age = candidates[candidates["Age At Specimen Collection"] == earliest_age]

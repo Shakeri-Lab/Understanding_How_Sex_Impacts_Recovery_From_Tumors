@@ -44,7 +44,7 @@ def test_that_output_of_pipeline_equals_key(output_of_pipeline: pd.DataFrame) ->
 
     mask_of_equality = output_of_pipeline.values == orien_tumor_staging_key.values
     if mask_of_equality.all():
-        print("All corresponding cells in output of pipeline and ORIEN Tumor Staging Key match.")
+        print("All corresponding cells in output of pipeline and ORIEN Tumor Staging Key.")
         return
 
     tuple_of_arrays_of_row_and_colummn_indices = (~mask_of_equality).nonzero()
