@@ -164,17 +164,25 @@ def add_counts(cm: pd.DataFrame, dx: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Dat
 
 def _patient_group(row) -> str:
     '''
-    Return A, B, C, or D according to diagnosis and tumor counts.
+    From "ORIEN Specimen Staging Revised Rules":
+    5. AssignedGroup (SAME DEFINITIONS AS BEFORE)
+        - Group A: MelanomaDiagnosisCount = 1 AND SequencedTumorCount = 1 -> n = 327
+        - Group B: MelanomaDiagnosisCount = 1 AND SequencedTumorCount > 1 -> n = 19
+        - Group C: MelanomaDiagnosisCount > 1 AND SequencedTumorCount = 1 -> n = 30
+        - Group D: MelanomaDiagnosisCount > 1 AND SequencedTumorCount > 1 -> n = 3
     '''
-    mdx = int(row.get("MelanomaDiagnosisCount", 0) or 0)
-    mts = int(row.get("SequencedTumorCount", 0) or 0)
+    mdx = row.get("MelanomaDiagnosisCount", 0)
+    mts = row.get("SequencedTumorCount", 0)
     if mdx == 1 and mts == 1:
         return "A"
     if mdx == 1 and mts > 1:
         return "B"
     if mdx > 1 and mts == 1:
         return "C"
-    return "D"
+    if mdx > 1 and mts > 1:
+        return "D"
+    else:
+        raise Exception("Group could not be assigned.")
 
     
 def _assign_icb_status(
@@ -470,6 +478,17 @@ def run_pipeline(
     cm, dx = add_counts(cm, dx)
 
     cm["Group"] = cm.apply(_patient_group, axis = 1)
+    
+    patient_groups = cm.groupby("ORIENAvatarKey").first()
+    count_A = (patient_groups['Group'] == 'A').sum()
+    count_B = (patient_groups['Group'] == 'B').sum()
+    count_C = (patient_groups['Group'] == 'C').sum()
+    count_D = (patient_groups['Group'] == 'D').sum()
+    assert count_A == 327, f"Number of patients in A was {count_A} and should be 327."
+    assert count_B == 19, f"Number of patients in B was {count_B} and should be 19."
+    assert count_C == 30, f"Number of patients in C was {count_C} and should be 30."
+    assert count_D == 3, f"Number of patients in D was {count_D} and should be 3."
+    
     cm[["MelanomaDiagnosisCount", "SequencedTumorCount"]] = cm[["MelanomaDiagnosisCount", "SequencedTumorCount"]].fillna(0)
 
     output_rows: List[Dict[str, str]] = []
