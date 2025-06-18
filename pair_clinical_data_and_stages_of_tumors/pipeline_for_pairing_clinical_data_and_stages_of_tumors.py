@@ -169,7 +169,7 @@ def _patient_group(row) -> str:
         - Group A: MelanomaDiagnosisCount = 1 AND SequencedTumorCount = 1 -> n = 327
         - Group B: MelanomaDiagnosisCount = 1 AND SequencedTumorCount > 1 -> n = 19
         - Group C: MelanomaDiagnosisCount > 1 AND SequencedTumorCount = 1 -> n = 30
-        - Group D: MelanomaDiagnosisCount > 1 AND SequencedTumorCount > 1 -> n = 3
+        - Group D: MelanomaDiagnosisCount > 1 AND SequencedTumorCount > 1 -> n=3
     '''
     mdx = row.get("MelanomaDiagnosisCount", 0)
     mts = row.get("SequencedTumorCount", 0)
@@ -341,47 +341,57 @@ def _within_90_days_after(age_spec: float | None, age_diag: float | None) -> boo
 
 
 def _select_specimen_B(patient_cm: pd.DataFrame) -> pd.Series:
-    candidates = patient_cm[patient_cm["RNASeq"].notna()].copy()
-    if candidates.empty:
-        candidates = patient_cm.copy()
-    
-    candidates["_age"] = candidates["Age At Specimen Collection"].apply(_float)
+    '''
+    From "ORIEN Specimen Staging Revised Rules":
+    6. AssignedGroup
+    Group B = 1 melanoma diagnosis and >1 tumor sequenced -> n=19
+    CHANGE FROM PRIOR: Do not exclude any, can still use those with WES only for TMB analysis.
+    A few clarifications on the rules also in red text below.
+        - If RNAseq is available for just one tumor, select the tumor with RNAseq data (even if no WES)
+        - If RNAseq data is available for > 1 tumors OR if only WES is available for all tumors:
+    '''
 
-    is_skin = candidates["SpecimenSiteOfCollection"].str.contains(r"\bskin\b", case = False, na = False)
-    is_soft = candidates["SpecimenSiteOfCollection"].str.contains(r"soft tissue", case = False, na = False)
-    is_node = candidates["SpecimenSiteOfCollection"].str.contains(r"lymph node", case = False, na = False)
+    has_rna = patient_cm["RNASeq"].notna()
+    n_rna = has_rna.sum()
 
-    if is_skin.any() and not (is_node.any() or is_soft.any()):
-        subset = candidates[is_skin]
-    elif is_node.any() and not (is_skin.any() or is_soft.any()):
-        subset = candidates[is_node]
-    elif (is_skin | is_soft).any() and is_node.any():
-        subset = candidates[is_skin | is_soft]
-    else:
-        subset = candidates
+    if n_rna == 1:
+        return patient_cm.loc[has_rna].iloc[0]
+
+    if n_rna > 1 or n_rna == 0:
+        site = patient_cm["SpecimenSiteOfCollection"].str.lower().fillna("")
+        skin  = site.str.contains("skin")
+        soft  = site.str.contains("soft tissue")
+        lnode = site.str.contains("lymph node")
+
+        def earliest(df):
+            return df.sort_values("Age At Specimen Collection", ascending=True).iloc[0]
+
+        if skin.any() and not (lnode.any() or soft.any()):
+            return earliest(patient_cm[skin])
+
+        if not (skin.any() or soft.any()) and lnode.any():
+            return earliest(patient_cm[lnode])
+
+        if (skin | soft).any() and lnode.any():
+            candidates = patient_cm[skin | soft | lnode]
+            earliest_age = candidates["Age At Specimen Collection"].min()
+            same_age = candidates[candidates["Age At Specimen Collection"] == earliest_age]
+            if same_age.shape[0] == 1:
+                return same_age.iloc[0]
+            
+            if "Primary/Met" in same_age.columns and (same_age["Primary/Met"].str.lower() == "primary").any():
+                return same_age[same_age["Primary/Met"].str.lower() == "primary"].iloc[0]
+            
+            if lnode.any():
+                return earliest(patient_cm[lnode])
+            
+            return earliest(candidates)
+
+        return earliest(patient_cm)
+
+    raise RuntimeError("Unexpected branch fall-through")
+
         
-    subset = subset.sort_values("_age", na_position = "last")
-    if subset.empty:
-        subset = candidates.sort_values("_age", na_position = "last")
-
-    earliest_age = subset["_age"].min(skipna = True)
-    if pd.notna(earliest_age):
-        subset = subset[subset["_age"] == earliest_age]
-        if subset.empty:
-            subset = candidates.sort_values("_age", na_position = "last").head(1)
-    
-    if len(subset) > 1:
-        prim = subset[subset["Primary/Met"].str.lower() == "primary"]
-        if not prim.empty:
-            subset = prim
-        else:
-            node = subset[subset["SpecimenSiteOfCollection"].str.contains("lymph node", case = False, na = False)]
-            if not node.empty:
-                subset = node
-
-    return subset.iloc[0]
-
-
 def _hist_clean(txt: str) -> str:
     return re.sub(r"[^A-Za-z]", "", str(txt)).lower()
 
