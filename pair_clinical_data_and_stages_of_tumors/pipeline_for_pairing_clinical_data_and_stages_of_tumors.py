@@ -355,7 +355,7 @@ def _within_90_days_after(age_spec: float | None, age_diag: float | None) -> boo
     if age_spec is None or age_diag is None:
         return False
     diff = age_spec - age_diag
-    return 0 <= diff <= 90 / 365.25
+    return 0 <= abs(diff) <= 90 / 365.25
 
 
 def _select_specimen_B(patient_cm: pd.DataFrame) -> pd.Series:
