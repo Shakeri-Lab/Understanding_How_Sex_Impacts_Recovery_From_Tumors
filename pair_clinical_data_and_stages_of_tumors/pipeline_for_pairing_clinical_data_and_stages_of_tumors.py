@@ -316,7 +316,7 @@ def stage_by_ordered_rules(
     within90 = (
         age_spec is not None
         and age_diag_f is not None
-        and 0 <= (age_spec + AGE_FUDGE) - age_diag_f <= 90 / 365.25
+        and 0 <= abs((age_spec + AGE_FUDGE) - age_diag_f) <= 90 / 365.25
     )
     if within90 and not _prior_skin_regional() and re.search(r"skin|ear|eyelid|vulva|head|soft tissue[s]?|breast", site_coll):
         return _first_roman(path_stg or clin_stg) or "Unknown", "SKINLESS90D"
