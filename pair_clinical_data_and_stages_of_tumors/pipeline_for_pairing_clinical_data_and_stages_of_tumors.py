@@ -37,18 +37,29 @@ from typing import Dict, List, Optional, Tuple
 # CONSTANTS AND REGEXES
 #######################
 
+'''
+From "ORIEN Specimen Staging Revised Rules":
+4. AssignedPrimarySite (SAME DEFINITIONS AS BEFORE)
+    - IF PrimaryDiagnosisSite contains "skin" OR "EAR" OR "eyelid" OR "vulva", THEN AssignedPrimarySite = cutaneous
+        - Vulvar melanoma is included here given that all appear to have been staged as cutaneous (not mucosal) melanoma.
+    - If PrimaryDiagnosisSite contains "choroid" OR "ciliary body" OR "conjunctiva", then AssignedPrimarySite = ocular.
+    - If PrimaryDiagnosisSite contains "sinus" OR "gum" OR "nasal" OR "urethra" then AssignedPrimarySite = mucosal
+        - The list only includes the primary mucosal sites present in this data set and not all possible mucosal sites for melanoma in general.
+    - If PrimaryDiagnosisSite contains 'unknown', then AssignedPrimarySite = unknown
+'''
+
+SITE_KEYWORDS = {
+    "cutaneous": "skin|ear|eyelid|vulva",
+    "ocular": "choroid|ciliary body|conjunctiva",
+    "mucosal": "sinus|gum|nasal|urethra",
+    "unknown": "unknown"
+}
+
 AGE_FUDGE = 0.005 # years, or approximately 1.8 days.
 _ROMAN_RE = re.compile(r"\b(?:Stage\s*)?([IV]{1,3})(?:[ABCD])?\b", re.I)
 _MELANOMA_RE = re.compile(r"^87\d\d/\d$")
 
 ICB_PATTERN = re.compile(r"immune checkpoint|pembrolizumab|nivolumab|ipilimumab|atezolizumab|durvalumab|avelumab|cemiplimab|relatlimab", re.I)
-
-SITE_KEYWORDS = {
-    "cutaneous": "skin|ear|eyelid|vulva|head|scalp|trunk|face|neck|back|chest|shoulder|arm|leg|extremity|hand|foot|buttock|hip|soft tissue|breast",
-    "ocular": "choroid|ciliary body|conjunctiva|eye",
-    "mucosal": "sinus|gum|nasal|urethra|anorect|anus|rectum|anal canal|oropharynx|oral|palate|vagina",
-    "unknown": "unknown"
-}
 
 CUTANEOUS_RE = re.compile(SITE_KEYWORDS["cutaneous"], re.I)
 NODE_RE = re.compile(r"lymph node", re.I)
