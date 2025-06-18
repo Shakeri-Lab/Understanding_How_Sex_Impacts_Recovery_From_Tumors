@@ -3,9 +3,23 @@
 '''
 `pipeline_for_pairing_clinical_data_and_stages_of_tumors.py`
 
-This module is a pipeline implementing "ORIEN Specimen Staging Revised Rules" for pairing patients' melanoma tumor specimens
-with the appropriate primary diagnosis site, patient grouping, AJCC stage, and rule.
-        
+This module is a pipeline implementing "ORIEN Specimen Staging Revised Rules" for pairing patients' melanoma tumor specimens with the appropriate primary diagnosis site, patient grouping, AJCC stage, and rule.
+
+2. From "ORIEN Specimen Staging Revised Rules":
+2. Definitions
+    - Melanoma diagnosis (Diagnosis file): HistologyCode = {list of melanoma codes previously sent}
+    - Tumor sequenced (Molecular Linkage file): Tumor/Germline variable = Tumor
+
+A melanoma diagnosis is a row in `24PRJ217UVA_20241112_Diagnosis_V4.csv` with a histology code of the form 87<digit><digit>/<digit>.
+
+A sequenced tumor is a row in `24PRJ217UVA_20241112_MetastaticDisease_V4.csv` with a value of "Tumor" in column with label "Tumor/Germline".
+
+From "ORIEN Specimen Staging Revised Rules":
+1. Using data  from:
+    - Molecular Linkage file (main file)
+    - Diagnosis file (for primary site and stage info)
+    - Metastatic Disease (to help assign stage)
+
 Usage:
 python pipeline_for_pairing_clinical_data_and_stages_of_tumors.py --clinmol ../Clinical_Data/24PRJ217UVA_NormalizedFiles/24PRJ217UVA_20241112_ClinicalMolLinkage_V4.csv --diagnosis ../Clinical_Data/24PRJ217UVA_NormalizedFiles/24PRJ217UVA_20241112_Diagnosis_V4.csv --metadisease ../Clinical_Data/24PRJ217UVA_NormalizedFiles/24PRJ217UVA_20241112_MetastaticDisease_V4.csv --therapy ../Clinical_Data/24PRJ217UVA_NormalizedFiles/24PRJ217UVA_20241112_Medications_V4.csv --out output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors.csv > output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors.txt 2>&1
 '''
@@ -40,8 +54,6 @@ CUTANEOUS_RE = re.compile(SITE_KEYWORDS["cutaneous"], re.I)
 NODE_RE = re.compile(r"lymph node", re.I)
 PAROTID_RE = re.compile(r"parotid", re.I)
 _SITE_LOCAL_RE = re.compile(r"skin|ear|eyelid|vulva|head|scalp|soft tissue[s]?|breast|lymph node|parotid", re.I)
-
-STRICT: bool = False
 
 
 #################
@@ -105,18 +117,37 @@ def load_inputs(
 #######################
 
 def add_counts(cm: pd.DataFrame, dx: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    diag_unique = (
-        dx.assign(_age=dx["AgeAtDiagnosis"].fillna("NA"))
-        .drop_duplicates(subset=["AvatarKey", "_age", "PrimaryDiagnosisSite"])
-    )
-    diag_counts  = (
-        diag_unique.groupby("AvatarKey")
-        .size()
-        .rename("MelanomaDiagnosisCount")
-    )
+    '''
+    From "ORIEN Specimen Staging Revised Rules":
+    3. New variables to create:
+        3.a. MelanomaDiagnosisCount: count for number of melanoma clinical diagnoses for a patient
+            - Create using the number of unique [AgeAtDiagnosis and PrimaryDiagnosisSite] combinations for each patient
+            - This approach may work best since a few patients have multiple melanomas diagnosed at the same age, so it [age at diagnosis] cannot be used on its own.
+                - Example with multiple diagnoses at same age with same stage: ILE2DL0KMW
+        3.b. SequencedTumorCount: count for number of sequenced tumor samples for a patient
+            - Create using the number of unique [DeidSpecimenID and AvatarKey] combinations] for each patient
+            - This approach may work best since a few patients have multiple sequenced tumors at the same age (or stage, etc), so these variables cannot be used on their own.
+                - Example with multiple tumors sequenced at the same age/stage: 59OP5X1AZL
+    '''
+    
+    '''
+    Create a new column `_age` in data frame of diagnoses that is column `AgeAtDiagnosis` with NA values equal to "NA".
+    Drop duplicate rows by patient ID, `_age`, and primary diagnosis site.
+    Determine how many distinct melanoma diagnoses each patient has.
+    '''
+    diag_unique = dx.assign(_age = dx["AgeAtDiagnosis"].fillna("NA")).drop_duplicates(subset = ["AvatarKey", "_age", "PrimaryDiagnosisSite"])
+    diag_counts  = diag_unique.groupby("AvatarKey").size().rename("MelanomaDiagnosisCount")
+    
+    '''
+    Drop duplicate rows in data frame of tumors by patient and specimen IDs.
+    Determine how many distinct tumors each patient has.
+    '''
     tumor_counts = cm.drop_duplicates(["ORIENAvatarKey", "DeidSpecimenID"]).groupby("ORIENAvatarKey").size().rename("SequencedTumorCount")
-    cm = cm.join(tumor_counts, on = "ORIENAvatarKey") # Logic that uses both diagnosis count and tumor count is executed while iterating over rows in cm.
+    
+    # Logic that uses both diagnosis count and tumor count is executed while iterating over rows in cm.
+    cm = cm.join(tumor_counts, on = "ORIENAvatarKey")
     cm = cm.join(diag_counts, on = "ORIENAvatarKey")
+    
     return cm, dx
 
 
@@ -174,11 +205,9 @@ def _filter_meta_before(meta_patient: pd.DataFrame, age_spec: float | None, allo
 def assign_primary_site(primary_diagnosis_site: str) -> str:
     txt = str(primary_diagnosis_site).lower()
     for site, pat in SITE_KEYWORDS.items():
-        if re.search(pat, txt):
+        if re.search(pat, txt): # i.e., if the text is in the pattern
             return site
-    if STRICT:
-        raise ValueError(f"Unrecognized primary diagnosis site: '{primary_diagnosis_site}'")
-    return "unknown"
+    raise ValueError(f"Unrecognized primary diagnosis site: '{primary_diagnosis_site}'")
 
 
 ##############################################################################################
@@ -424,12 +453,8 @@ def run_pipeline(
     clinmol: Path,
     diagnosis: Path,
     metadisease: Path,
-    therapy: Path | None = None,
-    strict: bool = False,
+    therapy: Path | None = None
 ) -> pd.DataFrame:
-    global STRICT
-    STRICT = strict
-
     cm, dx, md, th = load_inputs(clinmol, diagnosis, metadisease, therapy)
     cm, dx = add_counts(cm, dx)
 
@@ -461,6 +486,15 @@ def run_pipeline(
         primary_site = assign_primary_site(diag_row["PrimaryDiagnosisSite"])
         stage, rule = stage_by_ordered_rules(spec_row, diag_row, meta_patient)
         
+        '''
+        From "ORIEN Specimen Staging Revised Rules":
+        3.c. AssignedPrimarySite: {cutaneous, ocular, mucosal, unknown}
+            - Based on the parameters outlined below; primary site variable to be used for the analysis
+        3.d. AssignedStage [EKN Assigned Stage in "ORIEN_Tumor_Staging_Key.csv"]: {I, II, III, IV}
+            - Based on the parameters outlined below; stage variable to be used for the analysis
+        3.e. AssignedGroup [Group in "ORIEN_Tumor_Staging_Key.csv"]: {A, B, C, D} (NEW - just to keep track of these better)
+        '''
+        
         output_rows.append(
             {
                 "AvatarKey": avatar,
@@ -482,7 +516,6 @@ def main():
     parser.add_argument("--metadisease", required = True, type = Path)
     parser.add_argument("--therapy", type = Path)
     parser.add_argument("--out", required = True, type = Path)
-    parser.add_argument("--strict", action = "store_true")
     args = parser.parse_args()
 
     logging.basicConfig(level = logging.INFO, format = "%(levelname)s: %(message)s")
@@ -491,8 +524,7 @@ def main():
         clinmol = args.clinmol,
         diagnosis = args.diagnosis,
         metadisease = args.metadisease,
-        therapy = args.therapy,
-        strict = args.strict,
+        therapy = args.therapy
     )
 
     logging.info("Writing %d rows to %s", len(df), args.out)

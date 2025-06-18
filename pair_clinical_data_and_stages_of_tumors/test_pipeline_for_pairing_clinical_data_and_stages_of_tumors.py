@@ -25,8 +25,7 @@ def output_of_pipeline() -> pd.DataFrame:
         clinmol = CSV_CM,
         diagnosis = CSV_DX,
         metadisease = CSV_MD,
-        therapy = CSV_TH,
-        strict = True
+        therapy = CSV_TH
     )
 
 def test_that_output_of_pipeline_equals_key(output_of_pipeline: pd.DataFrame) -> None:
