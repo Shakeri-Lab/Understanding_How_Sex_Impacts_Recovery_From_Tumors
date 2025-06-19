@@ -64,7 +64,7 @@ ICB_PATTERN = re.compile(r"immune checkpoint|pembrolizumab|nivolumab|ipilimumab|
 CUTANEOUS_RE = re.compile(SITE_KEYWORDS["cutaneous"], re.I)
 NODE_RE = re.compile(r"lymph node", re.I)
 PAROTID_RE = re.compile(r"parotid", re.I)
-_SITE_LOCAL_RE = re.compile(r"skin|ear|eyelid|vulva|head|scalp|soft tissue[s]?|breast|lymph node|parotid", re.I)
+_SITE_LOCAL_RE = re.compile(r"skin|ear|eyelid|vulva|head|soft tissues|breast|lymph node|parotid", re.I)
 
 
 #################
@@ -477,60 +477,85 @@ def _hist_clean(txt: str) -> str:
 
 
 def _select_diagnosis_C(dx_patient: pd.DataFrame, spec_row: pd.Series, meta_patient: pd.DataFrame) -> pd.Series:
+    age_spec = _float(spec_row["Age At Specimen Collection"])
+    
     if dx_patient.empty:
         raise ValueError("No diagnosis rows supplied to _select_diagnosis_C")
-    
     dxp = dx_patient.copy()
-    age_spec = _float(spec_row["Age At Specimen Collection"])
-
+    age_diag = dxp["AgeAtDiagnosis"].apply(_float)
+    
+    prox = age_diag.apply(lambda x: _within_90_days_after(age_spec, x))
+    
+    primary_sites_lower  = dxp["PrimaryDiagnosisSite"].str.lower()
+    specimen_site_origin = str(spec_row["SpecimenSiteOfOrigin"]).lower()
+    site_match = primary_sites_lower == specimen_site_origin
+    
     primary_met = spec_row["Primary/Met"].strip().lower()
-
     if primary_met == "primary":
-        age_diag = dxp["AgeAtDiagnosis"].apply(_float)
-        prox = age_diag.apply(lambda x: _within_90_days_after(age_spec, x))
         if prox.sum() == 1:
             return dxp[prox].iloc[0]
 
-        if prox.any():
-            site_match = dxp["PrimaryDiagnosisSite"].str.lower() == spec_row["SpecimenSiteOfCollection"].lower()
-            match_rows = dxp[prox & site_match].copy()
+        unknown_age_exists   = age_diag.isna().any()
+        primary_sites_differ = primary_sites_lower.nunique() > 1
+        if (prox.sum() > 1 or unknown_age_exists) and primary_sites_differ:
+            match_rows = dxp[site_match].copy()
             if not match_rows.empty:
                 match_rows["_age"] = match_rows["AgeAtDiagnosis"].apply(_float)
                 return match_rows.sort_values("_age", na_position = "last").iloc[0]
 
-        histologies_differ = dxp["Histology"].apply(_hist_clean).nunique() > 1
-        if (prox.sum() == 0) or (age_diag.isna().any() and histologies_differ):
-            hist_spec = _hist_clean(spec_row["Histology/Behavior"])
-            hist_match = dxp["Histology"].apply(_hist_clean) == hist_spec
-            if hist_match.sum() == 1:
-                return dxp[hist_match].iloc[0]
-
-    else:
-        site_coll = spec_row["SpecimenSiteOfCollection"].lower()
-        if not re.search(r"soft tissue|lymph node", site_coll):
-            return dxp.sort_values("AgeAtDiagnosis").iloc[0]
-
-        prox = dxp["AgeAtDiagnosis"].apply(_float).apply(lambda x: _within_90_days_after(age_spec, x))
+    elif primary_met == "metastatic":
         
-        if "soft tissue" in site_coll and prox.sum() == 1:
-            return dxp[prox].iloc[0]
+        site_coll = spec_row["SpecimenSiteOfCollection"].lower()
+        if "lymph node" not in site_coll:
+            path_stage_raw = dxp["PathGroupStage"].fillna("").str.strip()
+            path_stage_U   = path_stage_raw.str.upper()
+            clin_stage_U   = dxp["ClinGroupStage"].fillna("").str.strip().str.upper()
+
+            stage_iv_mask = (
+                (path_stage_U == "IV") |
+                (
+                    (clin_stage_U == "IV") &
+                    path_stage_raw.str.lower().isin({
+                        "unknown/not reported",
+                        "no tnm applicable for this site/histology combination",
+                        "unknown/not applicable",
+                    })
+                )
+            )
+
+            if stage_iv_mask.sum() == 1:
+                return dxp[stage_iv_mask].iloc[0]
+            
+            if stage_iv_mask.sum() == 0:
+                dxp["_age"] = age_diag
+                return dxp.sort_values("_age", na_position = "last").iloc[0]
 
         if "lymph node" in site_coll:
-            if prox.any():
+            if prox.sum() == 1:
+                return dxp[prox].iloc[0]
+            
+            if prox.sum() > 1:
                 pos_node = ~dxp["PathNStage"].str.contains(
-                    r"\bN0\b|Nx|unknown/not applicable|no tnm",
+                    r"N0|Nx|unknown/not applicable|no tnm applicable for this site/histology combination",
                     case = False,
                     na = False
                 )
-                pos_node &= prox
                 if pos_node.sum() == 1:
                     return dxp[pos_node].iloc[0]
-            if prox.sum() == 0 and not meta_patient.empty:
-                match_site = meta_patient["MetsDzPrimaryDiagnosisSite"].str.lower().unique()
-                site_match = dxp["PrimaryDiagnosisSite"].str.lower().isin(match_site)
+               
+            if prox.all():
+                
                 if site_match.sum() == 1:
-                    return dxp[site_match].iloc[0]
-
+                    match_rows = dxp[site_match].copy()
+                    if not match_rows.empty:
+                        match_rows["_age"] = match_rows["AgeAtDiagnosis"].apply(_float)
+                        return match_rows.sort_values("_age", na_position = "last").iloc[0]
+                    
+                if site_match.sum() == 0:
+                    copy_of_dxp = dxp.copy()
+                    dxp["_age"] = dxp["AgeAtDiagnosis"].apply(_float)
+                    return dxp.sort_values("_age", na_position = "last").iloc[0]
+                
     dxp["_age"] = dxp["AgeAtDiagnosis"].astype(float)
     return dxp.sort_values("_age").iloc[0]
 
