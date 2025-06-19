@@ -59,6 +59,25 @@ def add_counts(data_frame_of_clinical_molecular_linkage_data: pd.DataFrame, data
     return data_frame_of_clinical_molecular_linkage_data
 
 
+'''
+From "ORIEN Specimen Staging Revised Rules":
+4. AssignedPrimarySite (SAME DEFINITIONS AS BEFORE)
+    - IF PrimaryDiagnosisSite contains "skin" OR "EAR" OR "eyelid" OR "vulva", THEN AssignedPrimarySite = cutaneous
+        - Vulvar melanoma is included here given that all appear to have been staged as cutaneous (not mucosal) melanoma.
+    - If PrimaryDiagnosisSite contains "choroid" OR "ciliary body" OR "conjunctiva", then AssignedPrimarySite = ocular.
+    - If PrimaryDiagnosisSite contains "sinus" OR "gum" OR "nasal" OR "urethra" then AssignedPrimarySite = mucosal
+        - The list only includes the primary mucosal sites present in this data set and not all possible mucosal sites for melanoma in general.
+    - If PrimaryDiagnosisSite contains 'unknown', then AssignedPrimarySite = unknown
+'''
+
+SITE_KEYWORDS = {
+    "cutaneous": "skin|ear|eyelid|vulva",
+    "ocular": "choroid|ciliary body|conjunctiva",
+    "mucosal": "sinus|gum|nasal|urethra",
+    "unknown": "unknown"
+}
+
+
 def run_pipeline(
     path_to_clinical_molecular_linkage_data: Path,
     path_to_diagnosis_data: Path,
@@ -69,17 +88,24 @@ def run_pipeline(
     
     data_frame_of_clinical_molecular_linkage_data = add_counts(data_frame_of_clinical_molecular_linkage_data, data_frame_of_diagnosis_data)
 
-    data_frame_of_clinical_molecular_linkage_data["Group"] = data_frame_of_clinical_molecular_linkage_data.apply(_patient_group, axis = 1)
-    
-    patient_groups = data_frame_of_clinical_molecular_linkage_data.groupby("ORIENAvatarKey").first()
-    count_A = (patient_groups['Group'] == 'A').sum()
-    count_B = (patient_groups['Group'] == 'B').sum()
-    count_C = (patient_groups['Group'] == 'C').sum()
-    count_D = (patient_groups['Group'] == 'D').sum()
-    assert count_A == 327, f"Number of patients in A was {count_A} and should be 327."
-    assert count_B == 19, f"Number of patients in B was {count_B} and should be 19."
-    assert count_C == 30, f"Number of patients in C was {count_C} and should be 30."
-    assert count_D == 3, f"Number of patients in D was {count_D} and should be 3."
+    '''
+    From "ORIEN Specimen Staging Revised Rules":
+    5. AssignedGroup (SAME DEFINITIONS AS BEFORE)
+        - Group A: MelanomaDiagnosisCount = 1 AND SequencedTumorCount = 1 -> n = 327
+        - Group B: MelanomaDiagnosisCount = 1 AND SequencedTumorCount > 1 -> n = 19
+        - Group C: MelanomaDiagnosisCount > 1 AND SequencedTumorCount = 1 -> n = 30
+        - Group D: MelanomaDiagnosisCount > 1 AND SequencedTumorCount > 1 -> n=3
+    '''
+    data_frame_of_clinical_molecular_linkage_data["Group"] = data_frame_of_clinical_molecular_linkage_data.apply(assign_patient_to_group, axis = 1)
+    data_frame_of_first_rows_for_patients = data_frame_of_clinical_molecular_linkage_data.groupby("ORIENAvatarKey").first()
+    number_of_patients_in_A = (data_frame_of_first_rows_for_patients["Group"] == 'A').sum()
+    number_of_patients_in_B = (data_frame_of_first_rows_for_patients["Group"] == 'B').sum()
+    number_of_patients_in_C = (data_frame_of_first_rows_for_patients["Group"] == 'C').sum()
+    number_of_patients_in_D = (data_frame_of_first_rows_for_patients["Group"] == 'D').sum()
+    assert number_of_patients_in_A == 327, f"Number of patients in A was {number_of_patients_in_A} and should be 327."
+    assert number_of_patients_in_B == 19, f"Number of patients in B was {number_of_patients_in_B} and should be 19."
+    assert number_of_patients_in_C == 30, f"Number of patients in C was {number_of_patients_in_C} and should be 30."
+    assert number_of_patients_in_D == 3, f"Number of patients in D was {count_D} and should be 3."
 
     output_rows: List[Dict[str, str]] = []
 
@@ -128,27 +154,22 @@ def run_pipeline(
     return pd.DataFrame(output_rows).sort_values(by = ["AvatarKey", "ORIENSpecimenID"]).reset_index(drop = True)
 
 
-#######################
-# CONSTANTS AND REGEXES
-#######################
+def assign_patient_to_group(row) -> str:
+    
+    melanoma_diagnosis_count = row.get("MelanomaDiagnosisCount", 0)
+    sequenced_tumor_count = row.get("SequencedTumorCount", 0)
+    
+    if melanoma_diagnosis_count == 1 and sequenced_tumor_count == 1:
+        return "A"
+    if melanoma_diagnosis_count == 1 and sequenced_tumor_count > 1:
+        return "B"
+    if melanoma_diagnosis_count > 1 and sequenced_tumor_count == 1:
+        return "C"
+    if melanoma_diagnosis_count > 1 and sequenced_tumor_count > 1:
+        return "D"
+    else:
+        raise Exception("Group could not be assigned.")
 
-'''
-From "ORIEN Specimen Staging Revised Rules":
-4. AssignedPrimarySite (SAME DEFINITIONS AS BEFORE)
-    - IF PrimaryDiagnosisSite contains "skin" OR "EAR" OR "eyelid" OR "vulva", THEN AssignedPrimarySite = cutaneous
-        - Vulvar melanoma is included here given that all appear to have been staged as cutaneous (not mucosal) melanoma.
-    - If PrimaryDiagnosisSite contains "choroid" OR "ciliary body" OR "conjunctiva", then AssignedPrimarySite = ocular.
-    - If PrimaryDiagnosisSite contains "sinus" OR "gum" OR "nasal" OR "urethra" then AssignedPrimarySite = mucosal
-        - The list only includes the primary mucosal sites present in this data set and not all possible mucosal sites for melanoma in general.
-    - If PrimaryDiagnosisSite contains 'unknown', then AssignedPrimarySite = unknown
-'''
-
-SITE_KEYWORDS = {
-    "cutaneous": "skin|ear|eyelid|vulva",
-    "ocular": "choroid|ciliary body|conjunctiva",
-    "mucosal": "sinus|gum|nasal|urethra",
-    "unknown": "unknown"
-}
 
 AGE_FUDGE = 0.005 # years, or approximately 1.8 days.
 _ROMAN_RE = re.compile(r"\b(?:Stage\s*)?([IV]{1,3})(?:[ABCD])?\b", re.I)
@@ -202,29 +223,6 @@ def load_data(
     data_frame_of_metastatic_disease_data.columns = data_frame_of_metastatic_disease_data.columns.str.strip()
 
     return data_frame_of_clinical_molecular_linkage_data, data_frame_of_diagnosis_data, data_frame_of_metastatic_disease_data
-
-
-def _patient_group(row) -> str:
-    '''
-    From "ORIEN Specimen Staging Revised Rules":
-    5. AssignedGroup (SAME DEFINITIONS AS BEFORE)
-        - Group A: MelanomaDiagnosisCount = 1 AND SequencedTumorCount = 1 -> n = 327
-        - Group B: MelanomaDiagnosisCount = 1 AND SequencedTumorCount > 1 -> n = 19
-        - Group C: MelanomaDiagnosisCount > 1 AND SequencedTumorCount = 1 -> n = 30
-        - Group D: MelanomaDiagnosisCount > 1 AND SequencedTumorCount > 1 -> n=3
-    '''
-    mdx = row.get("MelanomaDiagnosisCount", 0)
-    mts = row.get("SequencedTumorCount", 0)
-    if mdx == 1 and mts == 1:
-        return "A"
-    if mdx == 1 and mts > 1:
-        return "B"
-    if mdx > 1 and mts == 1:
-        return "C"
-    if mdx > 1 and mts > 1:
-        return "D"
-    else:
-        raise Exception("Group could not be assigned.")
 
 
 def _filter_meta_before(meta_patient: pd.DataFrame, age_spec: float | None, allow_unknown_age: bool = True) -> pd.DataFrame:
