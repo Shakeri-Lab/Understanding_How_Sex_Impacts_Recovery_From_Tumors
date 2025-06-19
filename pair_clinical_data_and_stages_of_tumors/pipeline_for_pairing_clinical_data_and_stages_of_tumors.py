@@ -213,6 +213,7 @@ def select_tumor_for_patient_in_B(data_frame_of_clinical_molecular_linkage_data_
                 data_frame_of_clinical_molecular_linkage_data_with_specimen_sites_of_collection_containing_lymph_node = data_frame_of_clinical_molecular_linkage_data_for_patient[mask_of_indicators_that_specimen_sites_of_collection_contain_lymph_node]
                 if data_frame_of_clinical_molecular_linkage_data_with_specimen_sites_of_collection_containing_lymph_node.shape[0] > 1:
                     logging.warn("6.2.2. A case is not specified.")
+                    data_frame_of_clinical_molecular_linkage_data_with_specimen_sites_of_collection_containing_lymph_node.sort_values(by = "Age At Specimen Collection").iloc[0]
                 else:
                     return data_frame_of_clinical_molecular_linkage_data_with_specimen_sites_of_collection_containing_lymph_node.iloc[0]
         
@@ -236,6 +237,7 @@ def select_tumor_for_patient_in_B(data_frame_of_clinical_molecular_linkage_data_
                         data_frame_of_candidates_with_earliest_age_and_value_of_primary_met_of_primary = data_frame_of_candidates_with_earliest_age[mask_of_indicators_that_value_of_primary_met_is_primary]
                         if data_frame_of_candidates_with_earliest_age_and_value_of_primary_met_of_primary.shape[0] > 1:
                             logging.warn("?. A case is not specified.")
+                            return data_frame_of_candidates_with_earliest_age_and_value_of_primary_met_of_primary.sort_values(by = "Age At Specimen Collection").iloc[0]
                         else:
                             return data_frame_of_candidates_with_earliest_age_and_value_of_primary_met_of_primary.iloc[0]
                 else:
@@ -245,7 +247,8 @@ def select_tumor_for_patient_in_B(data_frame_of_clinical_molecular_linkage_data_
                     else:
                         return data_frame_of_candidates_with_earliest_age_and_specimen_sites_of_collection_containing_lymph_node.iloc[0]
     
-    raise Exception("Selecting tumor for patient in B ended.")
+    logging.warn("We reached the end of the process for selecting a tumor for a patient in B without selecting a patient.")
+    return data_frame_of_clinical_molecular_linkage_data_for_patient.sort_values(by = "Age At Specimen Collection").iloc[0]
         
 
 AGE_FUDGE = 0.005 # years, or approximately 1.8 days.
