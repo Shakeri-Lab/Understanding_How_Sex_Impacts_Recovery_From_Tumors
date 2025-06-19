@@ -23,13 +23,47 @@ A melanoma diagnosis is a row in `24PRJ217UVA_20241112_Diagnosis_V4.csv` with a 
 A sequenced tumor is a row in `24PRJ217UVA_20241112_MetastaticDisease_V4.csv` with a value of "Tumor" in column with label "Tumor/Germline".
 '''
 
-from __future__ import annotations
 import argparse
 import logging
 import pandas as pd
 from pathlib import Path
 import re
-from typing import Dict, List, Optional, Tuple
+from typing import Optional, Tuple
+
+
+def add_counts(data_frame_of_clinical_molecular_linkage_data: pd.DataFrame, data_frame_of_diagnosis_data: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    '''
+    From "ORIEN Specimen Staging Revised Rules":
+    3. New variables to create:
+        3.a. MelanomaDiagnosisCount: count for number of melanoma clinical diagnoses for a patient
+            - Create using the number of unique [AgeAtDiagnosis and PrimaryDiagnosisSite] combinations for each patient
+            - This approach may work best since a few patients have multiple melanomas diagnosed at the same age, so it [age at diagnosis] cannot be used on its own.
+                - Example with multiple diagnoses at same age with same stage: ILE2DL0KMW
+        3.b. SequencedTumorCount: count for number of sequenced tumor samples for a patient
+            - Create using the number of unique [DeidSpecimenID and AvatarKey] combinations] for each patient
+            - This approach may work best since a few patients have multiple sequenced tumors at the same age (or stage, etc), so these variables cannot be used on their own.
+                - Example with multiple tumors sequenced at the same age/stage: 59OP5X1AZL
+    '''
+    
+    '''
+    Create a new column `_age` in data frame of diagnoses that is column `AgeAtDiagnosis` with NA values equal to "NA".
+    Drop duplicate rows by patient ID, `_age`, and primary diagnosis site.
+    Determine how many distinct melanoma diagnoses each patient has.
+    '''
+    diag_unique = data_frame_of_diagnosis_data.assign(_age = data_frame_of_diagnosis_data["AgeAtDiagnosis"].fillna("NA")).drop_duplicates(subset = ["AvatarKey", "_age", "PrimaryDiagnosisSite"])
+    diag_counts  = diag_unique.groupby("AvatarKey").size().rename("MelanomaDiagnosisCount")
+    
+    '''
+    Drop duplicate rows in data frame of tumors by patient and specimen IDs.
+    Determine how many distinct tumors each patient has.
+    '''
+    tumor_counts = data_frame_of_clinical_molecular_linkage_data.drop_duplicates(["ORIENAvatarKey", "DeidSpecimenID"]).groupby("ORIENAvatarKey").size().rename("SequencedTumorCount")
+    
+    # Logic that uses both diagnosis count and tumor count is executed while iterating over rows in cm.
+    data_frame_of_clinical_molecular_linkage_data = data_frame_of_clinical_molecular_linkage_data.join(tumor_counts, on = "ORIENAvatarKey")
+    data_frame_of_clinical_molecular_linkage_data = data_frame_of_clinical_molecular_linkage_data.join(diag_counts, on = "ORIENAvatarKey")
+    
+    return data_frame_of_clinical_molecular_linkage_data, data_frame_of_diagnosis_data
 
 
 #######################
@@ -56,7 +90,6 @@ SITE_KEYWORDS = {
 
 AGE_FUDGE = 0.005 # years, or approximately 1.8 days.
 _ROMAN_RE = re.compile(r"\b(?:Stage\s*)?([IV]{1,3})(?:[ABCD])?\b", re.I)
-_MELANOMA_RE = re.compile(r"^87\d\d/\d$")
 
 ICB_PATTERN = re.compile(r"immune checkpoint|pembrolizumab|nivolumab|ipilimumab|atezolizumab|durvalumab|avelumab|cemiplimab|relatlimab", re.I)
 
@@ -83,73 +116,30 @@ def _first_roman(stage_txt: str) -> Optional[str]:
     return None if m is None else m.group(1).upper()
     
     
-#############
-# CSV LOADING
-#############
-
-def _strip_cols(df: pd.DataFrame) -> None:
-    df.columns = df.columns.str.strip()
-
-
-def load_inputs(
-    clinmol_csv: Path,
-    dx_csv: Path,
-    meta_csv: Path
-) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, Optional[pd.DataFrame]]:
-    logging.info("Loading Clinical‑Molecular Linkage...")
-    cm = pd.read_csv(clinmol_csv, dtype = str)
-    _strip_cols(cm)
-    cm = cm[cm["Tumor/Germline"].str.lower() == "tumor"].copy()
-
-    logging.info("Loading Diagnosis...")
-    dx = pd.read_csv(dx_csv, dtype = str)
-    _strip_cols(dx)
-    dx = dx[dx["HistologyCode"].str.match(_MELANOMA_RE, na=False)].copy()
-
-    logging.info("Loading Metastatic Disease...")
-    md = pd.read_csv(meta_csv, dtype = str)
-    _strip_cols(md)
-
-    return cm, dx, md
-
-
-#######################
-# COUNTING AND GROUPING
-#######################
-
-def add_counts(cm: pd.DataFrame, dx: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    '''
-    From "ORIEN Specimen Staging Revised Rules":
-    3. New variables to create:
-        3.a. MelanomaDiagnosisCount: count for number of melanoma clinical diagnoses for a patient
-            - Create using the number of unique [AgeAtDiagnosis and PrimaryDiagnosisSite] combinations for each patient
-            - This approach may work best since a few patients have multiple melanomas diagnosed at the same age, so it [age at diagnosis] cannot be used on its own.
-                - Example with multiple diagnoses at same age with same stage: ILE2DL0KMW
-        3.b. SequencedTumorCount: count for number of sequenced tumor samples for a patient
-            - Create using the number of unique [DeidSpecimenID and AvatarKey] combinations] for each patient
-            - This approach may work best since a few patients have multiple sequenced tumors at the same age (or stage, etc), so these variables cannot be used on their own.
-                - Example with multiple tumors sequenced at the same age/stage: 59OP5X1AZL
-    '''
+def load_data(
+    path_to_clinical_molecular_linkage_data: Path,
+    path_to_diagnosis_data: Path,
+    path_to_metastatic_disease_data: Path
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     
-    '''
-    Create a new column `_age` in data frame of diagnoses that is column `AgeAtDiagnosis` with NA values equal to "NA".
-    Drop duplicate rows by patient ID, `_age`, and primary diagnosis site.
-    Determine how many distinct melanoma diagnoses each patient has.
-    '''
-    diag_unique = dx.assign(_age = dx["AgeAtDiagnosis"].fillna("NA")).drop_duplicates(subset = ["AvatarKey", "_age", "PrimaryDiagnosisSite"])
-    diag_counts  = diag_unique.groupby("AvatarKey").size().rename("MelanomaDiagnosisCount")
-    
-    '''
-    Drop duplicate rows in data frame of tumors by patient and specimen IDs.
-    Determine how many distinct tumors each patient has.
-    '''
-    tumor_counts = cm.drop_duplicates(["ORIENAvatarKey", "DeidSpecimenID"]).groupby("ORIENAvatarKey").size().rename("SequencedTumorCount")
-    
-    # Logic that uses both diagnosis count and tumor count is executed while iterating over rows in cm.
-    cm = cm.join(tumor_counts, on = "ORIENAvatarKey")
-    cm = cm.join(diag_counts, on = "ORIENAvatarKey")
-    
-    return cm, dx
+    logging.info("Clinical molecular linkage data will be loaded.")
+    data_frame_of_clinical_molecular_linkage_data = pd.read_csv(path_to_clinical_molecular_linkage_data, dtype = str)
+    data_frame_of_clinical_molecular_linkage_data.columns = data_frame_of_clinical_molecular_linkage_data.columns.str.strip()
+    mask_of_indicators_that_specimens_are_tumors = data_frame_of_clinical_molecular_linkage_data["Tumor/Germline"].str.lower() == "tumor"
+    data_frame_of_clinical_molecular_linkage_data = data_frame_of_clinical_molecular_linkage_data[mask_of_indicators_that_specimens_are_tumors]
+
+    logging.info("Diagnosis data will be loaded.")
+    data_frame_of_diagnosis_data = pd.read_csv(path_to_diagnosis_data, dtype = str)
+    data_frame_of_diagnosis_data.columns = data_frame_of_diagnosis_data.columns.str.strip()
+    pattern_of_histology_codes_of_melanoma = re.compile(r"^87\d\d/\d$")
+    mask_of_indicators_that_histology_codes_represent_melanoma = data_frame_of_diagnosis_data["HistologyCode"].str.match(pattern_of_histology_codes_of_melanoma, na = False)
+    data_frame_of_diagnosis_data = data_frame_of_diagnosis_data[mask_of_indicators_that_histology_codes_represent_melanoma]
+
+    logging.info("Metastatic disease data will be loaded.")
+    data_frame_of_metastatic_disease_data = pd.read_csv(path_to_metastatic_disease_data, dtype = str)
+    data_frame_of_metastatic_disease_data.columns = data_frame_of_metastatic_disease_data.columns.str.strip()
+
+    return data_frame_of_clinical_molecular_linkage_data, data_frame_of_diagnosis_data, data_frame_of_metastatic_disease_data
 
 
 def _patient_group(row) -> str:
@@ -552,8 +542,10 @@ def run_pipeline(
     path_to_diagnosis_data: Path,
     path_to_metastatic_disease_data: Path
 ) -> pd.DataFrame:
-    cm, dx, md = load_inputs(path_to_clinical_molecular_linkage_data, path_to_diagnosis_data, path_to_metastatic_disease_data)
-    cm, dx = add_counts(cm, dx)
+    
+    data_frame_of_clinical_molecular_linkage_data, data_frame_of_diagnosis_data, data_frame_of_metastatic_disease_data = load_data(path_to_clinical_molecular_linkage_data, path_to_diagnosis_data, path_to_metastatic_disease_data)
+    
+    cm, dx = add_counts(data_frame_of_clinical_molecular_linkage_data, data_frame_of_diagnosis_data)
 
     cm["Group"] = cm.apply(_patient_group, axis = 1)
     
@@ -573,7 +565,7 @@ def run_pipeline(
 
     for avatar, specs in cm.groupby("ORIENAvatarKey", sort = False):
         dx_patient = dx[dx["AvatarKey"] == avatar]
-        meta_patient = md[md["AvatarKey"] == avatar]
+        meta_patient = data_frame_of_metastatic_disease_data[data_frame_of_metastatic_disease_data["AvatarKey"] == avatar]
         group = specs["Group"].iloc[0]
 
         if group == "A":
