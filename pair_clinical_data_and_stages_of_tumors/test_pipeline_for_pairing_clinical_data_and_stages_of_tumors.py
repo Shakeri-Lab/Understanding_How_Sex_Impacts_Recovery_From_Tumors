@@ -16,16 +16,14 @@ DATA_ROOT = Path("/sfs/gpfs/tardis/project/orien/data/aws/24PRJ217UVA_IORIG/Clin
 CSV_CM  = DATA_ROOT / "24PRJ217UVA_20241112_ClinicalMolLinkage_V4.csv"
 CSV_DX  = DATA_ROOT / "24PRJ217UVA_20241112_Diagnosis_V4.csv"
 CSV_MD  = DATA_ROOT / "24PRJ217UVA_20241112_MetastaticDisease_V4.csv"
-CSV_TH  = DATA_ROOT / "24PRJ217UVA_20241112_Medications_V4.csv"
 KEY_CSV = "ORIEN_Tumor_Staging_Key.csv"
 
 @pytest.fixture(scope="session")
 def output_of_pipeline() -> pd.DataFrame:
     return run_pipeline(
-        clinmol = CSV_CM,
-        diagnosis = CSV_DX,
-        metadisease = CSV_MD,
-        therapy = CSV_TH
+        path_to_clinical_molecular_linkage_data = CSV_CM,
+        path_to_diagnosis_data = CSV_DX,
+        path_to_metastatic_disease_data = CSV_MD
     )
 
 def test_that_output_of_pipeline_equals_key(output_of_pipeline: pd.DataFrame) -> None:

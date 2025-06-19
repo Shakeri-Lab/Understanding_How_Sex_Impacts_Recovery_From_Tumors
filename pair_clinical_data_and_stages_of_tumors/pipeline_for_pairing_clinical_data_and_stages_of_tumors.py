@@ -5,15 +5,6 @@
 
 This module is a pipeline implementing "ORIEN Specimen Staging Revised Rules" for pairing patients' melanoma tumor specimens with the appropriate primary diagnosis site, patient grouping, AJCC stage, and rule.
 
-2. From "ORIEN Specimen Staging Revised Rules":
-2. Definitions
-    - Melanoma diagnosis (Diagnosis file): HistologyCode = {list of melanoma codes previously sent}
-    - Tumor sequenced (Molecular Linkage file): Tumor/Germline variable = Tumor
-
-A melanoma diagnosis is a row in `24PRJ217UVA_20241112_Diagnosis_V4.csv` with a histology code of the form 87<digit><digit>/<digit>.
-
-A sequenced tumor is a row in `24PRJ217UVA_20241112_MetastaticDisease_V4.csv` with a value of "Tumor" in column with label "Tumor/Germline".
-
 From "ORIEN Specimen Staging Revised Rules":
 1. Using data  from:
     - Molecular Linkage file (main file)
@@ -21,7 +12,15 @@ From "ORIEN Specimen Staging Revised Rules":
     - Metastatic Disease (to help assign stage)
 
 Usage:
-python pipeline_for_pairing_clinical_data_and_stages_of_tumors.py --clinmol ../Clinical_Data/24PRJ217UVA_NormalizedFiles/24PRJ217UVA_20241112_ClinicalMolLinkage_V4.csv --diagnosis ../Clinical_Data/24PRJ217UVA_NormalizedFiles/24PRJ217UVA_20241112_Diagnosis_V4.csv --metadisease ../Clinical_Data/24PRJ217UVA_NormalizedFiles/24PRJ217UVA_20241112_MetastaticDisease_V4.csv --therapy ../Clinical_Data/24PRJ217UVA_NormalizedFiles/24PRJ217UVA_20241112_Medications_V4.csv --out output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors.csv > output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors.txt 2>&1
+python pipeline_for_pairing_clinical_data_and_stages_of_tumors.py --path_to_clinical_molecular_linkage_data ../../Clinical_Data/24PRJ217UVA_NormalizedFiles/24PRJ217UVA_20241112_ClinicalMolLinkage_V4.csv --path_to_diagnosis_data ../../Clinical_Data/24PRJ217UVA_NormalizedFiles/24PRJ217UVA_20241112_Diagnosis_V4.csv --path_to_metastatic_disease_data ../../Clinical_Data/24PRJ217UVA_NormalizedFiles/24PRJ217UVA_20241112_MetastaticDisease_V4.csv --path_to_output_data output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors.csv > output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors.txt 2>&1
+
+From "ORIEN Specimen Staging Revised Rules":
+2. Definitions
+    - Melanoma diagnosis (Diagnosis file): HistologyCode = {list of melanoma codes previously sent}
+    - Tumor sequenced (Molecular Linkage file): Tumor/Germline variable = Tumor
+
+A melanoma diagnosis is a row in `24PRJ217UVA_20241112_Diagnosis_V4.csv` with a histology code of the form 87<digit><digit>/<digit>.
+A sequenced tumor is a row in `24PRJ217UVA_20241112_MetastaticDisease_V4.csv` with a value of "Tumor" in column with label "Tumor/Germline".
 '''
 
 from __future__ import annotations
@@ -95,8 +94,7 @@ def _strip_cols(df: pd.DataFrame) -> None:
 def load_inputs(
     clinmol_csv: Path,
     dx_csv: Path,
-    meta_csv: Path,
-    therapy_csv: Optional[Path] = None
+    meta_csv: Path
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, Optional[pd.DataFrame]]:
     logging.info("Loading Clinical‑Molecular Linkage...")
     cm = pd.read_csv(clinmol_csv, dtype = str)
@@ -112,13 +110,7 @@ def load_inputs(
     md = pd.read_csv(meta_csv, dtype = str)
     _strip_cols(md)
 
-    th = None
-    if therapy_csv is not None:
-        logging.info("Loading Therapy...")
-        th = pd.read_csv(therapy_csv, dtype = str)
-        _strip_cols(th)
-
-    return cm, dx, md, th
+    return cm, dx, md
 
 
 #######################
@@ -181,25 +173,6 @@ def _patient_group(row) -> str:
         return "D"
     else:
         raise Exception("Group could not be assigned.")
-
-    
-def _assign_icb_status(
-    spec_row: pd.Series,
-    therapy_patient: Optional[pd.DataFrame]
-) -> str:
-    age_spec = _float(spec_row.get("Age At Specimen Collection"))
-    if therapy_patient is None:
-        return "Unknown"
-    icb_rows = therapy_patient[
-        therapy_patient["Medication"].str.contains(ICB_PATTERN, na = False)
-    ].copy()
-    if icb_rows.empty:
-        return "No-ICB"
-    icb_rows["_age"] = icb_rows["AgeAtMedStart"].apply(_float)
-    icb_rows = icb_rows[pd.notna(icb_rows["_age"])]
-    if icb_rows.empty or age_spec is None:
-        return "Unknown"
-    return "Post-ICB" if age_spec >= icb_rows["_age"].min() else "Pre-ICB"
 
 
 def _filter_meta_before(meta_patient: pd.DataFrame, age_spec: float | None, allow_unknown_age: bool = True) -> pd.DataFrame:
@@ -575,12 +548,11 @@ def _select_diagnosis_D(dx_patient: pd.DataFrame, spec_row: pd.Series) -> pd.Ser
 
 
 def run_pipeline(
-    clinmol: Path,
-    diagnosis: Path,
-    metadisease: Path,
-    therapy: Path | None = None
+    path_to_clinical_molecular_linkage_data: Path,
+    path_to_diagnosis_data: Path,
+    path_to_metastatic_disease_data: Path
 ) -> pd.DataFrame:
-    cm, dx, md, th = load_inputs(clinmol, diagnosis, metadisease, therapy)
+    cm, dx, md = load_inputs(path_to_clinical_molecular_linkage_data, path_to_diagnosis_data, path_to_metastatic_disease_data)
     cm, dx = add_counts(cm, dx)
 
     cm["Group"] = cm.apply(_patient_group, axis = 1)
@@ -602,7 +574,6 @@ def run_pipeline(
     for avatar, specs in cm.groupby("ORIENAvatarKey", sort = False):
         dx_patient = dx[dx["AvatarKey"] == avatar]
         meta_patient = md[md["AvatarKey"] == avatar]
-        therapy_patient = th[th["AvatarKey"] == avatar] if th is not None else None
         group = specs["Group"].iloc[0]
 
         if group == "A":
@@ -647,24 +618,22 @@ def run_pipeline(
 
 def main():
     parser = argparse.ArgumentParser(description = "Pair clinical data and stages of tumors.")
-    parser.add_argument("--clinmol", required = True, type = Path)
-    parser.add_argument("--diagnosis", required = True, type = Path)
-    parser.add_argument("--metadisease", required = True, type = Path)
-    parser.add_argument("--therapy", type = Path)
-    parser.add_argument("--out", required = True, type = Path)
+    parser.add_argument("--path_to_clinical_molecular_linkage_data", required = True, type = Path)
+    parser.add_argument("--path_to_diagnosis_data", required = True, type = Path)
+    parser.add_argument("--path_to_metastatic_disease_data", required = True, type = Path)
+    parser.add_argument("--path_to_output_data", required = True, type = Path)
     args = parser.parse_args()
 
     logging.basicConfig(level = logging.INFO, format = "%(levelname)s: %(message)s")
 
-    df = run_pipeline(
-        clinmol = args.clinmol,
-        diagnosis = args.diagnosis,
-        metadisease = args.metadisease,
-        therapy = args.therapy
+    output_data = run_pipeline(
+        path_to_clinical_molecular_linkage_data = args.path_to_clinical_molecular_linkage_data,
+        path_to_diagnosis_data = args.path_to_diagnosis_data,
+        path_to_metastatic_disease_data = args.path_to_metastatic_disease_data
     )
 
-    logging.info("Writing %d rows to %s", len(df), args.out)
-    df.to_csv(args.out, index = False)
+    logging.info(f"{len(output_data)} rows will be written to {args.path_to_output_data}.")
+    output_data.to_csv(args.path_to_output_data, index = False)
 
 
 if __name__ == "__main__":
