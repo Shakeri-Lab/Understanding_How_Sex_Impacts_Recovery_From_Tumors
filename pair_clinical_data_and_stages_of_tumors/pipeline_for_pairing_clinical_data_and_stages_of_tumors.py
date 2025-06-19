@@ -107,29 +107,32 @@ def run_pipeline(
     assert number_of_patients_in_C == 30, f"Number of patients in C was {number_of_patients_in_C} and should be 30."
     assert number_of_patients_in_D == 3, f"Number of patients in D was {count_D} and should be 3."
 
-    output_rows: List[Dict[str, str]] = []
+    list_of_dictionaries_representing_rows_in_output_data: List[Dict[str, str]] = []
 
-    for avatar, specs in data_frame_of_clinical_molecular_linkage_data.groupby("ORIENAvatarKey", sort = False):
-        dx_patient = data_frame_of_diagnosis_data[data_frame_of_diagnosis_data["AvatarKey"] == avatar]
-        meta_patient = data_frame_of_metastatic_disease_data[data_frame_of_metastatic_disease_data["AvatarKey"] == avatar]
-        group = specs["Group"].iloc[0]
+    # An ORIEN Avatar Key identifies a patient.
+    for ORIENAvatarKey, data_frame_of_clinical_molecular_linkage_data_for_patient in data_frame_of_clinical_molecular_linkage_data.groupby("ORIENAvatarKey", sort = False):
+        data_frame_of_diagnosis_data_for_patient = data_frame_of_diagnosis_data[data_frame_of_diagnosis_data["AvatarKey"] == ORIENAvatarKey]
+        data_frame_of_metastatic_disease_data_for_patient = data_frame_of_metastatic_disease_data[data_frame_of_metastatic_disease_data["AvatarKey"] == ORIENAvatarKey]
+        group = data_frame_of_clinical_molecular_linkage_data_for_patient["Group"].iloc[0]
 
         if group == "A":
-            spec_row, diag_row = specs.iloc[0], dx_patient.iloc[0]
+            series_of_clinical_molecular_linkage_data_for_patient = data_frame_of_clinical_molecular_linkage_data_for_patient.iloc[0]
+            series_of_diagnosis_data_for_patient = data_frame_of_diagnosis_data_for_patient.iloc[0]
         elif group == "B":
-            spec_row = _select_specimen_B(specs)
-            diag_row = dx_patient.iloc[0]
+            series_of_clinical_molecular_linkage_data_for_patient = select_tumor_for_patient_in_B(data_frame_of_clinical_molecular_linkage_data_for_patient)
+            series_of_diagnosis_data_for_patient = data_frame_of_diagnosis_data_for_patient.iloc[0]
         elif group == "C":
-            spec_row = specs.iloc[0]
-            diag_row = _select_diagnosis_C(dx_patient, spec_row, meta_patient)
+            series_of_clinical_molecular_linkage_data_for_patient = data_frame_of_clinical_molecular_linkage_data_for_patient.iloc[0]
+            series_of_diagnosis_data_for_patient = select_diagnosis_for_patient_in_C(data_frame_of_diagnosis_data_for_patient, series_of_clinical_molecular_linkage_data_for_patient, data_frame_of_metastatic_disease_data_for_patient)
         elif group == "D":
-            spec_row = _select_specimen_D(specs)
-            diag_row = _select_diagnosis_D(dx_patient, spec_row)
+            series_of_clinical_molecular_linkage_data_for_patient = select_tumor_for_patient_in_D(data_frame_of_clinical_molecular_linkage_data_for_patient)
+            series_of_diagnosis_data_for_patient = select_diagnosis_for_patient_in_D(data_frame_of_diagnosis_data_for_patient, series_of_clinical_molecular_linkage_data_for_patient)
         else:
-            raise RuntimeError(f"Unknown group: {group}")
+            raise RuntimeError(f"Group {group} is unknown.")
 
-        primary_site = assign_primary_site(diag_row["PrimaryDiagnosisSite"])
-        stage, rule = stage_by_ordered_rules(spec_row, diag_row, meta_patient)
+        ORIENSpecimenID = series_of_clinical_molecular_linkage_data_for_patient["DeidSpecimenID"]
+        primary_site = assign_primary_site(series_of_diagnosis_data_for_patient["PrimaryDiagnosisSite"])
+        stage, rule = assign_stage_and_rule(series_of_clinical_molecular_linkage_data_for_patient, series_of_diagnosis_data_for_patient, data_frame_of_metastatic_disease_data_for_patient)
         
         '''
         From "ORIEN Specimen Staging Revised Rules":
@@ -140,10 +143,10 @@ def run_pipeline(
         3.e. AssignedGroup [Group in "ORIEN_Tumor_Staging_Key.csv"]: {A, B, C, D} (NEW - just to keep track of these better)
         '''
         
-        output_rows.append(
+        list_of_dictionaries_representing_rows_in_output_data.append(
             {
-                "AvatarKey": avatar,
-                "ORIENSpecimenID": spec_row["DeidSpecimenID"],
+                "AvatarKey": ORIENAvatarKey,
+                "ORIENSpecimenID": ORIENSpecimenID,
                 "AssignedPrimarySite": primary_site,
                 "Group": group,
                 "EKN Assigned Stage": stage,
@@ -151,7 +154,7 @@ def run_pipeline(
             }
         )
 
-    return pd.DataFrame(output_rows).sort_values(by = ["AvatarKey", "ORIENSpecimenID"]).reset_index(drop = True)
+    return pd.DataFrame(list_of_dictionaries_representing_rows_in_output_data).sort_values(by = ["AvatarKey", "ORIENSpecimenID"]).reset_index(drop = True)
 
 
 def assign_patient_to_group(row) -> str:
@@ -170,6 +173,58 @@ def assign_patient_to_group(row) -> str:
     else:
         raise Exception("Group could not be assigned.")
 
+        
+def select_tumor_for_patient_in_B(patient_cm: pd.DataFrame) -> pd.Series:
+    '''
+    From "ORIEN Specimen Staging Revised Rules":
+    6. AssignedGroup
+    Group B = 1 melanoma diagnosis and >1 tumor sequenced -> n=19
+    CHANGE FROM PRIOR: Do not exclude any, can still use those with WES only for TMB analysis.
+    A few clarifications on the rules also in red text below.
+        - If RNAseq is available for just one tumor, select the tumor with RNAseq data (even if no WES)
+        - If RNAseq data is available for > 1 tumors OR if only WES is available for all tumors:
+    '''
+    cm = patient_cm.copy()
+    cm["_age"] = cm["Age At Specimen Collection"].apply(_float)
+
+    has_rna = cm["RNASeq"].notna() & cm["RNASeq"].str.strip().ne("")
+    n_rna = has_rna.sum()
+    if n_rna == 1:
+        return cm.loc[has_rna].iloc[0]
+
+    has_wes = cm["WES"].notna() & cm["WES"].str.strip().ne("")
+    n_wes = has_wes.sum()
+    if n_rna > 1 or (n_rna == 0 and has_wes.all()):
+        
+        site = patient_cm["SpecimenSiteOfCollection"].str.lower().fillna("")
+        skin  = site.str.contains("skin")
+        soft  = site.str.contains("soft tissue")
+        lnode = site.str.contains("lymph node")
+        if skin.any() and not (lnode.any() or soft.any()):
+            return earliest(patient_cm[skin])
+
+        if not (skin.any() or soft.any()) and lnode.any():
+            return earliest(patient_cm[lnode])
+
+        if (skin.any() or soft.any()) and lnode.any():            
+            candidates = patient_cm[skin | soft | lnode]
+            earliest_age = candidates["Age At Specimen Collection"].min()
+            same_age = candidates[candidates["Age At Specimen Collection"] == earliest_age]
+            if same_age.shape[0] == 1:
+                return same_age.iloc[0]
+            
+            if "Primary/Met" in same_age.columns and (same_age["Primary/Met"].str.lower() == "primary").any():
+                return same_age[same_age["Primary/Met"].str.lower() == "primary"].iloc[0]
+            
+            if lnode.any():
+                return earliest(patient_cm[lnode])
+            
+            return earliest(candidates)
+
+        return earliest(patient_cm)
+
+    raise RuntimeError("Unexpected branch fall-through")
+        
 
 AGE_FUDGE = 0.005 # years, or approximately 1.8 days.
 _ROMAN_RE = re.compile(r"\b(?:Stage\s*)?([IV]{1,3})(?:[ABCD])?\b", re.I)
@@ -256,7 +311,7 @@ def assign_primary_site(primary_diagnosis_site: str) -> str:
 # A specimen is not evaluated against any rule later than a rule that applies to the specimen.
 ##############################################################################################
 
-def stage_by_ordered_rules(
+def assign_stage_and_rule(
     spec: pd.Series,
     dx: pd.Series,
     meta_patient: pd.DataFrame
@@ -433,64 +488,12 @@ def _within_90_days(age_spec: float | None, age_diag: float | None) -> bool:
 def earliest(df):
     return df.sort_values("Age At Specimen Collection", ascending = True).iloc[0]
 
-
-def _select_specimen_B(patient_cm: pd.DataFrame) -> pd.Series:
-    '''
-    From "ORIEN Specimen Staging Revised Rules":
-    6. AssignedGroup
-    Group B = 1 melanoma diagnosis and >1 tumor sequenced -> n=19
-    CHANGE FROM PRIOR: Do not exclude any, can still use those with WES only for TMB analysis.
-    A few clarifications on the rules also in red text below.
-        - If RNAseq is available for just one tumor, select the tumor with RNAseq data (even if no WES)
-        - If RNAseq data is available for > 1 tumors OR if only WES is available for all tumors:
-    '''
-    cm = patient_cm.copy()
-    cm["_age"] = cm["Age At Specimen Collection"].apply(_float)
-
-    has_rna = cm["RNASeq"].notna() & cm["RNASeq"].str.strip().ne("")
-    n_rna = has_rna.sum()
-    if n_rna == 1:
-        return cm.loc[has_rna].iloc[0]
-
-    has_wes = cm["WES"].notna() & cm["WES"].str.strip().ne("")
-    n_wes = has_wes.sum()
-    if n_rna > 1 or (n_rna == 0 and has_wes.all()):
-        
-        site = patient_cm["SpecimenSiteOfCollection"].str.lower().fillna("")
-        skin  = site.str.contains("skin")
-        soft  = site.str.contains("soft tissue")
-        lnode = site.str.contains("lymph node")
-        if skin.any() and not (lnode.any() or soft.any()):
-            return earliest(patient_cm[skin])
-
-        if not (skin.any() or soft.any()) and lnode.any():
-            return earliest(patient_cm[lnode])
-
-        if (skin.any() or soft.any()) and lnode.any():            
-            candidates = patient_cm[skin | soft | lnode]
-            earliest_age = candidates["Age At Specimen Collection"].min()
-            same_age = candidates[candidates["Age At Specimen Collection"] == earliest_age]
-            if same_age.shape[0] == 1:
-                return same_age.iloc[0]
-            
-            if "Primary/Met" in same_age.columns and (same_age["Primary/Met"].str.lower() == "primary").any():
-                return same_age[same_age["Primary/Met"].str.lower() == "primary"].iloc[0]
-            
-            if lnode.any():
-                return earliest(patient_cm[lnode])
-            
-            return earliest(candidates)
-
-        return earliest(patient_cm)
-
-    raise RuntimeError("Unexpected branch fall-through")
-
         
 def _hist_clean(txt: str) -> str:
     return re.sub(r"[^A-Za-z]", "", str(txt)).lower()
 
 
-def _select_diagnosis_C(dx_patient: pd.DataFrame, spec_row: pd.Series, meta_patient: pd.DataFrame) -> pd.Series:
+def select_diagnosis_for_patient_in_C(dx_patient: pd.DataFrame, spec_row: pd.Series, meta_patient: pd.DataFrame) -> pd.Series:
     age_spec = _float(spec_row["Age At Specimen Collection"])
     
     if dx_patient.empty:
@@ -574,7 +577,7 @@ def _select_diagnosis_C(dx_patient: pd.DataFrame, spec_row: pd.Series, meta_pati
     return dxp.sort_values("_age").iloc[0]
 
 
-def _select_specimen_D(patient_cm: pd.DataFrame) -> pd.Series:
+def select_tumor_for_patient_in_D(patient_cm: pd.DataFrame) -> pd.Series:
     cm = patient_cm.copy()
     cm_rna = cm[cm["RNASeq"].notna()]
     if len(cm_rna) == 1:
@@ -586,7 +589,7 @@ def _select_specimen_D(patient_cm: pd.DataFrame) -> pd.Series:
     return cm.sort_values("_age", na_position = "last").iloc[0]
 
 
-def _select_diagnosis_D(dx_patient: pd.DataFrame, spec_row: pd.Series) -> pd.Series:
+def select_diagnosis_for_patient_in_D(dx_patient: pd.DataFrame, spec_row: pd.Series) -> pd.Series:
     site = spec_row["SpecimenSiteOfCollection"].lower()
     dxp = dx_patient.copy()
     dxp["_age"] = dxp["AgeAtDiagnosis"].apply(_float)
