@@ -314,7 +314,9 @@ def stage_by_ordered_rules(
 
     # RULE 6 - NOMETS
     if meta_patient.empty or meta_patient["MetastaticDiseaseInd"].str.lower().eq("no").all():
-        return _first_roman(path_stg or clin_stg) or "Unknown", "NOMETS"
+        if path_stg.lower() in ["unknown/not reported", "no tnm applicable for this site/histology combination", "unknown/not applicable"]:
+            return (_first_roman(clin_stg) or "Unknown"), "NOMETS"
+        return (_first_roman(path_stg) or "Unknown"), "NOMETS"
 
     # RULE 7 - NODE
     if NODE_RE.search(site_coll) or PAROTID_RE.search(site_coll):
