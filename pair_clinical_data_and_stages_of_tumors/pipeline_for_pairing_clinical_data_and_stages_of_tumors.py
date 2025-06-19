@@ -62,8 +62,6 @@ _MELANOMA_RE = re.compile(r"^87\d\d/\d$")
 ICB_PATTERN = re.compile(r"immune checkpoint|pembrolizumab|nivolumab|ipilimumab|atezolizumab|durvalumab|avelumab|cemiplimab|relatlimab", re.I)
 
 CUTANEOUS_RE = re.compile(SITE_KEYWORDS["cutaneous"], re.I)
-NODE_RE = re.compile(r"lymph node", re.I)
-PAROTID_RE = re.compile(r"parotid", re.I)
 _SITE_LOCAL_RE = re.compile(r"skin|ear|eyelid|vulva|head|soft tissues|breast|lymph node|parotid", re.I)
 
 
@@ -319,7 +317,7 @@ def stage_by_ordered_rules(
         return (_first_roman(path_stg) or "Unknown"), "NOMETS"
 
     # RULE 7 - NODE
-    if NODE_RE.search(site_coll) or PAROTID_RE.search(site_coll):
+    if ("lymph node" in site_coll) or ("parotid" in site_coll):
         return "III", "NODE"
     
     # RULE 8 - SKINLESS90D    
