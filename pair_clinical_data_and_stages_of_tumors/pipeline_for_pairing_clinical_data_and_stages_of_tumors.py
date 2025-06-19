@@ -213,7 +213,7 @@ def select_tumor_for_patient_in_B(data_frame_of_clinical_molecular_linkage_data_
                 data_frame_of_clinical_molecular_linkage_data_with_specimen_sites_of_collection_containing_lymph_node = data_frame_of_clinical_molecular_linkage_data_for_patient[mask_of_indicators_that_specimen_sites_of_collection_contain_lymph_node]
                 if data_frame_of_clinical_molecular_linkage_data_with_specimen_sites_of_collection_containing_lymph_node.shape[0] > 1:
                     logging.warn("6.2.2. A case is not specified.")
-                    data_frame_of_clinical_molecular_linkage_data_with_specimen_sites_of_collection_containing_lymph_node.sort_values(by = "Age At Specimen Collection").iloc[0]
+                    return data_frame_of_clinical_molecular_linkage_data_with_specimen_sites_of_collection_containing_lymph_node.sort_values(by = "Age At Specimen Collection").iloc[0]
                 else:
                     return data_frame_of_clinical_molecular_linkage_data_with_specimen_sites_of_collection_containing_lymph_node.iloc[0]
         
@@ -236,14 +236,15 @@ def select_tumor_for_patient_in_B(data_frame_of_clinical_molecular_linkage_data_
                     if mask_of_indicators_that_value_of_primary_met_is_primary.any():
                         data_frame_of_candidates_with_earliest_age_and_value_of_primary_met_of_primary = data_frame_of_candidates_with_earliest_age[mask_of_indicators_that_value_of_primary_met_is_primary]
                         if data_frame_of_candidates_with_earliest_age_and_value_of_primary_met_of_primary.shape[0] > 1:
-                            logging.warn("?. A case is not specified.")
+                            logging.warn("6.2.3. A case where multiple candidates with earliest age have a value of Primary/Met of primary is not specified.")
                             return data_frame_of_candidates_with_earliest_age_and_value_of_primary_met_of_primary.sort_values(by = "Age At Specimen Collection").iloc[0]
                         else:
                             return data_frame_of_candidates_with_earliest_age_and_value_of_primary_met_of_primary.iloc[0]
                 else:
                     data_frame_of_candidates_with_earliest_age_and_specimen_sites_of_collection_containing_lymph_node = data_frame_of_candidates_with_earliest_age[mask_of_indicators_that_specimen_sites_of_collection_contain_lymph_node]
                     if data_frame_of_candidates_with_earliest_age_and_specimen_sites_of_collection_containing_lymph_node.shape[0] > 1:
-                        logging.warn("?. A case is not specified.")
+                        logging.warn("6.2.3. A case where multiple candidates with earliest age have specimen sites of collection containing lymph node is not specified.")
+                        return data_frame_of_candidates_with_earliest_age_and_specimen_sites_of_collection_containing_lymph_node.sort_values(by = "Age At Specimen Collection").iloc[0]
                     else:
                         return data_frame_of_candidates_with_earliest_age_and_specimen_sites_of_collection_containing_lymph_node.iloc[0]
     
