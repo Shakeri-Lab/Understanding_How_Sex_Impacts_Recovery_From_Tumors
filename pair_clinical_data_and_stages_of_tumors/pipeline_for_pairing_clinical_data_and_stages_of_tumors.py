@@ -279,20 +279,6 @@ def stage_by_ordered_rules(
     
     age_spec = _float(spec.get("Age At Specimen Collection"))
 
-    def _meta_prior_distant() -> bool:
-        if meta_patient.empty:
-            return False
-        m = _filter_meta_before(meta_patient, age_spec, allow_unknown_age = False)
-        if m.empty:
-            return False
-        distant = m["MetastaticDiseaseInd"].str.contains("Yes - Distant", na = False)
-        site_ok = m["MetsDzPrimaryDiagnosisSite"].str.contains(
-            r"skin|ear|eyelid|vulva|eye|choroid|ciliary body|conjunctiva|sinus|gum|nasal|urethra",
-            na = False,
-            case = False
-        )
-        return (distant & site_ok).any()
-
     def _skin_distant_unknown() -> bool:
         if meta_patient.empty:
             return False
@@ -318,8 +304,13 @@ def stage_by_ordered_rules(
         return "IV", "METSITE"
 
     # RULE 5 - PRIORDISTANT
-    if _meta_prior_distant():
-        return "IV", "PRIORDISTANT"
+    if not meta_patient.empty:
+        MetsDzPrimaryDiagnosisSite_contains_keyword = meta_patient["MetsDzPrimaryDiagnosisSite"].str.contains(r"skin|ear|eyelid|vulva|eye|choroid|ciliary body|conjunctiva|sinus|gum|nasal|urethra", case = False, na = False)
+        MetastaticDiseaseInd_is_yes_distant = meta_patient["MetastaticDiseaseInd"].str.contains(r"yes\s*-\s*distant", case = False, na = False)
+        age_meta = meta_patient["AgeAtMetastaticSite"].apply(_float)
+        AgeAtMetastaticSite_is_less_than_or_equal_to_AgeAtSpecimenCollection = pd.notna(age_meta) & pd.notna(age_spec) & (age_meta <= age_spec + AGE_FUDGE)
+        if (MetsDzPrimaryDiagnosisSite_contains_keyword & MetastaticDiseaseInd_is_yes_distant & AgeAtMetastaticSite_is_less_than_or_equal_to_AgeAtSpecimenCollection).any():
+            return "IV", "PRIORDISTANT"
 
     # RULE 6 - NOMETS
     if meta_patient.empty or meta_patient["MetastaticDiseaseInd"].str.lower().eq("no").all():
