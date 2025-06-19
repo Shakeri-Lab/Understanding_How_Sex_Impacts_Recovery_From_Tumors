@@ -174,7 +174,7 @@ def assign_patient_to_group(row) -> str:
         raise Exception("Group could not be assigned.")
 
         
-def select_tumor_for_patient_in_B(patient_cm: pd.DataFrame) -> pd.Series:
+def select_tumor_for_patient_in_B(data_frame_of_clinical_molecular_linkage_data_for_patient: pd.DataFrame) -> pd.Series:
     '''
     From "ORIEN Specimen Staging Revised Rules":
     6. AssignedGroup
@@ -183,47 +183,69 @@ def select_tumor_for_patient_in_B(patient_cm: pd.DataFrame) -> pd.Series:
     A few clarifications on the rules also in red text below.
         - If RNAseq is available for just one tumor, select the tumor with RNAseq data (even if no WES)
         - If RNAseq data is available for > 1 tumors OR if only WES is available for all tumors:
+            - If the patient has a tumor with SpecimenSiteofCollection [SpecimenSiteOfCollection] that contains "skin" and does not also have a tumor with SpecimenSiteofCollection [SpecimenSiteOfCollection] that contains either "lymph node" or "soft tissue", then select the tumor[s] with SpecimenSiteofCollection [SpecimenSiteOfCollection] that contains "skin"
+                - If multiple skin specimens meet this rule, then use the one with earliest Age At Specimen Collection
+            - If none of the patient's tumors have SpecimenSiteofCollection [SpecimenSiteOfCollection] that contains "skin" or "soft tissue", then select the tumor with SpecimenSiteofCollection [SpecimenSiteOfCollection] that contains "lymph node"
+            - If a patient has a tumor with a SpecimenSiteofCollection [SpecimenSiteOfCollection] that contains ["skin" OR "soft tissue"] AND a tumor with a SpecimenSiteofCollection that contains "lymph node", then select the one [the tumor with specimen site of collection containing "skin" or "soft tissue" or the tumor with a specimen site of collection containing "lymph node"] with the earliest Age At Specimen Collection.
+            
     '''
-    cm = patient_cm.copy()
-    cm["_age"] = cm["Age At Specimen Collection"].apply(_float)
+    
+    mask_of_indicators_that_RNA_sequencing_data_is_available = data_frame_of_clinical_molecular_linkage_data_for_patient["RNASeq"].notna() & data_frame_of_clinical_molecular_linkage_data_for_patient["RNASeq"].str.strip().ne("")
+    number_of_tumors_with_RNA_sequencing_data = mask_of_indicators_that_RNA_sequencing_data_is_available.sum()
+    if number_of_tumors_with_RNA_sequencing_data == 1:
+        return data_frame_of_clinical_molecular_linkage_data_for_patient.loc[mask_of_indicators_that_RNA_sequencing_data_is_available].iloc[0]
 
-    has_rna = cm["RNASeq"].notna() & cm["RNASeq"].str.strip().ne("")
-    n_rna = has_rna.sum()
-    if n_rna == 1:
-        return cm.loc[has_rna].iloc[0]
-
-    has_wes = cm["WES"].notna() & cm["WES"].str.strip().ne("")
-    n_wes = has_wes.sum()
-    if n_rna > 1 or (n_rna == 0 and has_wes.all()):
+    mask_of_indicators_that_WES_data_is_available = data_frame_of_clinical_molecular_linkage_data_for_patient["WES"].notna() & data_frame_of_clinical_molecular_linkage_data_for_patient["WES"].str.strip().ne("")
+    number_of_tumors_with_WES_sequencing_data = mask_of_indicators_that_WES_data_is_available.sum()
+    if number_of_tumors_with_RNA_sequencing_data > 1 or (number_of_tumors_with_RNA_sequencing_data == 0 and mask_of_indicators_that_WES_data_is_available.all()):
         
-        site = patient_cm["SpecimenSiteOfCollection"].str.lower().fillna("")
-        skin  = site.str.contains("skin")
-        soft  = site.str.contains("soft tissue")
-        lnode = site.str.contains("lymph node")
-        if skin.any() and not (lnode.any() or soft.any()):
-            return earliest(patient_cm[skin])
-
-        if not (skin.any() or soft.any()) and lnode.any():
-            return earliest(patient_cm[lnode])
-
-        if (skin.any() or soft.any()) and lnode.any():            
-            candidates = patient_cm[skin | soft | lnode]
-            earliest_age = candidates["Age At Specimen Collection"].min()
-            same_age = candidates[candidates["Age At Specimen Collection"] == earliest_age]
-            if same_age.shape[0] == 1:
-                return same_age.iloc[0]
+        series_of_specimen_sites_of_collection_for_patient = data_frame_of_clinical_molecular_linkage_data_for_patient["SpecimenSiteOfCollection"].str.lower().fillna("")
+        mask_of_indicators_that_specimen_sites_of_collection_contain_skin = series_of_specimen_sites_of_collection_for_patient.str.contains("skin")
+        mask_of_indicators_that_specimen_sites_of_collection_contain_soft_tissue = series_of_specimen_sites_of_collection_for_patient.str.contains("soft tissue")
+        mask_of_indicators_that_specimen_sites_of_collection_contain_lymph_node = series_of_specimen_sites_of_collection_for_patient.str.contains("lymph node")
+        if mask_of_indicators_that_specimen_sites_of_collection_contain_skin.any() and not (mask_of_indicators_that_specimen_sites_of_collection_contain_lymph_node.any() or mask_of_indicators_that_specimen_sites_of_collection_contain_soft_tissue.any()):
+            return data_frame_of_clinical_molecular_linkage_data_for_patient[mask_of_indicators_that_specimen_sites_of_collection_contain_skin].sort_values(by = "Age At Specimen Collection").iloc[0]
+        
+        if not (mask_of_indicators_that_specimen_sites_of_collection_contain_skin.any() or mask_of_indicators_that_specimen_sites_of_collection_contain_soft_tissue.any()):
+            if not mask_of_indicators_that_specimen_sites_of_collection_contain_lymph_node.any():
+                return data_frame_of_clinical_molecular_linkage_data_for_patient.sort_values(by = "Age At Specimen Collection").iloc[0]
+            else:
+                data_frame_of_clinical_molecular_linkage_data_with_specimen_sites_of_collection_containing_lymph_node = data_frame_of_clinical_molecular_linkage_data_for_patient[mask_of_indicators_that_specimen_sites_of_collection_contain_lymph_node]
+                if data_frame_of_clinical_molecular_linkage_data_with_specimen_sites_of_collection_containing_lymph_node.shape[0] > 1:
+                    logging.warn("6.2.2. A case is not specified.")
+                else:
+                    return data_frame_of_clinical_molecular_linkage_data_with_specimen_sites_of_collection_containing_lymph_node.iloc[0]
+        
+        if (mask_of_indicators_that_specimen_sites_of_collection_contain_skin.any() or mask_of_indicators_that_specimen_sites_of_collection_contain_soft_tissue.any()) and mask_of_indicators_that_specimen_sites_of_collection_contain_lymph_node.any():
+                        
+            data_frame_of_candidates = data_frame_of_clinical_molecular_linkage_data_for_patient[(mask_of_indicators_that_specimen_sites_of_collection_contain_skin | mask_of_indicators_that_specimen_sites_of_collection_contain_soft_tissue) | mask_of_indicators_that_specimen_sites_of_collection_contain_lymph_node]
             
-            if "Primary/Met" in same_age.columns and (same_age["Primary/Met"].str.lower() == "primary").any():
-                return same_age[same_age["Primary/Met"].str.lower() == "primary"].iloc[0]
+            earliest_age = data_frame_of_candidates["Age At Specimen Collection"].min()
+            mask_of_indicators_that_ages_at_specimen_collection_are_earliest = data_frame_of_candidates["Age At Specimen Collection"] == earliest_age
+            data_frame_of_candidates_with_earliest_age = data_frame_of_candidates[mask_of_indicators_that_ages_at_specimen_collection_are_earliest]
+            if data_frame_of_candidates_with_earliest_age.shape[0] == 1:
+                return data_frame_of_candidates_with_earliest_age.iloc[0]
             
-            if lnode.any():
-                return earliest(patient_cm[lnode])
-            
-            return earliest(candidates)
-
-        return earliest(patient_cm)
-
-    raise RuntimeError("Unexpected branch fall-through")
+            series_of_specimen_sites_of_collection_of_candidates_with_earliest_age = data_frame_of_candidates_with_earliest_age["SpecimenSiteOfCollection"].str.lower().fillna("")
+            mask_of_indicators_that_specimen_sites_of_collection_contain_skin_or_soft_tissue = series_of_specimen_sites_of_collection_of_candidates_with_earliest_age.str.contains("skin") | series_of_specimen_sites_of_collection_of_candidates_with_earliest_age.str.contains("soft tissue")
+            mask_of_indicators_that_specimen_sites_of_collection_contain_lymph_node = series_of_specimen_sites_of_collection_of_candidates_with_earliest_age.str.contains("lymph node")
+            if mask_of_indicators_that_specimen_sites_of_collection_contain_skin_or_soft_tissue.any() and mask_of_indicators_that_specimen_sites_of_collection_contain_lymph_node.any():
+                if "Primary/Met" in data_frame_of_candidates_with_earliest_age:
+                    mask_of_indicators_that_value_of_primary_met_is_primary = data_frame_of_candidates_with_earliest_age["Primary/Met"].str.lower() == "primary"
+                    if mask_of_indicators_that_value_of_primary_met_is_primary.any():
+                        data_frame_of_candidates_with_earliest_age_and_value_of_primary_met_of_primary = data_frame_of_candidates_with_earliest_age[mask_of_indicators_that_value_of_primary_met_is_primary]
+                        if data_frame_of_candidates_with_earliest_age_and_value_of_primary_met_of_primary.shape[0] > 1:
+                            logging.warn("?. A case is not specified.")
+                        else:
+                            return data_frame_of_candidates_with_earliest_age_and_value_of_primary_met_of_primary.iloc[0]
+                else:
+                    data_frame_of_candidates_with_earliest_age_and_specimen_sites_of_collection_containing_lymph_node = data_frame_of_candidates_with_earliest_age[mask_of_indicators_that_specimen_sites_of_collection_contain_lymph_node]
+                    if data_frame_of_candidates_with_earliest_age_and_specimen_sites_of_collection_containing_lymph_node.shape[0] > 1:
+                        logging.warn("?. A case is not specified.")
+                    else:
+                        return data_frame_of_candidates_with_earliest_age_and_specimen_sites_of_collection_containing_lymph_node.iloc[0]
+    
+    raise Exception("Selecting tumor for patient in B ended.")
         
 
 AGE_FUDGE = 0.005 # years, or approximately 1.8 days.
@@ -483,10 +505,6 @@ def _within_90_days(age_spec: float | None, age_diag: float | None) -> bool:
         return False
     diff = age_spec - age_diag
     return 0 <= abs(diff) <= 90 / 365.25
-
-
-def earliest(df):
-    return df.sort_values("Age At Specimen Collection", ascending = True).iloc[0]
 
         
 def _hist_clean(txt: str) -> str:
