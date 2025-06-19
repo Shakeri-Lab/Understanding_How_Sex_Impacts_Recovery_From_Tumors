@@ -45,25 +45,87 @@ def add_counts(data_frame_of_clinical_molecular_linkage_data: pd.DataFrame, data
                 - Example with multiple tumors sequenced at the same age/stage: 59OP5X1AZL
     '''
     
-    '''
-    Create a new column `_age` in data frame of diagnoses that is column `AgeAtDiagnosis` with NA values equal to "NA".
-    Drop duplicate rows by patient ID, `_age`, and primary diagnosis site.
-    Determine how many distinct melanoma diagnoses each patient has.
-    '''
-    diag_unique = data_frame_of_diagnosis_data.assign(_age = data_frame_of_diagnosis_data["AgeAtDiagnosis"].fillna("NA")).drop_duplicates(subset = ["AvatarKey", "_age", "PrimaryDiagnosisSite"])
-    diag_counts  = diag_unique.groupby("AvatarKey").size().rename("MelanomaDiagnosisCount")
+    series_of_numbers_of_sequenced_tumor_samples = data_frame_of_clinical_molecular_linkage_data.drop_duplicates(["ORIENAvatarKey", "DeidSpecimenID"]).groupby("ORIENAvatarKey").size().rename("SequencedTumorCount")
     
-    '''
-    Drop duplicate rows in data frame of tumors by patient and specimen IDs.
-    Determine how many distinct tumors each patient has.
-    '''
-    tumor_counts = data_frame_of_clinical_molecular_linkage_data.drop_duplicates(["ORIENAvatarKey", "DeidSpecimenID"]).groupby("ORIENAvatarKey").size().rename("SequencedTumorCount")
+    series_of_numbers_of_melanoma_clinical_diagnoses = data_frame_of_diagnosis_data.assign(_age = data_frame_of_diagnosis_data["AgeAtDiagnosis"].fillna("NA")).drop_duplicates(subset = ["AvatarKey", "_age", "PrimaryDiagnosisSite"]).groupby("AvatarKey").size().rename("MelanomaDiagnosisCount")
     
-    # Logic that uses both diagnosis count and tumor count is executed while iterating over rows in cm.
-    data_frame_of_clinical_molecular_linkage_data = data_frame_of_clinical_molecular_linkage_data.join(tumor_counts, on = "ORIENAvatarKey")
-    data_frame_of_clinical_molecular_linkage_data = data_frame_of_clinical_molecular_linkage_data.join(diag_counts, on = "ORIENAvatarKey")
+    # Logic that uses both number of diagnoses and number of samples is executed while iterating over rows in data_frame_of_clinical_molecular_linkage_data.
+    data_frame_of_clinical_molecular_linkage_data = data_frame_of_clinical_molecular_linkage_data.join(series_of_numbers_of_sequenced_tumor_samples, on = "ORIENAvatarKey")
     
-    return data_frame_of_clinical_molecular_linkage_data, data_frame_of_diagnosis_data
+    data_frame_of_clinical_molecular_linkage_data = data_frame_of_clinical_molecular_linkage_data.join(series_of_numbers_of_melanoma_clinical_diagnoses, on = "ORIENAvatarKey")
+    
+    data_frame_of_clinical_molecular_linkage_data[["MelanomaDiagnosisCount", "SequencedTumorCount"]] = data_frame_of_clinical_molecular_linkage_data[["MelanomaDiagnosisCount", "SequencedTumorCount"]].fillna(0)
+    
+    return data_frame_of_clinical_molecular_linkage_data
+
+
+def run_pipeline(
+    path_to_clinical_molecular_linkage_data: Path,
+    path_to_diagnosis_data: Path,
+    path_to_metastatic_disease_data: Path
+) -> pd.DataFrame:
+    
+    data_frame_of_clinical_molecular_linkage_data, data_frame_of_diagnosis_data, data_frame_of_metastatic_disease_data = load_data(path_to_clinical_molecular_linkage_data, path_to_diagnosis_data, path_to_metastatic_disease_data)
+    
+    data_frame_of_clinical_molecular_linkage_data = add_counts(data_frame_of_clinical_molecular_linkage_data, data_frame_of_diagnosis_data)
+
+    data_frame_of_clinical_molecular_linkage_data["Group"] = data_frame_of_clinical_molecular_linkage_data.apply(_patient_group, axis = 1)
+    
+    patient_groups = data_frame_of_clinical_molecular_linkage_data.groupby("ORIENAvatarKey").first()
+    count_A = (patient_groups['Group'] == 'A').sum()
+    count_B = (patient_groups['Group'] == 'B').sum()
+    count_C = (patient_groups['Group'] == 'C').sum()
+    count_D = (patient_groups['Group'] == 'D').sum()
+    assert count_A == 327, f"Number of patients in A was {count_A} and should be 327."
+    assert count_B == 19, f"Number of patients in B was {count_B} and should be 19."
+    assert count_C == 30, f"Number of patients in C was {count_C} and should be 30."
+    assert count_D == 3, f"Number of patients in D was {count_D} and should be 3."
+
+    output_rows: List[Dict[str, str]] = []
+
+    for avatar, specs in data_frame_of_clinical_molecular_linkage_data.groupby("ORIENAvatarKey", sort = False):
+        dx_patient = data_frame_of_diagnosis_data[data_frame_of_diagnosis_data["AvatarKey"] == avatar]
+        meta_patient = data_frame_of_metastatic_disease_data[data_frame_of_metastatic_disease_data["AvatarKey"] == avatar]
+        group = specs["Group"].iloc[0]
+
+        if group == "A":
+            spec_row, diag_row = specs.iloc[0], dx_patient.iloc[0]
+        elif group == "B":
+            spec_row = _select_specimen_B(specs)
+            diag_row = dx_patient.iloc[0]
+        elif group == "C":
+            spec_row = specs.iloc[0]
+            diag_row = _select_diagnosis_C(dx_patient, spec_row, meta_patient)
+        elif group == "D":
+            spec_row = _select_specimen_D(specs)
+            diag_row = _select_diagnosis_D(dx_patient, spec_row)
+        else:
+            raise RuntimeError(f"Unknown group: {group}")
+
+        primary_site = assign_primary_site(diag_row["PrimaryDiagnosisSite"])
+        stage, rule = stage_by_ordered_rules(spec_row, diag_row, meta_patient)
+        
+        '''
+        From "ORIEN Specimen Staging Revised Rules":
+        3.c. AssignedPrimarySite: {cutaneous, ocular, mucosal, unknown}
+            - Based on the parameters outlined below; primary site variable to be used for the analysis
+        3.d. AssignedStage [EKN Assigned Stage in "ORIEN_Tumor_Staging_Key.csv"]: {I, II, III, IV}
+            - Based on the parameters outlined below; stage variable to be used for the analysis
+        3.e. AssignedGroup [Group in "ORIEN_Tumor_Staging_Key.csv"]: {A, B, C, D} (NEW - just to keep track of these better)
+        '''
+        
+        output_rows.append(
+            {
+                "AvatarKey": avatar,
+                "ORIENSpecimenID": spec_row["DeidSpecimenID"],
+                "AssignedPrimarySite": primary_site,
+                "Group": group,
+                "EKN Assigned Stage": stage,
+                "NEW RULE": rule
+            }
+        )
+
+    return pd.DataFrame(output_rows).sort_values(by = ["AvatarKey", "ORIENSpecimenID"]).reset_index(drop = True)
 
 
 #######################
@@ -535,77 +597,6 @@ def _select_diagnosis_D(dx_patient: pd.DataFrame, spec_row: pd.Series) -> pd.Ser
     if re.search(r"skin|soft tissue", site):
         return dxp.sort_values("_age").iloc[0]
     return dxp.sort_values("_age").iloc[0]
-
-
-def run_pipeline(
-    path_to_clinical_molecular_linkage_data: Path,
-    path_to_diagnosis_data: Path,
-    path_to_metastatic_disease_data: Path
-) -> pd.DataFrame:
-    
-    data_frame_of_clinical_molecular_linkage_data, data_frame_of_diagnosis_data, data_frame_of_metastatic_disease_data = load_data(path_to_clinical_molecular_linkage_data, path_to_diagnosis_data, path_to_metastatic_disease_data)
-    
-    cm, dx = add_counts(data_frame_of_clinical_molecular_linkage_data, data_frame_of_diagnosis_data)
-
-    cm["Group"] = cm.apply(_patient_group, axis = 1)
-    
-    patient_groups = cm.groupby("ORIENAvatarKey").first()
-    count_A = (patient_groups['Group'] == 'A').sum()
-    count_B = (patient_groups['Group'] == 'B').sum()
-    count_C = (patient_groups['Group'] == 'C').sum()
-    count_D = (patient_groups['Group'] == 'D').sum()
-    assert count_A == 327, f"Number of patients in A was {count_A} and should be 327."
-    assert count_B == 19, f"Number of patients in B was {count_B} and should be 19."
-    assert count_C == 30, f"Number of patients in C was {count_C} and should be 30."
-    assert count_D == 3, f"Number of patients in D was {count_D} and should be 3."
-    
-    cm[["MelanomaDiagnosisCount", "SequencedTumorCount"]] = cm[["MelanomaDiagnosisCount", "SequencedTumorCount"]].fillna(0)
-
-    output_rows: List[Dict[str, str]] = []
-
-    for avatar, specs in cm.groupby("ORIENAvatarKey", sort = False):
-        dx_patient = dx[dx["AvatarKey"] == avatar]
-        meta_patient = data_frame_of_metastatic_disease_data[data_frame_of_metastatic_disease_data["AvatarKey"] == avatar]
-        group = specs["Group"].iloc[0]
-
-        if group == "A":
-            spec_row, diag_row = specs.iloc[0], dx_patient.iloc[0]
-        elif group == "B":
-            spec_row = _select_specimen_B(specs)
-            diag_row = dx_patient.iloc[0]
-        elif group == "C":
-            spec_row = specs.iloc[0]
-            diag_row = _select_diagnosis_C(dx_patient, spec_row, meta_patient)
-        elif group == "D":
-            spec_row = _select_specimen_D(specs)
-            diag_row = _select_diagnosis_D(dx_patient, spec_row)
-        else:
-            raise RuntimeError(f"Unknown group: {group}")
-
-        primary_site = assign_primary_site(diag_row["PrimaryDiagnosisSite"])
-        stage, rule = stage_by_ordered_rules(spec_row, diag_row, meta_patient)
-        
-        '''
-        From "ORIEN Specimen Staging Revised Rules":
-        3.c. AssignedPrimarySite: {cutaneous, ocular, mucosal, unknown}
-            - Based on the parameters outlined below; primary site variable to be used for the analysis
-        3.d. AssignedStage [EKN Assigned Stage in "ORIEN_Tumor_Staging_Key.csv"]: {I, II, III, IV}
-            - Based on the parameters outlined below; stage variable to be used for the analysis
-        3.e. AssignedGroup [Group in "ORIEN_Tumor_Staging_Key.csv"]: {A, B, C, D} (NEW - just to keep track of these better)
-        '''
-        
-        output_rows.append(
-            {
-                "AvatarKey": avatar,
-                "ORIENSpecimenID": spec_row["DeidSpecimenID"],
-                "AssignedPrimarySite": primary_site,
-                "Group": group,
-                "EKN Assigned Stage": stage,
-                "NEW RULE": rule
-            }
-        )
-
-    return pd.DataFrame(output_rows).sort_values(by = ["AvatarKey", "ORIENSpecimenID"]).reset_index(drop = True)
 
 
 def main():
