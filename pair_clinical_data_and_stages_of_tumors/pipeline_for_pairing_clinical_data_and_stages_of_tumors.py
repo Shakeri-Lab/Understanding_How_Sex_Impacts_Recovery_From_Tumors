@@ -132,6 +132,70 @@ def run_pipeline(
 
         ORIENSpecimenID = series_of_clinical_molecular_linkage_data_for_patient["DeidSpecimenID"]
         primary_site = assign_primary_site(series_of_diagnosis_data_for_patient["PrimaryDiagnosisSite"])
+        
+        '''
+        From "ORIEN Specimen Staging Revised Rules":
+        9. Additional Fields for Stage Assignments 
+        Field Name: Discrepancy (0/1 or No/Yes) 
+        This is to keep track of all the questionable ones that I reviewed with Dr. Slingluff regardless of whether we made an exception to the rule for staging or kept with the staging assigned by the rule. These will be identified under each rule, but are summarized here since I imagine this will be coded separately from the rules (this field doesn’t impact the rules/exceptions).
+            - Discrepancy = 1 if the AvatarKey = ["087FO3NF65" or "227RDTKST8" or "2AP9EDU231" or "2X7USSLPJC" or "6DL054517A" or "6HWEJIP63S" or "7YX8AJLMWR" or "87AJ4KITK8" or "9DLKDVIQ2W" or "9EYYI5H9SU" or "9HA9MZCSU2" or "A594OFU98I" or "AC2EJBKWJO" or "APGLZDFLYJ" or "DTUPUJ06B5" or "EKZGU61JTP" or "FUAZTE7LVQ" or "GEM0S42KIH" or "GITAF8OSTV" or "HTKAEZOC7V" or "HZD0O858UJ" or "IALUL9JC9Y" or "ILE2DL0KMW" or "KEHK6YTVAK" or "L2R9RJJ88C" or "MD5OTA3E8A" or "MPHAPLR8K1" or "N5Q9122LTG" or "NXPOH3RBWY" or "QC7QX0VWAY" or "QE43I70DGC" or "QLWU5QNQIB" or "TIZXXXVCV9" or "X9AZUY3R1C" or "XHTXLE3MLC" or "XPZE95IE7I" or "YMC959TA29" or "YRGE6MVYNK" or "Z7CEUA8SAJ"]
+            - For all other AvatarKey IDs not specified, Discrepancy = 0
+        '''
+        
+        discrepancy = 0
+        if ORIENAvatarKey in [
+            "087FO3NF65",
+            "227RDTKST8",
+            "2AP9EDU231",
+            "2X7USSLPJC",
+            "6DL054517A",
+            "6HWEJIP63S",
+            "7YX8AJLMWR",
+            "87AJ4KITK8",
+            "9DLKDVIQ2W",
+            "9EYYI5H9SU",
+            "9HA9MZCSU2",
+            "A594OFU98I",
+            "AC2EJBKWJO",
+            "APGLZDFLYJ",
+            "DTUPUJ06B5",
+            "EKZGU61JTP",
+            "FUAZTE7LVQ",
+            "GEM0S42KIH",
+            "GITAF8OSTV",
+            "HTKAEZOC7V",
+            "HZD0O858UJ",
+            "IALUL9JC9Y",
+            "ILE2DL0KMW",
+            "KEHK6YTVAK",
+            "L2R9RJJ88C",
+            "MD5OTA3E8A",
+            "MPHAPLR8K1",
+            "N5Q9122LTG",
+            "NXPOH3RBWY",
+            "QC7QX0VWAY",
+            "QE43I70DGC",
+            "QLWU5QNQIB",
+            "TIZXXXVCV9",
+            "X9AZUY3R1C",
+            "XHTXLE3MLC",
+            "XPZE95IE7I",
+            "YMC959TA29",
+            "YRGE6MVYNK",
+            "Z7CEUA8SAJ"
+        ]:
+            discrepancy = 1
+        
+        '''
+        Field Name: Possible New Primary (0/1 or No/Yes) 
+        This is to keep track of the ones that may be new primary melanomas but we do not have an additional diagnosis or other information to definitively know this. The staging for these will be carried out like all the others. These will be identified under each rule, but are summarized here since I imagine this will be coded separately from the rules (this field doesn’t impact the rules/exceptions). 
+        - Possible New Primary = 1 if the AvatarKey = ["87AJ4KITK8" or "9DLKDVIQ2W" or "9EYYI5H9SU" or "9HA9MZCSU2" or "A594OFU98I" or "AC2EJBKWJO" or "FUAZTE7LVQ" or "HZD0O858UJ" or "L2R9RJJ88C" or "MD5OTA3E8A" or "NXPOH3RBWY" or "QC7QX0VWAY" or "QE43I70DGC" or "XHTXLE3MLC"] 
+        - For all other AvatarKey IDs not specified, Possible New Primary = 0
+        '''
+        possible_new_primary = 0
+        if ORIENAvatarKey in ["87AJ4KITK8", "9DLKDVIQ2W", "9EYYI5H9SU", "9HA9MZCSU2", "A594OFU98I", "AC2EJBKWJO", "FUAZTE7LVQ", "HZD0O858UJ", "L2R9RJJ88C", "MD5OTA3E8A", "NXPOH3RBWY", "QC7QX0VWAY", "QE43I70DGC", "XHTXLE3MLC"]:
+            possible_new_primary = 1
+        
         stage, rule = assign_stage_and_rule(series_of_clinical_molecular_linkage_data_for_patient, series_of_diagnosis_data_for_patient, data_frame_of_metastatic_disease_data_for_patient)
         
         '''
@@ -150,7 +214,9 @@ def run_pipeline(
                 "AssignedPrimarySite": primary_site,
                 "Group": group,
                 "EKN Assigned Stage": stage,
-                "NEW RULE": rule
+                "NEW RULE": rule,
+                "Discrepancy": discrepancy,
+                "Possible New Primary": possible_new_primary
             }
         )
 
@@ -180,6 +246,8 @@ def select_tumor_for_patient_in_B(data_frame_of_clinical_molecular_linkage_data_
     6. AssignedGroup
     Group B = 1 melanoma diagnosis and >1 tumor sequenced -> n=19
     CHANGE FROM PRIOR: Do not exclude any, can still use those with WES only for TMB analysis.
+    SpecimenSiteofCollection is the correct field 
+For the record: these two patients had the wrong SpecimenID in my file but the correct SpecimenID in by your code according to the rules below. Patient ID 317K6G9N41 should have SpecimenID = 53LFUMZSW8ACOX5IPUZ45ICJ0. Patient ID U2CUPQJ4T1 should have SpecimenID = HIWF190182C5JJE3FHYR5BIXR
     A few clarifications on the rules also in red text below.
         - If RNAseq is available for just one tumor, select the tumor with RNAseq data (even if no WES)
         - If RNAseq data is available for > 1 tumors OR if only WES is available for all tumors:
