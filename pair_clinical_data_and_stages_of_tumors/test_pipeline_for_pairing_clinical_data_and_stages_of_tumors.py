@@ -50,7 +50,7 @@ def test_that_output_of_pipeline_equals_key(output_of_pipeline: pd.DataFrame) ->
         name_of_column = orien_tumor_staging_key.columns[index_of_column]
         value_of_orien_tumor_staging_key = orien_tumor_staging_key.iat[index_of_row, index_of_column]
         value_of_output_of_pipeline = output_of_pipeline.iat[index_of_row, index_of_column]
-        print(f"Row {index_of_row} | Column '{name_of_column}': {value_of_output_of_pipeline!r}  !=  {value_of_orien_tumor_staging_key!r}")
+        print(f"Row {index_of_row} | Column '{name_of_column}': {value_of_output_of_pipeline!r}  !=  {value_of_orien_tumor_staging_key!r}. ORIENAvatarKey and DeidSpecimenID are {orien_tumor_staging_key.iat[index_of_row, 0]} and {orien_tumor_staging_key.iat[index_of_row, 1]}.")
 
     print(f"{len(tuple_of_arrays_of_row_and_colummn_indices[0])} cell(s) in output of pipeline differ from corresponding cells in ORIEN Tumor Staging Key match.")
     sys.exit(1)

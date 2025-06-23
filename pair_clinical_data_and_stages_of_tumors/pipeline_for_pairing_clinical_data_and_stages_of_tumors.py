@@ -438,6 +438,8 @@ def assign_stage_and_rule(
             .dropna()
             .astype(str)
         ).lower()
+        
+        metastatic_sites_text = "|".join(meta_patient["MetastaticDiseaseSite"].dropna().astype(str)).lower()
 
         # ❷  Convert every age entry to float (treat “Age 90 or older” as 90.0),
         #     then take the earliest (minimum) non-null value.
@@ -525,8 +527,6 @@ def assign_stage_and_rule(
     MetsDzPrimaryDiagnosisSite_matched, MetsDzPrimaryDiagnosisSite_match = find_match(r"skin|ear|eyelid|vulva", MetsDzPrimaryDiagnosisSite)
     MetastaticDiseaseInd_matched, MetastaticDiseaseInd_match = find_match(r"yes - regional|yes - nos", MetastaticDiseaseInd)
     
-    # TODO: Revise the line immediately following so that MetastaticDiseaseSite_matched is True if one lowercased value in column `MetastaticDiseaseSite` in `24PRJ217UVA_20241112_MetastaticDisease_V4.csv` in rows with an AvatarKey equal to the ORIENAvatarKey in `spec` contains "skin", "ear", "eyelid", "vulva", "head", "soft tissues", "breast".
-    metastatic_sites_text = "|".join(meta_patient.get("MetastaticDiseaseSite", pd.Series(dtype = str)).dropna().astype(str).str.lower())
     MetastaticDiseaseSite_matched, MetastaticDiseaseSite_match = find_match(r"skin|ear|eyelid|vulva|head|soft tissues|breast", metastatic_sites_text)
     
     AgeAtMetastaticSite_is_less_than_or_equal_to_Age_At_Specimen_Collection_fudged = AgeAtMetastaticSite is not None and age_spec is not None and AgeAtMetastaticSite <= age_spec_fudged
@@ -541,6 +541,16 @@ def assign_stage_and_rule(
         )
     )
     if first_condition_for_rule_8_applies:
+        if path_stg in [
+            "Unknown/Not Reported",
+            "No TNM applicable for this site/histology combination",
+            "Unknown/Not Applicable",
+        ]:
+            return (_first_roman(clin_stg) or "Unknown"), "SKINLESS90D"
+        return (_first_roman(path_stg) or "Unknown"), "SKINLESS90D"
+    
+    MetastaticDiseaseSite_matched_on_lymph_node, MetastaticDiseaseSite_match_on_lymph_node = find_match(r"lymph node", metastatic_sites_text)
+    if MetastaticDiseaseInd_matched and MetastaticDiseaseSite_matched_on_lymph_node and AgeAtMetastaticSite_is_less_than_or_equal_to_Age_At_Specimen_Collection_fudged:
         if path_stg in [
             "Unknown/Not Reported",
             "No TNM applicable for this site/histology combination",
@@ -564,7 +574,7 @@ def assign_stage_and_rule(
         print(f"Age At Specimen Collection fudged {age_spec_fudged} " + ("is within" if within90 else "is not within") + f" 90 days of `AgeAtDiagnosis` {age_diag_f}.")
         print(f"The value in column `MetsDzPrimaryDiagnosisSite` in table `24PRJ217UVA_20241112_Metastatic_Disease_V4.csv` corresponding to an Avatar Key of {ORIENAvatarKey} " + (f"contains keyword {MetsDzPrimaryDiagnosisSite_match}." if MetsDzPrimaryDiagnosisSite_matched else "does not contain keyword."))
         print("The value in column `MetastaticDiseaseInd` in table `24PRJ217UVA_20241112_Metastatic_Disease_V4.csv` " + (f"contains keyword {MetastaticDiseaseInd_match}." if MetastaticDiseaseInd_matched else "does not contain keyword."))
-        print("The value in column `MetastaticDiseaseSite` in table `24PRJ217UVA_20241112_ClinicalMolLinkage_V4.csv` " + (f"contains keyword {MetastaticDiseaseSite_match}." if MetastaticDiseaseSite_matched else "does not contain keyword."))
+        print("The value in column `MetastaticDiseaseSite` in table `24PRJ217UVA_20241112_Metastatic_Disease_V4.csv` " + (f"contains keyword {MetastaticDiseaseSite_match}." if MetastaticDiseaseSite_matched else "does not contain keyword."))
         print(f"AgeAtMetastaticSite {AgeAtMetastaticSite} " + ("is" if AgeAtMetastaticSite_is_less_than_or_equal_to_Age_At_Specimen_Collection_fudged else "is not") + f" less than or equal to Age At Specimen Collection fudged {age_spec_fudged}.")
         print("First condition for Rule 8 " + ("applies" if first_condition_for_rule_8_applies else "does not apply") + ".")
         print()
