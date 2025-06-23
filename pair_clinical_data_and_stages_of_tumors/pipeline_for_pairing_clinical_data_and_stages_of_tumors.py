@@ -326,7 +326,7 @@ _ROMAN_RE = re.compile(r"\b(?:Stage\s*)?([IV]{1,3})(?:[ABCD])?\b", re.I)
 ICB_PATTERN = re.compile(r"immune checkpoint|pembrolizumab|nivolumab|ipilimumab|atezolizumab|durvalumab|avelumab|cemiplimab|relatlimab", re.I)
 
 CUTANEOUS_RE = re.compile(SITE_KEYWORDS["cutaneous"], re.I)
-_SITE_LOCAL_RE = re.compile(r"skin|ear|eyelid|vulva|head|soft tissues|breast|lymph node|parotid", re.I)
+_SITE_LOCAL_RE = re.compile(r"skin|ear|eyelid|vulva|head|soft tissues|breast|lymph node|parotid|vagina", re.I)
 
 
 #################
@@ -420,7 +420,7 @@ def assign_stage_and_rule(
     path_stg = str(dx.get("PathGroupStage", "")).strip()
     clin_stg = str(dx.get("ClinGroupStage", "")).strip()
     site_coll = str(spec.get("SpecimenSiteOfCollection", "")).lower()
-
+    
     if meta_patient.empty:
         MetsDzPrimaryDiagnosisSite = ""
         MetastaticDiseaseInd      = ""
@@ -470,7 +470,7 @@ def assign_stage_and_rule(
     
     if spec["ORIENAvatarKey"] in ["227RDTKST8", "ILE2DL0KMW", "YRGE6MVYNK"]:
         return "III", "EXCEPTION"
-    elif spec["ORIENAvatarKey"] in ["GEM0S42KIH" or "CG6JRI0XIX" or "WDMTMU4SV2"]:
+    elif spec["ORIENAvatarKey"] in ["GEM0S42KIH", "CG6JRI0XIX", "WDMTMU4SV2"]:
         return "IV", "EXCEPTION"
     
     # RULE 1 - AGE
@@ -516,7 +516,7 @@ def assign_stage_and_rule(
         """
         m = re.search(pattern, text)
         if m:
-            return True, m.group(0)    # group(0) is the entire match
+            return True, m.group(0) # group(0) is the entire match
         else:
             return False, None
     
@@ -524,24 +524,33 @@ def assign_stage_and_rule(
     within90 = _within_90_days(age_spec_fudged, age_diag_f)
     MetsDzPrimaryDiagnosisSite_matched, MetsDzPrimaryDiagnosisSite_match = find_match(r"skin|ear|eyelid|vulva", MetsDzPrimaryDiagnosisSite)
     MetastaticDiseaseInd_matched, MetastaticDiseaseInd_match = find_match(r"yes - regional|yes - nos", MetastaticDiseaseInd)
-    SpecimenSiteOfCollection_matched, SpecimenSiteOfCollection_match = find_match(r"skin|ear|eyelid|vulva|head|soft tissues|breast", site_coll)
-    AgeAtMetastaticSite_is_less_than_or_equal_to_Age_At_Specimen_Collection_fudged = AgeAtMetastaticSite is not None and age_spec is not None and AgeAtMetastaticSite <= age_spec + AGE_FUDGE
+    
+    # TODO: Revise the line immediately following so that MetastaticDiseaseSite_matched is True if one lowercased value in column `MetastaticDiseaseSite` in `24PRJ217UVA_20241112_MetastaticDisease_V4.csv` in rows with an AvatarKey equal to the ORIENAvatarKey in `spec` contains "skin", "ear", "eyelid", "vulva", "head", "soft tissues", "breast".
+    metastatic_sites_text = "|".join(meta_patient.get("MetastaticDiseaseSite", pd.Series(dtype = str)).dropna().astype(str).str.lower())
+    MetastaticDiseaseSite_matched, MetastaticDiseaseSite_match = find_match(r"skin|ear|eyelid|vulva|head|soft tissues|breast", metastatic_sites_text)
+    
+    AgeAtMetastaticSite_is_less_than_or_equal_to_Age_At_Specimen_Collection_fudged = AgeAtMetastaticSite is not None and age_spec is not None and AgeAtMetastaticSite <= age_spec_fudged
+    
     first_condition_for_rule_8_applies = (
         within90 and
         not (
             MetsDzPrimaryDiagnosisSite_matched and
             MetastaticDiseaseInd_matched and
-            SpecimenSiteOfCollection_matched and
+            MetastaticDiseaseSite_matched and
             AgeAtMetastaticSite_is_less_than_or_equal_to_Age_At_Specimen_Collection_fudged
         )
     )
+    if first_condition_for_rule_8_applies:
+        if path_stg in [
+            "Unknown/Not Reported",
+            "No TNM applicable for this site/histology combination",
+            "Unknown/Not Applicable",
+        ]:
+            return (_first_roman(clin_stg) or "Unknown"), "SKINLESS90D"
+        return (_first_roman(path_stg) or "Unknown"), "SKINLESS90D"
     
     DeidSpecimenID = spec["DeidSpecimenID"]
-    if DeidSpecimenID in [
-        "NJFFEOT5SVAG18S8JN866741Y", # index 4 starting at 0 of output of test pipeline
-        "Z2B1B3TD1P9LNFGYTM0Y06K7H", # 20
-        "R6CASK8DQDWMY76HL8GGI3BS4", # 21
-    ]:
+    if DeidSpecimenID in ["Z2B1B3TD1P9LNFGYTM0Y06K7H"]:
         print(f"DeidSpecimenID is {DeidSpecimenID}.")
         ORIENAvatarKey = spec["ORIENAvatarKey"]
         print(f"The value in column `ORIENAvatarKey` in table `24PRJ217UVA_20241112_ClinicalMolLinkage_V4.csv` corresponding to this Specimen ID is {ORIENAvatarKey}.")
@@ -550,24 +559,15 @@ def assign_stage_and_rule(
         fraction_of_years = 90 / 365.25
         print(f"90 days is about {fraction_of_years} years.")
         print(f"The value in column `AgeAtDiagnosis` in table `24PRJ217UVA_20241112_Diagnosis_V4.csv` corresponding to an Avatar Key of {ORIENAvatarKey} is {age_diag_f}.")
-        diff = age_spec - age_diag_f
-        print(f"The difference between Age At Specimen Collection and `AgeAtDiagnosis` is {diff}.")
-        print(f"Age At Specimen Collection {age_spec} " + ("is within" if within90 else "is not within") + f" 90 days of `AgeAtDiagnosis` {age_diag_f}.")
+        diff = age_spec_fudged - age_diag_f
+        print(f"The difference between Age At Specimen Collection fudged and `AgeAtDiagnosis` is {diff}.")
+        print(f"Age At Specimen Collection fudged {age_spec_fudged} " + ("is within" if within90 else "is not within") + f" 90 days of `AgeAtDiagnosis` {age_diag_f}.")
         print(f"The value in column `MetsDzPrimaryDiagnosisSite` in table `24PRJ217UVA_20241112_Metastatic_Disease_V4.csv` corresponding to an Avatar Key of {ORIENAvatarKey} " + (f"contains keyword {MetsDzPrimaryDiagnosisSite_match}." if MetsDzPrimaryDiagnosisSite_matched else "does not contain keyword."))
         print("The value in column `MetastaticDiseaseInd` in table `24PRJ217UVA_20241112_Metastatic_Disease_V4.csv` " + (f"contains keyword {MetastaticDiseaseInd_match}." if MetastaticDiseaseInd_matched else "does not contain keyword."))
-        print("The value in column `SpecimenSiteOfCollection` in table `24PRJ217UVA_20241112_ClinicalMolLinkage_V4.csv` " + (f"contains keyword {SpecimenSiteOfCollection_match}." if SpecimenSiteOfCollection_matched else "does not contain keyword."))
+        print("The value in column `MetastaticDiseaseSite` in table `24PRJ217UVA_20241112_ClinicalMolLinkage_V4.csv` " + (f"contains keyword {MetastaticDiseaseSite_match}." if MetastaticDiseaseSite_matched else "does not contain keyword."))
         print(f"AgeAtMetastaticSite {AgeAtMetastaticSite} " + ("is" if AgeAtMetastaticSite_is_less_than_or_equal_to_Age_At_Specimen_Collection_fudged else "is not") + f" less than or equal to Age At Specimen Collection fudged {age_spec_fudged}.")
         print("First condition for Rule 8 " + ("applies" if first_condition_for_rule_8_applies else "does not apply") + ".")
         print()
-
-    if first_condition_for_rule_8_applies:
-        if path_stg in [
-            "Unknown/Not Reported",
-            "No TNM applicable for this site/histology combination",
-            "Unknown/Not Applicable",
-        ]:
-            return _first_roman(clin_stg) or "Unknown", "SKINLESS90D"
-        return _first_roman(path_stg) or "Unknown", "SKINLESS90D"
 
     # RULE 9 - SKINREG
     if re.search(r"skin|ear|eyelid|vulva|head|soft tissue[s]?|breast|lymph node", site_coll) and not _skin_distant_unknown():
