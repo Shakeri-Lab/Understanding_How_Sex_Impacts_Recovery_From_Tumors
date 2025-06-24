@@ -465,12 +465,12 @@ def assign_stage_and_rule(
     These are the exceptions to the staging rules. I imagine this should be coded before the other staging rules in your script, so I’ve named it Rule#0 EXCEPTION, but you can put it in your code differently if there is a better way.
     
     RULE#0 EXCEPTION
-    - If AvatarKey = [“227RDTKST8” or “ILE2DL0KMW” or “YRGE6MVYNK”], then AssignedStage = III
-    - If AvatarKey = [“GEM0S42KIH” or “CG6JRI0XIX” or “WDMTMU4SV2”], then AssignedStage = IV 
+    - If AvatarKey = ["227RDTKST8" or "ILE2DL0KMW" or "YRGE6MVYNK" or "EKZGU61JTP"], then AssignedStage = III
+    - If AvatarKey = ["GEM0S42KIH" or "CG6JRI0XIX" or "WDMTMU4SV2"], then AssignedStage = IV 
     - This rule applies to 6 patients, all cutaneous; 5 patients in Group A and 1 patient in Group C (ILE2DL0KMW)
     '''
     
-    if spec["ORIENAvatarKey"] in ["227RDTKST8", "ILE2DL0KMW", "YRGE6MVYNK"]:
+    if spec["ORIENAvatarKey"] in ["227RDTKST8", "ILE2DL0KMW", "YRGE6MVYNK", "EKZGU61JTP"]:
         return "III", "EXCEPTION"
     elif spec["ORIENAvatarKey"] in ["GEM0S42KIH", "CG6JRI0XIX", "WDMTMU4SV2"]:
         return "IV", "EXCEPTION"
