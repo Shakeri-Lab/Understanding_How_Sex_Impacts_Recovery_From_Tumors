@@ -512,6 +512,7 @@ def assign_stage_and_rule(
     age_spec_fudged = age_spec + AGE_FUDGE if age_spec is not None else None
     MetastaticDiseaseInd_matched, MetastaticDiseaseInd_match = find_match(r"yes - regional|yes - nos", MetastaticDiseaseInd)
     MetastaticDiseaseInd_matched_on_yes_regional, MetastaticDiseaseInd_match_on_yes_regional = find_match(r"yes - regional", MetastaticDiseaseInd)
+    MetastaticDiseaseInd_matched_on_yes_distant_or_yes_nos, MetastaticDiseaseInd_match_on_yes_distant_or_yes_nos = find_match(r"yes - distant|yes - nos", MetastaticDiseaseInd)
     MetsDzPrimaryDiagnosisSite_matched, MetsDzPrimaryDiagnosisSite_match = find_match(r"skin|ear|eyelid|vulva", MetsDzPrimaryDiagnosisSite)
     MetastaticDiseaseSite_matched, MetastaticDiseaseSite_match = find_match(r"skin|ear|eyelid|vulva|breast", metastatic_sites_text)
     
@@ -583,7 +584,11 @@ def assign_stage_and_rule(
         return "III", "SKINREG"
 
     # RULE 10 - SKINUNK
-    if _skin_distant_unknown():
+    if (
+        MetsDzPrimaryDiagnosisSite_matched and
+        MetastaticDiseaseInd_matched_on_yes_distant_or_yes_nos and
+        ("Age Unknown/Not Recorded" in data_frame_of_metastatic_disease_data_for_patient["AgeAtMetastaticSite"].to_list())
+    ):
         return "IV", "SKINUNK"
 
     # Fallback (should never be reached according to ORIEN Specimen Staging Revised Rules)
