@@ -14,7 +14,7 @@ from pathlib import Path
 import re
 from typing import Dict, Iterable
 
-from data_processing.utils import create_map_from_qc
+from utils import create_map_from_qc
 
 import matplotlib
 matplotlib.use("Agg")
@@ -24,7 +24,7 @@ import seaborn as sns
 plt.style.use("seaborn-v0_8-whitegrid")
 
 
-OUTPUT_DIR = Path("output/melanoma_analysis")
+OUTPUT_DIR = Path("output/eda")
 OUTPUT_DIR.mkdir(parents = True, exist_ok = True)
 
 
@@ -289,6 +289,7 @@ def process_clinical(dfs):
 
 
 def main(base: Path, out_dir: Path):
+    
     patterns = {
         "patients": ["PatientMaster"],
         "diagnoses": ["Diagnosis"],
@@ -298,6 +299,9 @@ def main(base: Path, out_dir: Path):
         "vital_status": ["VitalStatus"],
     }
     dfs = load_csvs(base / "Clinical_Data" / "24PRJ217UVA_NormalizedFiles", patterns)
+    print("The following CSVs were loaded.")
+    print([type_of_data for type_of_data in dfs.keys()])
+    
     df = process_clinical(dfs)
 
     if df.empty:
@@ -339,6 +343,7 @@ def main(base: Path, out_dir: Path):
     (out_dir / "reports").mkdir(parents = True, exist_ok = True)
     
     csv = out_dir / "melanoma_patients_with_sequencing.csv"
+    print(f"Data frame will be saved to {csv}.")
     df.to_csv(csv, index = False)
     logger.info("Saved %d patients → %s", len(df), csv)
     
