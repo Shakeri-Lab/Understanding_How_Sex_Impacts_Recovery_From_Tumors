@@ -23,21 +23,28 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from cd8_analysis import CD8Analysis
 from utils.shared_functions import calculate_survival_months, filter_by_diagnosis, filter_by_primary_diagnosis_site, load_clinical_data, load_rnaseq_data, map_sample_ids
 
+from pathlib import Path
+
+
 class CD8GroupAnalysis(CD8Analysis):
-    """Analyzes CD8+ T cell signatures and groups"""
+    '''
+    Analyzes CD8+ T cell signatures and groups
+    '''
     
     def __init__(self, base_path):
-        """Initialize CD8 group analysis with base path"""
+        '''
+        Initialize CD8 group analysis with base path
+        '''
         self.base_path = base_path
         
         # Define output directories
-        self.output_dir = os.path.join(self.base_path, "output/cd8_groups_analysis")
-        self.plots_dir = os.path.join(self.output_dir, "plots")
-        self.results_dir = os.path.join(self.output_dir, "results")
+        self.output_dir = Path(base_path) / "output/cd8_groups_analysis"
+        self.plots_dir = self.output_dir / "plots"
+        self.results_dir = self.output_dir / "results"
         
         # Create output directories if they don't exist
-        for directory in [self.output_dir, self.plots_dir, self.results_dir]:
-            os.makedirs(directory, exist_ok=True)
+        for directory in (self.output_dir, self.plots_dir, self.results_dir):
+            directory.mkdir(parents = True, exist_ok = True)
         
         '''
         Define CD8 T cell groups and their marker genes
@@ -121,40 +128,32 @@ class CD8GroupAnalysis(CD8Analysis):
             'CD8_GtoB_log': 'Log2(Responder/Non-responder ratio)'
         }
     
-    def calculate_group_scores(self, rnaseq_data):
+    def calculate_group_scores(self, rnaseq_data: pd.DataFrame) -> pd.DataFrame:
         """Calculate CD8 group scores"""
         try:
             print("\nCalculating CD8 group scores...")
+            
+            
             
             rnaseq_base = rnaseq_data.copy()
             rnaseq_base.index = rnaseq_base.index.str.split('.').str[0]
             rnaseq_base = rnaseq_base.groupby(rnaseq_base.index).mean()
             
-            # Initialize scores DataFrame
-            scores = pd.DataFrame(index = rnaseq_data.columns)
-            
             # Calculate scores for each group
-            for group, genes in self.cd8_groups.items():
-                # Filter to genes in the group that are present in the data
-                group_genes = [gene for gene in genes if gene in rnaseq_base.index]
-                
-                if len(group_genes) == 0:
-                    print(f"Warning: No genes found for group {group}")
-                    continue
-                
-                print(f"Calculating {group} score using {len(group_genes)} genes")
-                
-                # Calculate mean expression across genes
-                scores[group] = rnaseq_base.loc[group_genes].mean()
+            scores = pd.DataFrame(
+                {
+                    group: rnaseq_base.loc[[gene for gene in genes if gene in rnaseq_base.index]].mean() for group, genes in self.cd8_groups.items()
+                }
+            )
             
             # Calculate ratio and log ratio
             if 'CD8_B' in scores.columns and 'CD8_G' in scores.columns:
-                # Add small constant to avoid division by zero
-                scores['CD8_GtoB_ratio'] = scores['CD8_G'] / (scores['CD8_B'] + 0.01)
+                constant_to_avoid_division_by_0 = 0.01
+                scores['CD8_GtoB_ratio'] = scores['CD8_G'] / (scores['CD8_B'] + constant_to_avoid_division_by_0)
                 scores['CD8_GtoB_log'] = np.log2(scores['CD8_GtoB_ratio'])
             
             # Save scores
-            scores.to_csv(os.path.join(self.results_dir, 'cd8_group_scores.csv'))
+            scores.to_csv(self.results_dir / "cd8_group_scores.csv")
             
             print(f"Calculated CD8 group scores for {len(scores)} samples")
             
@@ -165,8 +164,10 @@ class CD8GroupAnalysis(CD8Analysis):
             print(traceback.format_exc())
             return None
     
-    def cluster_samples(self, scores, n_clusters=6):
-        """Cluster samples based on CD8 group scores"""
+    def cluster_samples(self, scores: pd.DataFrame, n_clusters: int = 6) -> pd.DataFrame:
+        '''
+        Cluster samples based on CD8 group scores
+        '''
         try:
             print(f"\nClustering samples into {n_clusters} clusters...")
             
@@ -179,7 +180,7 @@ class CD8GroupAnalysis(CD8Analysis):
             X_scaled = scaler.fit_transform(X)
             
             # Perform K-means clustering
-            kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+            kmeans = KMeans(n_clusters = n_clusters, random_state = 42, n_init = 10)
             clusters = kmeans.fit_predict(X_scaled)
             
             # Add cluster labels to scores
@@ -191,7 +192,7 @@ class CD8GroupAnalysis(CD8Analysis):
             print(f"Silhouette score: {silhouette:.3f}")
             
             # Save clustered data
-            scores_with_clusters.to_csv(os.path.join(self.results_dir, 'cd8_clusters.csv'))
+            scores_with_clusters.to_csv(self.results_dir / 'cd8_clusters.csv')
             
             # Plot clusters
             self.plot_clusters(scores_with_clusters, features)
@@ -205,8 +206,10 @@ class CD8GroupAnalysis(CD8Analysis):
             print(traceback.format_exc())
             return None
     
-    def plot_clusters(self, scores_with_clusters, features):
-        """Plot clusters"""
+    def plot_clusters(self, scores_with_clusters: pd.DataFrame, features: list[str]):
+        '''
+        Plot clusters
+        '''
         try:
             # Create scatter plot
             plt.figure(figsize=(10, 8))
@@ -232,7 +235,7 @@ class CD8GroupAnalysis(CD8Analysis):
             
             # Save plot
             plt.tight_layout()
-            plt.savefig(os.path.join(self.plots_dir, 'cd8_clusters.png'), dpi=300)
+            plt.savefig(self.plots_dir / "cd8_clusters.png", dpi = 300)
             plt.close()
             
             # Create PCA plot
@@ -244,8 +247,10 @@ class CD8GroupAnalysis(CD8Analysis):
             print(f"Error plotting clusters: {e}")
             print(traceback.format_exc())
     
-    def plot_pca(self, scores_with_clusters):
-        """Plot PCA of CD8 group scores"""
+    def plot_pca(self, scores_with_clusters: pd.DataFrame):
+        '''
+        Plot PCA of CD8 group scores
+        '''
         try:
             # Select features for PCA
             features = ['CD8_B', 'CD8_G', 'CD8_GtoB_ratio', 'CD8_GtoB_log']
@@ -284,15 +289,17 @@ class CD8GroupAnalysis(CD8Analysis):
             
             # Save plot
             plt.tight_layout()
-            plt.savefig(os.path.join(self.plots_dir, 'cd8_pca.png'), dpi=300)
+            plt.savefig(self.plots_dir / "cd8_pca.png", dpi = 300)
             plt.close()
             
         except Exception as e:
             print(f"Error plotting PCA: {e}")
             print(traceback.format_exc())
     
-    def analyze_clusters_by_sex(self, scores_with_clusters, clinical_data):
-        """Analyze clusters by sex"""
+    def analyze_clusters_by_sex(self, scores_with_clusters: pd.DataFrame, clinical_data: pd.DataFrame):
+        '''
+        Analyze clusters by sex
+        '''
         try:
             print("\nAnalyzing clusters by sex...")
             
@@ -315,7 +322,7 @@ class CD8GroupAnalysis(CD8Analysis):
             ) * 100
             
             # Save distribution
-            cluster_by_sex.to_csv(os.path.join(self.results_dir, 'cluster_by_sex.csv'))
+            cluster_by_sex.to_csv(self.results_dir / 'cluster_by_sex.csv')
             
             # Plot distribution
             plt.figure(figsize=(10, 6))
@@ -326,7 +333,7 @@ class CD8GroupAnalysis(CD8Analysis):
             plt.xticks(rotation=0)
             plt.legend(title='Sex')
             plt.tight_layout()
-            plt.savefig(os.path.join(self.plots_dir, 'cluster_by_sex.png'), dpi=300)
+            plt.savefig(self.plots_dir / 'cluster_by_sex.png', dpi = 300)
             plt.close()
             
             # Create summary statistics by sex
@@ -350,7 +357,7 @@ class CD8GroupAnalysis(CD8Analysis):
             summary_df = pd.DataFrame(summary)
             
             # Save summary
-            summary_df.to_csv(os.path.join(self.results_dir, 'cd8_by_sex.csv'), index=False)
+            summary_df.to_csv(self.results_dir / 'cd8_by_sex.csv', index = False)
             
             # Plot CD8 scores by sex
             self.plot_cd8_by_sex(summary_df)
@@ -404,7 +411,7 @@ class CD8GroupAnalysis(CD8Analysis):
             
             # Save plot
             plt.tight_layout()
-            plt.savefig(os.path.join(self.plots_dir, 'cd8_by_sex.png'), dpi=300)
+            plt.savefig(self.plots_dir / "cd8_by_sex.png", dpi = 300)
             plt.close()
             
             print("Saved CD8 by sex plots")
@@ -453,7 +460,7 @@ class CD8GroupAnalysis(CD8Analysis):
             test_df['significant'] = test_df['p_value'] < 0.05
             
             # Save results
-            test_df.to_csv(os.path.join(self.results_dir, 'cd8_by_sex_tests.csv'), index=False)
+            test_df.to_csv(self.results_dir / "cd8_by_sex_tests.csv", index = False)
             
             print("Performed statistical tests for CD8 scores by sex")
             
@@ -464,8 +471,10 @@ class CD8GroupAnalysis(CD8Analysis):
             print(traceback.format_exc())
             return None
     
-    def analyze_clusters_by_diagnosis(self, scores_with_clusters, clinical_data):
-        """Analyze clusters by diagnosis"""
+    def analyze_clusters_by_diagnosis(self, scores_with_clusters: pd.DataFrame, clinical_data: pd.DataFrame):
+        '''
+        Analyze clusters by diagnosis
+        '''
         try:
             print("\nAnalyzing clusters by diagnosis...")
             
@@ -496,7 +505,7 @@ class CD8GroupAnalysis(CD8Analysis):
             ) * 100
             
             # Save distribution
-            cluster_by_diagnosis.to_csv(os.path.join(self.results_dir, 'cluster_by_diagnosis.csv'))
+            cluster_by_diagnosis.to_csv(self.results_dir / "cluster_by_diagnosis.csv")
             
             # Plot distribution
             plt.figure(figsize=(12, 8))
@@ -507,7 +516,7 @@ class CD8GroupAnalysis(CD8Analysis):
             plt.xticks(rotation=0)
             plt.legend(title='Diagnosis', bbox_to_anchor=(1.05, 1), loc='upper left')
             plt.tight_layout()
-            plt.savefig(os.path.join(self.plots_dir, 'cluster_by_diagnosis.png'), dpi=300)
+            plt.savefig(self.plots_dir / "cluster_by_diagnosis.png", dpi = 300)
             plt.close()
             
             # Create summary statistics by diagnosis
@@ -531,7 +540,7 @@ class CD8GroupAnalysis(CD8Analysis):
             summary_df = pd.DataFrame(summary)
             
             # Save summary
-            summary_df.to_csv(os.path.join(self.results_dir, 'cd8_by_diagnosis.csv'), index=False)
+            summary_df.to_csv(self.results_dir / "cd8_by_diagnosis.csv", index = False)
             
             # Plot CD8 scores by diagnosis
             self.plot_cd8_by_diagnosis(summary_df)
@@ -578,7 +587,7 @@ class CD8GroupAnalysis(CD8Analysis):
                 
                 # Save plot
                 plt.tight_layout()
-                plt.savefig(os.path.join(self.plots_dir, f'{feature}_by_diagnosis.png'), dpi=300)
+                plt.savefig(self.plots_dir / f"{feature}_by_diagnosis.png", dpi = 300)
                 plt.close()
             
             print("Saved CD8 by diagnosis plots")
@@ -632,7 +641,9 @@ class CD8GroupAnalysis(CD8Analysis):
             return None
     
     def plot_survival_curves(self, merged, group_col):
-        """Plot Kaplan-Meier survival curves by group"""
+        '''
+        Plot Kaplan-Meier survival curves by group
+        '''
         try:
             from lifelines import KaplanMeierFitter
             from lifelines.statistics import logrank_test
@@ -673,7 +684,7 @@ class CD8GroupAnalysis(CD8Analysis):
             
             # Save plot
             plt.tight_layout()
-            plt.savefig(os.path.join(self.plots_dir, f'survival_by_{group_col}.png'), dpi=300)
+            plt.savefig(self.plots_dir / f"survival_by_{group_col}.png", dpi = 300)
             plt.close()
             
             # Perform log-rank test if there are exactly 2 groups
@@ -692,7 +703,7 @@ class CD8GroupAnalysis(CD8Analysis):
                 print(f"Log-rank test p-value: {results.p_value:.4f}")
                 
                 # Save results
-                with open(os.path.join(self.results_dir, f'logrank_{group_col}.txt'), 'w') as f:
+                with open(self.results_dir / f"logrank_{group_col}.txt", 'w') as f:
                     f.write(f"Log-rank test results for {group_col}:\n")
                     f.write(f"Group 1: {groups[0]} (n={len(group1_data)})\n")
                     f.write(f"Group 2: {groups[1]} (n={len(group2_data)})\n")
@@ -748,7 +759,7 @@ class CD8GroupAnalysis(CD8Analysis):
             self.analyze_clusters_by_diagnosis(scores_with_clusters, clinical_data)
             
             # Analyze survival by cluster
-            scores_with_clusters.to_csv(os.path.join(self.output_dir, "scores_with_clusters.csv"))
+            scores_with_clusters.to_csv(self.output_dir / "scores_with_clusters.csv")
             clinical_data.to_csv(os.path.join(self.output_dir, "clinical_data.csv"))
             self.analyze_survival_by_cluster(scores_with_clusters, clinical_data)
             
