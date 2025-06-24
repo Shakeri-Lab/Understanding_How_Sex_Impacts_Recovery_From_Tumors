@@ -46,7 +46,7 @@ def load_clinical_data(base_path):
         return None
 def load_rnaseq_data(base_path):
     try:
-        rnaseq_path = os.path.join(base_path, "RNAseq", "gene_and_transcript_expression_results")
+        rnaseq_path = os.path.join(base_path, "../RNAseq", "gene_and_transcript_expression_results")
         expr_files = glob.glob(os.path.join(rnaseq_path, "*.genes.results"))
         if not expr_files:
             print(f"No .genes.results files found in {rnaseq_path}. Check the directory contents.")

@@ -35,16 +35,19 @@ FOCUSED_XCELL_PANEL = [
 ]
 
 class ImmuneAnalysis:
-    """Class for analyzing immune cell composition data"""
+    '''
+    Class for analyzing immune cell composition data
+    '''
     
-    def __init__(self, data_path=None):
-        """Initialize with merged immune and clinical data"""
+    def __init__(self, data_path = None):
+        '''
+        Initialize with merged immune and clinical data
+        '''
         # Set default base path
-        BASE_PATH = "/project/orien/data/aws/24PRJ217UVA_IORIG"
-        
+        BASE_PATH = "/project/orien/data/aws/24PRJ217UVA_IORIG/Understanding_How_Sex_Impacts_Recovery_From_Tumors"
         # Set correct data path to the output of microenv.py
         if data_path is None:
-            data_path = os.path.join(BASE_PATH, "codes/output/melanoma_analysis", "melanoma_sample_immune_clinical.csv") # Corrected path
+            data_path = os.path.join(BASE_PATH, "output/melanoma_analysis", "melanoma_sample_immune_clinical.csv") # Corrected path
         
         # Load the data
         try:

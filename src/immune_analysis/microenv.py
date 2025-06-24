@@ -1,3 +1,8 @@
+'''
+Usage:
+./miniconda3/envs/ici_sex/bin/python -m src.immune_analysis.microenv
+'''
+
 import pandas as pd
 import numpy as np
 import os
@@ -233,9 +238,9 @@ def process_melanoma_immune_data(base_path, output_dir=None):
 
 def main():
     """Main execution function"""
-    base_path = "/project/orien/data/aws/24PRJ217UVA_IORIG"
+    base_path = "/project/orien/data/aws/24PRJ217UVA_IORIG/Understanding_How_Sex_Impacts_Recovery_From_Tumors"
     # Use the output file from data_loading.py as the input clinical data
-    processed_clinical_file = os.path.join(base_path, "codes/output", "melanoma_patients_with_sequencing.csv")
+    processed_clinical_file = os.path.join(base_path, "output/eda", "melanoma_patients_with_sequencing.csv")
 
     if not os.path.exists(processed_clinical_file):
         logger.error(f"Input clinical file not found: {processed_clinical_file}. Run data_loading.py first.")

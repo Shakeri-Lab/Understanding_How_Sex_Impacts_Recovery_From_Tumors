@@ -35,15 +35,16 @@ class CD8GroupAnalysis(CD8Analysis):
         '''
         Initialize CD8 group analysis with base path
         '''
-        self.base_path = base_path
+        self.base_path = Path(base_path)
         
         # Define output directories
-        self.output_dir = Path(base_path) / "output/cd8_groups_analysis"
-        self.plots_dir = self.output_dir / "plots"
-        self.results_dir = self.output_dir / "results"
+        self.output_dir = self.base_path / "output"
+        self.directory_cd8_groups_analysis = Path(self.output_dir) / "cd8_groups_analysis"
+        self.plots_dir = self.directory_cd8_groups_analysis / "plots"
+        self.results_dir = self.directory_cd8_groups_analysis / "results"
         
         # Create output directories if they don't exist
-        for directory in (self.output_dir, self.plots_dir, self.results_dir):
+        for directory in (self.plots_dir, self.results_dir):
             directory.mkdir(parents = True, exist_ok = True)
         
         '''
@@ -759,8 +760,8 @@ class CD8GroupAnalysis(CD8Analysis):
             self.analyze_clusters_by_diagnosis(scores_with_clusters, clinical_data)
             
             # Analyze survival by cluster
-            scores_with_clusters.to_csv(self.output_dir / "scores_with_clusters.csv")
-            clinical_data.to_csv(os.path.join(self.output_dir, "clinical_data.csv"))
+            scores_with_clusters.to_csv(self.directory_cd8_groups_analysis / "scores_with_clusters.csv")
+            clinical_data.to_csv(self.directory_cd8_groups_analysis / "clinical_data.csv")
             self.analyze_survival_by_cluster(scores_with_clusters, clinical_data)
             
             print("\nCD8 group analysis complete!")

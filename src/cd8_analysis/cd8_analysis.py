@@ -17,6 +17,8 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 from sklearn.metrics import silhouette_score
 
+from pathlib import Path
+
 # Add parent directory to path to allow imports from other modules
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -138,59 +140,28 @@ class CD8Analysis(ImmuneAnalysis):
             print(traceback.format_exc())
             return None
     
+    @staticmethod
+    def _save_fig(obj, path: Path):
+        '''
+        Help save figure.
+        '''
+        obj.figure.savefig(path, dpi = 300, bbox_inches = "tight")
+        plt.close(obj.figure)
+    
     def plot_signatures_by_sex(self, summary_df):
-        """Plot CD8 signatures by sex"""
-        try:
-            # Create bar plot
-            plt.figure(figsize=(12, 8))
-            
-            # Get unique signatures
-            signatures = summary_df['signature'].unique()
-            n_signatures = len(signatures)
-            
-            # Calculate grid dimensions
-            n_cols = min(3, n_signatures)
-            n_rows = (n_signatures + n_cols - 1) // n_cols
-            
-            # Plot each signature
-            for i, signature in enumerate(signatures):
-                signature_data = summary_df[summary_df['signature'] == signature]
-                
-                if len(signature_data) == 0:
-                    continue
-                
-                # Create subplot
-                plt.subplot(n_rows, n_cols, i+1)
-                
-                # Create bar plot
-                sns.barplot(x='sex', y='mean', data=signature_data)
-                
-                # Add error bars
-                for j, row in signature_data.iterrows():
-                    plt.errorbar(
-                        x=j % 2,  # Position based on sex
-                        y=row['mean'],
-                        yerr=row['std'],
-                        fmt='none',
-                        color='black',
-                        capsize=5
-                    )
-                
-                # Add labels and title
-                plt.xlabel('Sex')
-                plt.ylabel('Mean Score')
-                plt.title(signature)
-            
-            # Save plot
-            plt.tight_layout()
-            plt.savefig(os.path.join(self.cd8_plots_dir, 'cd8_by_sex.png'), dpi=300)
-            plt.close()
-            
-            print("Saved CD8 by sex plots")
-            
-        except Exception as e:
-            print(f"Error plotting signatures by sex: {e}")
-            print(traceback.format_exc())
+        '''
+        Plot CD8 signatures by sex.
+        '''
+        g = sns.catplot(
+            data=summary_df,
+            x='sex', y='mean', col='signature', kind='bar',
+            col_wrap=3, height=3, aspect=1
+        )
+        g.set_titles('{col_name}')
+        g.set_xlabels('Sex')
+        g.set_ylabels('Mean Score')
+        self._save_fig(g, self.cd8_plots_dir / 'cd8_by_sex.png')
+        logger.info('Saved CD8 by sex plots')
     
     def test_signatures_by_sex(self, merged):
         """Perform statistical tests for CD8 signatures by sex"""
@@ -303,49 +274,19 @@ class CD8Analysis(ImmuneAnalysis):
             return None
     
     def plot_signatures_by_diagnosis(self, summary_df):
-        """Plot CD8 signatures by diagnosis"""
-        try:
-            # Get unique signatures
-            signatures = summary_df['signature'].unique()
-            
-            # Plot each signature
-            for signature in signatures:
-                signature_data = summary_df[summary_df['signature'] == signature]
-                
-                if len(signature_data) == 0:
-                    continue
-                
-                # Create bar plot
-                plt.figure(figsize=(12, 6))
-                sns.barplot(x='diagnosis', y='mean', data=signature_data)
-                
-                # Add error bars
-                for i, row in signature_data.iterrows():
-                    plt.errorbar(
-                        x=i % len(signature_data['diagnosis'].unique()),  # Position based on diagnosis
-                        y=row['mean'],
-                        yerr=row['std'],
-                        fmt='none',
-                        color='black',
-                        capsize=5
-                    )
-                
-                # Add labels and title
-                plt.xlabel('Diagnosis')
-                plt.ylabel('Mean Score')
-                plt.title(f'{signature} by Diagnosis')
-                plt.xticks(rotation=45, ha='right')
-                
-                # Save plot
-                plt.tight_layout()
-                plt.savefig(os.path.join(self.cd8_plots_dir, f'{signature}_by_diagnosis.png'), dpi=300)
-                plt.close()
-            
-            print("Saved CD8 by diagnosis plots")
-            
-        except Exception as e:
-            print(f"Error plotting signatures by diagnosis: {e}")
-            print(traceback.format_exc())
+        '''
+        Plot CD8 signatures by diagnosis
+        '''
+        g = sns.catplot(
+            data=summary_df,
+            x='diagnosis', y='mean', col='signature', kind='bar',
+            col_wrap=3, height=3, aspect=1.4
+        )
+        g.set_xticklabels(rotation=45, ha='right')
+        g.set_xlabels('Diagnosis')
+        g.set_ylabels('Mean Score')
+        self._save_fig(g, self.cd8_plots_dir / 'cd8_by_diagnosis.png')
+        logger.info('Saved CD8 by diagnosis plots')
     
     def analyze_survival_by_signature(self, scores, clinical_data):
         """Analyze survival by CD8 signature"""
@@ -392,8 +333,10 @@ class CD8Analysis(ImmuneAnalysis):
             print(traceback.format_exc())
             return None
     
-    def plot_survival_curves(self, merged, group_col, title=None):
-        """Plot Kaplan-Meier survival curves by group"""
+    def plot_survival_curves(self, merged, group_col, title = None):
+        '''
+        Plot Kaplan-Meier survival curves by group
+        '''
         try:
             from lifelines import KaplanMeierFitter
             from lifelines.statistics import logrank_test
@@ -435,11 +378,8 @@ class CD8Analysis(ImmuneAnalysis):
             
             # Save plot
             plt.tight_layout()
-            if title:
-                plt.savefig(os.path.join(self.cd8_plots_dir, f'survival_by_{title}.png'), dpi=300)
-            else:
-                plt.savefig(os.path.join(self.cd8_plots_dir, f'survival_by_{group_col}.png'), dpi=300)
-            plt.close()
+            out_name = f'survival_by_{title or group_col}.png'
+            self._save_fig(plt, self.cd8_plots_dir / out_name)
             
             # Perform log-rank test if there are exactly 2 groups
             if len(merged[group_col].unique()) == 2:

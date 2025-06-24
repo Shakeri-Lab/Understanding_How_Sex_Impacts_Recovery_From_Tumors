@@ -1,6 +1,9 @@
-"""
+'''
 `eda.py` is a module that generates various CSV files and a plot.
-"""
+
+Usage:
+python src/data_processing/eda.py
+'''
 
 from __future__ import annotations
 
