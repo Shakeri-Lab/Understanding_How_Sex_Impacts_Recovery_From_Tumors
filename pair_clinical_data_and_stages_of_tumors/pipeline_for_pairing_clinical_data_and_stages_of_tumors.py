@@ -408,7 +408,7 @@ def assign_primary_site(primary_diagnosis_site: str) -> str:
 def assign_stage_and_rule(
     spec: pd.Series,
     dx: pd.Series,
-    meta_patient: pd.DataFrame
+    data_frame_of_metastatic_disease_data_for_patient: pd.DataFrame
 ) -> Tuple[str, str]:
     '''
     Return (EKN Assigned Stage, NEW RULE) following the 10 ordered rules of "ORIEN Specimen Staging Revised Rules".
@@ -420,31 +420,31 @@ def assign_stage_and_rule(
     path_stg = str(dx.get("PathGroupStage", "")).strip()
     clin_stg = str(dx.get("ClinGroupStage", "")).strip()
     site_coll = str(spec.get("SpecimenSiteOfCollection", "")).lower()
+    age_coll = float(90.0 if spec.get("Age At Specimen Collection") == "Age 90 or older" else spec.get("Age At Specimen Collection"))
     
-    if meta_patient.empty:
+    if data_frame_of_metastatic_disease_data_for_patient.empty:
         MetsDzPrimaryDiagnosisSite = ""
         MetastaticDiseaseInd      = ""
         AgeAtMetastaticSite       = None
     else:
-        # ❶  Join all strings so later regex tests can still work.
         MetsDzPrimaryDiagnosisSite = "|".join(
-            meta_patient["MetsDzPrimaryDiagnosisSite"]
-            .dropna()
-            .astype(str)
-        ).lower()
-
-        MetastaticDiseaseInd = "|".join(
-            meta_patient["MetastaticDiseaseInd"]
+            data_frame_of_metastatic_disease_data_for_patient["MetsDzPrimaryDiagnosisSite"]
             .dropna()
             .astype(str)
         ).lower()
         
-        metastatic_sites_text = "|".join(meta_patient["MetastaticDiseaseSite"].dropna().astype(str)).lower()
+        MetastaticDiseaseInd = "|".join(
+            data_frame_of_metastatic_disease_data_for_patient["MetastaticDiseaseInd"]
+            .dropna()
+            .astype(str)
+        ).lower()
+        
+        metastatic_sites_text = "|".join(data_frame_of_metastatic_disease_data_for_patient["MetastaticDiseaseSite"].dropna().astype(str)).lower()
 
         # ❷  Convert every age entry to float (treat “Age 90 or older” as 90.0),
         #     then take the earliest (minimum) non-null value.
         ages = (
-            meta_patient["AgeAtMetastaticSite"]
+            data_frame_of_metastatic_disease_data_for_patient["AgeAtMetastaticSite"]
             .apply(lambda x: 90.0 if str(x).strip() == "Age 90 or older" else _float(x))
         )
         AgeAtMetastaticSite = ages.min() if ages.notna().any() else None
@@ -452,11 +452,11 @@ def assign_stage_and_rule(
     age_spec = _float(spec.get("Age At Specimen Collection"))
 
     def _skin_distant_unknown() -> bool:
-        if meta_patient.empty:
+        if data_frame_of_metastatic_disease_data_for_patient.empty:
             return False
-        site_ok = meta_patient["MetsDzPrimaryDiagnosisSite"].str.contains(CUTANEOUS_RE, na = False)
-        distant = meta_patient["MetastaticDiseaseInd"].str.contains(r"Yes - Distant|Yes - NOS", na = False)
-        unk_age = meta_patient["AgeAtMetastaticSite"].str.strip().str.lower().eq("age unknown/not recorded")
+        site_ok = data_frame_of_metastatic_disease_data_for_patient["MetsDzPrimaryDiagnosisSite"].str.contains(CUTANEOUS_RE, na = False)
+        distant = data_frame_of_metastatic_disease_data_for_patient["MetastaticDiseaseInd"].str.contains(r"Yes - Distant|Yes - NOS", na = False)
+        unk_age = data_frame_of_metastatic_disease_data_for_patient["AgeAtMetastaticSite"].str.strip().str.lower().eq("age unknown/not recorded")
         return (site_ok & distant & unk_age).any()
     
     # Rule 0 - EXCEPTION
@@ -492,16 +492,16 @@ def assign_stage_and_rule(
         return "IV", "METSITE"
 
     # RULE 5 - PRIORDISTANT
-    if not meta_patient.empty:
-        MetsDzPrimaryDiagnosisSite_contains_keyword = meta_patient["MetsDzPrimaryDiagnosisSite"].str.contains(r"skin|ear|eyelid|vulva|eye|choroid|ciliary body|conjunctiva|sinus|gum|nasal|urethra", case = False, na = False)
-        MetastaticDiseaseInd_is_yes_distant = meta_patient["MetastaticDiseaseInd"].str.contains(r"yes\s*-\s*distant", case = False, na = False)
-        age_meta = meta_patient["AgeAtMetastaticSite"].apply(_float)
+    if not data_frame_of_metastatic_disease_data_for_patient.empty:
+        MetsDzPrimaryDiagnosisSite_contains_keyword = data_frame_of_metastatic_disease_data_for_patient["MetsDzPrimaryDiagnosisSite"].str.contains(r"skin|ear|eyelid|vulva|eye|choroid|ciliary body|conjunctiva|sinus|gum|nasal|urethra", case = False, na = False)
+        MetastaticDiseaseInd_is_yes_distant = data_frame_of_metastatic_disease_data_for_patient["MetastaticDiseaseInd"].str.contains(r"yes\s*-\s*distant", case = False, na = False)
+        age_meta = data_frame_of_metastatic_disease_data_for_patient["AgeAtMetastaticSite"].apply(_float)
         AgeAtMetastaticSite_is_less_than_or_equal_to_AgeAtSpecimenCollection = pd.notna(age_meta) & pd.notna(age_spec) & (age_meta <= age_spec + AGE_FUDGE)
         if (MetsDzPrimaryDiagnosisSite_contains_keyword & MetastaticDiseaseInd_is_yes_distant & AgeAtMetastaticSite_is_less_than_or_equal_to_AgeAtSpecimenCollection).any():
             return "IV", "PRIORDISTANT"
 
     # RULE 6 - NOMETS
-    if meta_patient.empty or meta_patient["MetastaticDiseaseInd"].str.lower().eq("no").all():
+    if data_frame_of_metastatic_disease_data_for_patient.empty or data_frame_of_metastatic_disease_data_for_patient["MetastaticDiseaseInd"].str.lower().eq("no").all():
         if path_stg.lower() in ["unknown/not reported", "no tnm applicable for this site/histology combination", "unknown/not applicable"]:
             return (_first_roman(clin_stg) or "Unknown"), "NOMETS"
         return (_first_roman(path_stg) or "Unknown"), "NOMETS"
@@ -523,16 +523,26 @@ def assign_stage_and_rule(
             return False, None
     
     age_spec_fudged = age_spec + AGE_FUDGE if age_spec is not None else None
-    within90 = _within_90_days(age_spec_fudged, age_diag_f)
-    MetsDzPrimaryDiagnosisSite_matched, MetsDzPrimaryDiagnosisSite_match = find_match(r"skin|ear|eyelid|vulva", MetsDzPrimaryDiagnosisSite)
     MetastaticDiseaseInd_matched, MetastaticDiseaseInd_match = find_match(r"yes - regional|yes - nos", MetastaticDiseaseInd)
-    
+    MetastaticDiseaseInd_matched_on_yes_regional, MetastaticDiseaseInd_match_on_yes_regional = find_match(r"yes - regional", MetastaticDiseaseInd)
+    MetsDzPrimaryDiagnosisSite_matched, MetsDzPrimaryDiagnosisSite_match = find_match(r"skin|ear|eyelid|vulva", MetsDzPrimaryDiagnosisSite)
     MetastaticDiseaseSite_matched, MetastaticDiseaseSite_match = find_match(r"skin|ear|eyelid|vulva|head|soft tissues|breast", metastatic_sites_text)
     
     AgeAtMetastaticSite_is_less_than_or_equal_to_Age_At_Specimen_Collection_fudged = AgeAtMetastaticSite is not None and age_spec is not None and AgeAtMetastaticSite <= age_spec_fudged
+    AgeAtMetastaticSite_is_less_than_Age_At_Specimen_Collection = AgeAtMetastaticSite is not None and age_spec is not None and AgeAtMetastaticSite < age_spec
+
+    skin_meta_before = False
+    if not data_frame_of_metastatic_disease_data_for_patient.empty and (age_spec is not None):
+        meta_before = _filter_meta_before(data_frame_of_metastatic_disease_data_for_patient, age_spec, allow_unknown_age = False)
+        skin_meta_before = meta_before["MetastaticDiseaseSite"].str.contains(r"skin", case = False, na = False).any()
+
+    MetastaticDiseaseSite_matched_on_lymph_node, MetastaticDiseaseSite_match_on_lymph_node = find_match(r"lymph node", metastatic_sites_text)
+
     
+    age_at_specimen_collection_and_age_at_diagnosis_are_within_90_days = are_within_90_days(age_spec_fudged, age_diag_f)
+
     first_condition_for_rule_8_applies = (
-        within90 and
+        age_at_specimen_collection_and_age_at_diagnosis_are_within_90_days and
         not (
             MetsDzPrimaryDiagnosisSite_matched and
             MetastaticDiseaseInd_matched and
@@ -540,7 +550,12 @@ def assign_stage_and_rule(
             AgeAtMetastaticSite_is_less_than_or_equal_to_Age_At_Specimen_Collection_fudged
         )
     )
-    if first_condition_for_rule_8_applies:
+    
+    if (
+        first_condition_for_rule_8_applies #or
+        #(("skin" in site_coll) and age_at_specimen_collection_and_age_at_diagnosis_are_within_90_days and not skin_meta_before) or
+        #(MetastaticDiseaseInd_matched_on_yes_regional and MetastaticDiseaseSite_matched_on_lymph_node and AgeAtMetastaticSite_is_less_than_Age_At_Specimen_Collection)
+    ):
         if path_stg in [
             "Unknown/Not Reported",
             "No TNM applicable for this site/histology combination",
@@ -549,15 +564,6 @@ def assign_stage_and_rule(
             return (_first_roman(clin_stg) or "Unknown"), "SKINLESS90D"
         return (_first_roman(path_stg) or "Unknown"), "SKINLESS90D"
     
-    MetastaticDiseaseSite_matched_on_lymph_node, MetastaticDiseaseSite_match_on_lymph_node = find_match(r"lymph node", metastatic_sites_text)
-    if MetastaticDiseaseInd_matched and MetastaticDiseaseSite_matched_on_lymph_node and AgeAtMetastaticSite_is_less_than_or_equal_to_Age_At_Specimen_Collection_fudged:
-        if path_stg in [
-            "Unknown/Not Reported",
-            "No TNM applicable for this site/histology combination",
-            "Unknown/Not Applicable",
-        ]:
-            return (_first_roman(clin_stg) or "Unknown"), "SKINLESS90D"
-        return (_first_roman(path_stg) or "Unknown"), "SKINLESS90D"
     
     DeidSpecimenID = spec["DeidSpecimenID"]
     if DeidSpecimenID in ["Z2B1B3TD1P9LNFGYTM0Y06K7H"]:
@@ -571,7 +577,7 @@ def assign_stage_and_rule(
         print(f"The value in column `AgeAtDiagnosis` in table `24PRJ217UVA_20241112_Diagnosis_V4.csv` corresponding to an Avatar Key of {ORIENAvatarKey} is {age_diag_f}.")
         diff = age_spec_fudged - age_diag_f
         print(f"The difference between Age At Specimen Collection fudged and `AgeAtDiagnosis` is {diff}.")
-        print(f"Age At Specimen Collection fudged {age_spec_fudged} " + ("is within" if within90 else "is not within") + f" 90 days of `AgeAtDiagnosis` {age_diag_f}.")
+        print(f"Age At Specimen Collection fudged {age_spec_fudged} " + ("is within" if age_at_specimen_collection_and_age_at_diagnosis_are_within_90_days else "is not within") + f" 90 days of `AgeAtDiagnosis` {age_diag_f}.")
         print(f"The value in column `MetsDzPrimaryDiagnosisSite` in table `24PRJ217UVA_20241112_Metastatic_Disease_V4.csv` corresponding to an Avatar Key of {ORIENAvatarKey} " + (f"contains keyword {MetsDzPrimaryDiagnosisSite_match}." if MetsDzPrimaryDiagnosisSite_matched else "does not contain keyword."))
         print("The value in column `MetastaticDiseaseInd` in table `24PRJ217UVA_20241112_Metastatic_Disease_V4.csv` " + (f"contains keyword {MetastaticDiseaseInd_match}." if MetastaticDiseaseInd_matched else "does not contain keyword."))
         print("The value in column `MetastaticDiseaseSite` in table `24PRJ217UVA_20241112_Metastatic_Disease_V4.csv` " + (f"contains keyword {MetastaticDiseaseSite_match}." if MetastaticDiseaseSite_matched else "does not contain keyword."))
@@ -598,7 +604,7 @@ def _within_90_days_after(age_spec: float | None, age_diag: float | None) -> boo
     return 0 <= diff <= 90 / 365.25
 
 
-def _within_90_days(age_spec: float | None, age_diag: float | None) -> bool:
+def are_within_90_days(age_spec: float | None, age_diag: float | None) -> bool:
     if age_spec is None or age_diag is None:
         return False
     diff = age_spec - age_diag
