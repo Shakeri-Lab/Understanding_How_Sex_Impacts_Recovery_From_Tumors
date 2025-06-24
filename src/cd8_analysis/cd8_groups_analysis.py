@@ -748,8 +748,8 @@ class CD8GroupAnalysis(CD8Analysis):
             self.analyze_clusters_by_diagnosis(scores_with_clusters, clinical_data)
             
             # Analyze survival by cluster
-            scores_with_clusters.to_csv("scores_with_clusters.csv")
-            clinical_data.to_csv("clinical_data.csv")
+            scores_with_clusters.to_csv(os.path.join(self.output_dir, "scores_with_clusters.csv"))
+            clinical_data.to_csv(os.path.join(self.output_dir, "clinical_data.csv"))
             self.analyze_survival_by_cluster(scores_with_clusters, clinical_data)
             
             print("\nCD8 group analysis complete!")
@@ -767,8 +767,7 @@ if __name__ == "__main__":
     import argparse
     
     parser = argparse.ArgumentParser(description='CD8 Group Analysis')
-    parser.add_argument('--base-path', type=str, default='/project/orien/data/aws/24PRJ217UVA_IORIG',
-                        help='Base path for data files')
+    parser.add_argument('--base-path', type = str, default = "/sfs/gpfs/tardis/project/orien/data/aws/24PRJ217UVA_IORIG/Understanding_How_Sex_Impacts_Recovery_From_Tumors", help = "Base path for data files")
     args = parser.parse_args()
     
     analysis = CD8GroupAnalysis(args.base_path)

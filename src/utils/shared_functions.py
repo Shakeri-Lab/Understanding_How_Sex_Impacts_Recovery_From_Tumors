@@ -94,7 +94,8 @@ def load_rnaseq_data(base_path):
             os.path.join(base_path, "../RNAseq/gene_and_transcript_expression_results"),
             os.path.join(base_path, "RNA_Seq_Data/gene_and_transcript_expression_results"),
             os.path.join(base_path, "../RNA_Seq_Data/gene_and_transcript_expression_results"),
-            os.path.join(base_path, "RNA_Seq_Data")
+            os.path.join(base_path, "RNA_Seq_Data"),
+            "/sfs/gpfs/tardis/project/orien/data/aws/24PRJ217UVA_IORIG/RNAseq/gene_and_transcript_expression_results"
         ]
         
         # Try each path
