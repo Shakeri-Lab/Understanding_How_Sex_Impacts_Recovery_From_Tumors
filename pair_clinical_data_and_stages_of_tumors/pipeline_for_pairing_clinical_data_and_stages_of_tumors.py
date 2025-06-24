@@ -374,19 +374,6 @@ def load_data(
     return data_frame_of_clinical_molecular_linkage_data, data_frame_of_diagnosis_data, data_frame_of_metastatic_disease_data
 
 
-def _filter_meta_before(meta_patient: pd.DataFrame, age_spec: float | None, allow_unknown_age: bool = True) -> pd.DataFrame:
-    if meta_patient.empty:
-        return meta_patient.iloc[0:0]
-    m = meta_patient.copy()
-    m["_age"] = m["AgeAtMetastaticSite"].apply(_float)
-    if age_spec is None:
-        return m if allow_unknown_age else m[pd.notna(m["_age"])]
-    keep = m[pd.notna(m["_age"]) & (m["_age"] <= age_spec + AGE_FUDGE)]
-    if allow_unknown_age:
-        keep = pd.concat([keep, m[pd.isna(m["_age"])]], ignore_index=True).drop_duplicates()
-    return keep
-
-
 #########################
 # PRIMARY‑SITE ASSIGNMENT
 #########################
@@ -526,15 +513,10 @@ def assign_stage_and_rule(
     MetastaticDiseaseInd_matched, MetastaticDiseaseInd_match = find_match(r"yes - regional|yes - nos", MetastaticDiseaseInd)
     MetastaticDiseaseInd_matched_on_yes_regional, MetastaticDiseaseInd_match_on_yes_regional = find_match(r"yes - regional", MetastaticDiseaseInd)
     MetsDzPrimaryDiagnosisSite_matched, MetsDzPrimaryDiagnosisSite_match = find_match(r"skin|ear|eyelid|vulva", MetsDzPrimaryDiagnosisSite)
-    MetastaticDiseaseSite_matched, MetastaticDiseaseSite_match = find_match(r"skin|ear|eyelid|vulva|head|soft tissues|breast", metastatic_sites_text)
+    MetastaticDiseaseSite_matched, MetastaticDiseaseSite_match = find_match(r"skin|ear|eyelid|vulva|breast", metastatic_sites_text)
     
     AgeAtMetastaticSite_is_less_than_or_equal_to_Age_At_Specimen_Collection_fudged = AgeAtMetastaticSite is not None and age_spec is not None and AgeAtMetastaticSite <= age_spec_fudged
     AgeAtMetastaticSite_is_less_than_Age_At_Specimen_Collection = AgeAtMetastaticSite is not None and age_spec is not None and AgeAtMetastaticSite < age_spec
-
-    skin_meta_before = False
-    if not data_frame_of_metastatic_disease_data_for_patient.empty and (age_spec is not None):
-        meta_before = _filter_meta_before(data_frame_of_metastatic_disease_data_for_patient, age_spec, allow_unknown_age = False)
-        skin_meta_before = meta_before["MetastaticDiseaseSite"].str.contains(r"skin", case = False, na = False).any()
 
     MetastaticDiseaseSite_matched_on_lymph_node, MetastaticDiseaseSite_match_on_lymph_node = find_match(r"lymph node", metastatic_sites_text)
 
@@ -552,9 +534,7 @@ def assign_stage_and_rule(
     )
     
     if (
-        first_condition_for_rule_8_applies #or
-        #(("skin" in site_coll) and age_at_specimen_collection_and_age_at_diagnosis_are_within_90_days and not skin_meta_before) or
-        #(MetastaticDiseaseInd_matched_on_yes_regional and MetastaticDiseaseSite_matched_on_lymph_node and AgeAtMetastaticSite_is_less_than_Age_At_Specimen_Collection)
+        first_condition_for_rule_8_applies
     ):
         if path_stg in [
             "Unknown/Not Reported",
@@ -586,7 +566,20 @@ def assign_stage_and_rule(
         print()
 
     # RULE 9 - SKINREG
-    if re.search(r"skin|ear|eyelid|vulva|head|soft tissue[s]?|breast|lymph node", site_coll) and not _skin_distant_unknown():
+    MetastaticDiseaseSite_matched_on_more, MetastaticDiseaseSite_match_on_more = find_match(r"skin|ear|eyelid|vulva|head|soft tissues|breast|lymph node", metastatic_sites_text)
+    MetastaticDiseaseInd_matched_on_yes_distant, MetastaticDiseaseInd_match_on_yes_distant = find_match(r"yes - distant", MetastaticDiseaseInd)
+    if (
+        (
+            MetsDzPrimaryDiagnosisSite_matched and
+            MetastaticDiseaseInd_matched and
+            MetastaticDiseaseSite_matched_on_more and
+            AgeAtMetastaticSite_is_less_than_or_equal_to_Age_At_Specimen_Collection_fudged
+        ) or not (
+            MetsDzPrimaryDiagnosisSite_matched and
+            MetastaticDiseaseInd_matched_on_yes_distant and
+            ("Age Unknown/Not Recorded" in data_frame_of_metastatic_disease_data_for_patient["AgeAtMetastaticSite"].to_list())
+        )
+    ):
         return "III", "SKINREG"
 
     # RULE 10 - SKINUNK
