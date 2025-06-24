@@ -547,7 +547,7 @@ def assign_stage_and_rule(
     
     
     DeidSpecimenID = spec["DeidSpecimenID"]
-    if DeidSpecimenID in ["Z2B1B3TD1P9LNFGYTM0Y06K7H"]:
+    if DeidSpecimenID in ["PZ37PAQ95IIHKQBWR9S8G9JUZ"]:
         print(f"DeidSpecimenID is {DeidSpecimenID}.")
         ORIENAvatarKey = spec["ORIENAvatarKey"]
         print(f"The value in column `ORIENAvatarKey` in table `24PRJ217UVA_20241112_ClinicalMolLinkage_V4.csv` corresponding to this Specimen ID is {ORIENAvatarKey}.")
