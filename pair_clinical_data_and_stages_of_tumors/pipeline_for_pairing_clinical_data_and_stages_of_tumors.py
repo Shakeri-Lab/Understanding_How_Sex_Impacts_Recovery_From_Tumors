@@ -620,27 +620,30 @@ def assign_stage_and_rule(
             return "III", "SKINREG"
 
 
-    # RULE 10 - SKINUNK
-    def find_match(pattern: str, text: str):
-        """
-        Search `text` for the first occurrence of `pattern`.
-        Returns a tuple (matched: bool, match_str: str or None).
-        """
-        m = re.search(pattern, text)
-        if m:
-            return True, m.group(0) # group(0) is the entire match
-        else:
-            return False, None
-    
-    MetsDzPrimaryDiagnosisSite_matched, MetsDzPrimaryDiagnosisSite_match = find_match(r"skin|ear|eyelid|vulva", MetsDzPrimaryDiagnosisSite)
-    MetastaticDiseaseInd_matched_on_yes_distant_or_yes_nos, MetastaticDiseaseInd_match_on_yes_distant_or_yes_nos = find_match(r"yes - distant|yes - nos", MetastaticDiseaseInd)
-    
-    if (
-        MetsDzPrimaryDiagnosisSite_matched and
-        MetastaticDiseaseInd_matched_on_yes_distant_or_yes_nos and
-        ("Age Unknown/Not Recorded" in data_frame_of_metastatic_disease_data_for_patient["AgeAtMetastaticSite"].to_list())
-    ):
-        return "IV", "SKINUNK"
+    # ────────────────────────────────────────────────────────────────
+    # RULE 10 – SKINUNK
+    #
+    # Stage IV if there exists at least one row in the metastatic disease
+    # table that simultaneously has
+    #   • MetsDzPrimaryDiagnosisSite matching "skin|ear|eyelid|vulva",
+    #   • MetastaticDiseaseInd matching "yes - distant|yes - nos", and
+    #   • AgeAtMetastaticSite of "Age Unknown/Not Recorded".
+    # ────────────────────────────────────────────────────────────────
+    if not data_frame_of_metastatic_disease_data_for_patient.empty:
+        meta_df = data_frame_of_metastatic_disease_data_for_patient.copy()
+
+        skinunk_mask = (
+            meta_df["MetsDzPrimaryDiagnosisSite"].str.contains(
+                r"skin|ear|eyelid|vulva", case=False, na=False
+            )
+            & meta_df["MetastaticDiseaseInd"].str.contains(
+                r"yes\s*-\s*(distant|nos)", case=False, na=False
+            )
+            & meta_df["AgeAtMetastaticSite"].str.strip().eq("Age Unknown/Not Recorded")
+        )
+
+        if skinunk_mask.any():
+            return "IV", "SKINUNK"
 
     # Fallback (should never be reached according to ORIEN Specimen Staging Revised Rules)
     return "Unknown", "UNMATCHED"
