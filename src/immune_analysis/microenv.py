@@ -274,7 +274,7 @@ def _clean_expression_df(df: pd.DataFrame) -> pd.DataFrame:
             )
             res_df: pd.DataFrame = ro.conversion.rpy2py(res_r)
 
-        print("First row of multiple rows per Ensembl ID will be selected.")
+        logger.info("First row of multiple rows per Ensembl ID will be selected.")
             
         # keep first symbol per Ensembl, drop NAs / blanks
         res_df = (res_df[["ENSEMBL", "SYMBOL"]]
@@ -339,25 +339,19 @@ def run_xcell_analysis(expr_df: pd.DataFrame,
         # ---------- 3 : run xCell ---------------------------------------------
         xcell  = importr("xCell")
         scores_r = xcell.xCellAnalysis(expr_r, rnaseq=True)
+        logger.info("HGNC symbols that are elements of the index of the expression matrix were matched with gene sets.")
 
         # ---------- 4 : R → Python back ---------------------------------------
         with localconverter(ro.default_converter + pandas2ri.converter):
             scores_py = ro.conversion.rpy2py(scores_r)
 
         # ── wrap bare ndarray, handling possible NULL row/col names ──────────────
-        if isinstance(scores_py, np.ndarray):
-            row_names = _safe_r_names(ro.r("rownames")(scores_r))
-            col_names = _safe_r_names(ro.r("colnames")(scores_r))
+        scores_r_df = ro.r("as.data.frame")(scores_r)
+        with localconverter(ro.default_converter + pandas2ri.converter):
+            scores_df = ro.conversion.rpy2py(scores_r_df)
 
-            scores_df = pd.DataFrame(
-                scores_py,
-                index=row_names if row_names else range(scores_py.shape[0]),
-                columns=col_names if col_names else range(scores_py.shape[1]),
-            )
-        else:
-            scores_df = scores_py        # already a DataFrame
-
-        scores_df = scores_df.T          # rows = samples
+        # R puts cell types in the row index → transpose
+        scores_df = scores_df.T
         scores_df.index.name = "SampleID"
 
         # ---------- 5 : write results -----------------------------------------
@@ -366,7 +360,7 @@ def run_xcell_analysis(expr_df: pd.DataFrame,
         logger.info("Full xCell score matrix written to %s", full_out)
 
         panel_cols = [c for c in FOCUSED_XCELL_PANEL if c in scores_df.columns]
-        missing    = set(FOCUSED_XCELL_PANEL) - set(panel_cols)
+        missing    = sorted(set(FOCUSED_XCELL_PANEL) - set(panel_cols))
         if missing:
             logger.warning("Focused panel — missing columns: %s",
                            ", ".join(sorted(missing)))
