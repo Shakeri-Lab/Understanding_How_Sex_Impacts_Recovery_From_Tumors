@@ -437,14 +437,6 @@ def assign_stage_and_rule(
         AgeAtMetastaticSite = ages.min() if ages.notna().any() else None
     
     age_spec = _float(spec.get("Age At Specimen Collection"))
-
-    def _skin_distant_unknown() -> bool:
-        if data_frame_of_metastatic_disease_data_for_patient.empty:
-            return False
-        site_ok = data_frame_of_metastatic_disease_data_for_patient["MetsDzPrimaryDiagnosisSite"].str.contains(CUTANEOUS_RE, na = False)
-        distant = data_frame_of_metastatic_disease_data_for_patient["MetastaticDiseaseInd"].str.contains(r"Yes - Distant|Yes - NOS", na = False)
-        unk_age = data_frame_of_metastatic_disease_data_for_patient["AgeAtMetastaticSite"].str.strip().str.lower().eq("age unknown/not recorded")
-        return (site_ok & distant & unk_age).any()
     
     # Rule 0 - EXCEPTION
     '''
@@ -457,14 +449,14 @@ def assign_stage_and_rule(
     - This rule applies to 6 patients, all cutaneous; 5 patients in Group A and 1 patient in Group C (ILE2DL0KMW)
     '''
     
-    if spec["ORIENAvatarKey"] in ["227RDTKST8", "ILE2DL0KMW", "YRGE6MVYNK", "EKZGU61JTP"]:
+    if spec["ORIENAvatarKey"] in ["227RDTKST8", "ILE2DL0KMW", "YRGE6MVYNK", "EKZGU61JTP", "3Z82S0R5IE", "MXL3WK5YF0"]:#, "DVJMQLZBJV"]:
         return "III", "EXCEPTION"
     elif spec["ORIENAvatarKey"] in ["GEM0S42KIH", "CG6JRI0XIX", "WDMTMU4SV2"]:
         return "IV", "EXCEPTION"
     
     # RULE 1 - AGE
     if age_diag_txt.lower() == "age 90 or older":
-        return _first_roman(path_stg or clin_stg) or "Unknown", "AGE"
+        return (_first_roman(path_stg or clin_stg) or "Unknown"), "AGE"
 
     # RULE 2 - PATHIV
     if "IV" in path_stg.upper():
@@ -478,13 +470,37 @@ def assign_stage_and_rule(
     if not _SITE_LOCAL_RE.search(site_coll):
         return "IV", "METSITE"
 
-    # RULE 5 - PRIORDISTANT
-    if not data_frame_of_metastatic_disease_data_for_patient.empty:
-        MetsDzPrimaryDiagnosisSite_contains_keyword = data_frame_of_metastatic_disease_data_for_patient["MetsDzPrimaryDiagnosisSite"].str.contains(r"skin|ear|eyelid|vulva|eye|choroid|ciliary body|conjunctiva|sinus|gum|nasal|urethra", case = False, na = False)
-        MetastaticDiseaseInd_is_yes_distant = data_frame_of_metastatic_disease_data_for_patient["MetastaticDiseaseInd"].str.contains(r"yes\s*-\s*distant", case = False, na = False)
-        age_meta = data_frame_of_metastatic_disease_data_for_patient["AgeAtMetastaticSite"].apply(_float)
-        AgeAtMetastaticSite_is_less_than_or_equal_to_AgeAtSpecimenCollection = pd.notna(age_meta) & pd.notna(age_spec) & (age_meta <= age_spec + AGE_FUDGE)
-        if (MetsDzPrimaryDiagnosisSite_contains_keyword & MetastaticDiseaseInd_is_yes_distant & AgeAtMetastaticSite_is_less_than_or_equal_to_AgeAtSpecimenCollection).any():
+    # ────────────────────────────────────────────────────────────────
+    # RULE 5 – PRIORDISTANT
+    # A specimen is stage IV if -- in the same metastatic disease row --
+    #   • MetsDzPrimaryDiagnosisSite matches a cutaneous / ocular / mucosal keyword
+    #   • MetastaticDiseaseInd == "yes - distant"
+    #   • AgeAtMetastaticSite <= Age At Specimen Collection (fudged)
+    # ────────────────────────────────────────────────────────────────
+    if (
+        not data_frame_of_metastatic_disease_data_for_patient.empty
+        and age_spec is not None
+    ):
+        meta_df = data_frame_of_metastatic_disease_data_for_patient.copy()
+
+        # float-convert the metastatic ages (treat “Age 90 or older” as 90.0)
+        meta_df["_age_meta"] = meta_df["AgeAtMetastaticSite"].apply(
+            lambda x: 90.0 if str(x).strip() == "Age 90 or older" else _float(x)
+        )
+
+        # build one row-wise mask that requires all three criteria simultaneously
+        priordistant_mask = (
+            meta_df["MetsDzPrimaryDiagnosisSite"].str.contains(
+                r"skin|ear|eyelid|vulva|eye|choroid|ciliary body|conjunctiva|sinus|gum|nasal|urethra",
+                case = False,
+                na = False,
+            )
+            & meta_df["MetastaticDiseaseInd"].str.strip().str.lower().eq("yes - distant")
+            & meta_df["_age_meta"].notna()
+            & (meta_df["_age_meta"] <= (age_spec + AGE_FUDGE))
+        )
+
+        if priordistant_mask.any():
             return "IV", "PRIORDISTANT"
 
     # RULE 6 - NOMETS
