@@ -350,13 +350,27 @@ def run_xcell_analysis(expr_df: pd.DataFrame,
         with localconverter(ro.default_converter + pandas2ri.converter):
             scores_df = ro.conversion.rpy2py(scores_r_df)
 
-        # R puts cell types in the row index → transpose
+        # ---------------------------------------------------------------------
+        # R puts the cell types in the row index *and* silently drops the
+        # sample names.  They are therefore recovered here from the original
+        # expression matrix (the order is guaranteed to be identical).
+        # ---------------------------------------------------------------------
+        if scores_df.shape[1] == expr_df.shape[1]:
+            scores_df.columns = expr_df.columns.astype(str)
+        else:
+            logger.warning(
+                "xCell returned %d samples, but the input matrix had %d. "
+                "Keeping default column names.",
+                scores_df.shape[1], expr_df.shape[1]
+            )
+
+        # now put the samples on the index axis
         scores_df = scores_df.T
         scores_df.index.name = "SampleID"
 
         # ---------- 5 : write results -----------------------------------------
         full_out = os.path.join(output_dir, "xcell_scores_raw.csv")
-        scores_df.to_csv(full_out)
+        scores_df.to_csv(full_out, index_label="SampleID")
         logger.info("Full xCell score matrix written to %s", full_out)
 
         panel_cols = [c for c in FOCUSED_XCELL_PANEL if c in scores_df.columns]
