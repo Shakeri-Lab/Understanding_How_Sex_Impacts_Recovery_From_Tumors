@@ -566,7 +566,61 @@ def assign_stage_and_rule(
         return (_first_roman(path_stg) or "Unknown"), "SKINLESS90D"
 
 
-    # RULE 9 - SKINREG
+    # ────────────────────────────────────────────────────────────────
+    # RULE 9 – SKINREG
+    #
+    # Stage III if EITHER of the following is true:
+    #
+    #   A)  There exists ≥ 1 metastatic-disease row that simultaneously has
+    #        • MetsDzPrimaryDiagnosisSite ∼ "skin|ear|eyelid|vulva"
+    #        • MetastaticDiseaseInd      ∼ "yes - regional|yes - nos"
+    #        • MetastaticDiseaseSite     ∼ "skin|ear|eyelid|vulva|head|soft tissues|breast|lymph node"
+    #        • AgeAtMetastaticSite       ≤ AgeSpec + AGE_FUDGE
+    #
+    #   B)  No metastatic-disease row simultaneously has
+    #        • MetsDzPrimaryDiagnosisSite ∼ "skin|ear|eyelid|vulva"
+    #        • MetastaticDiseaseInd       == "yes - distant"
+    #        • AgeAtMetastaticSite        == "Age Unknown/Not Recorded"
+    # ────────────────────────────────────────────────────────────────
+    if not data_frame_of_metastatic_disease_data_for_patient.empty and age_spec is not None:
+        meta_df = data_frame_of_metastatic_disease_data_for_patient.copy()
+
+        # numeric version of AgeAtMetastaticSite
+        meta_df["_age_meta"] = meta_df["AgeAtMetastaticSite"].apply(
+            lambda x: 90.0 if str(x).strip() == "Age 90 or older" else _float(x)
+        )
+
+        # ----------  condition A  ----------
+        cond_A_mask = (
+            meta_df["MetsDzPrimaryDiagnosisSite"].str.contains(
+                r"skin|ear|eyelid|vulva", case=False, na=False
+            )
+            & meta_df["MetastaticDiseaseInd"].str.contains(
+                r"yes\s*-\s*(regional|nos)", case=False, na=False
+            )
+            & meta_df["MetastaticDiseaseSite"].str.contains(
+                r"skin|ear|eyelid|vulva|head|soft tissues|breast|lymph node",
+                case=False,
+                na=False,
+            )
+            & meta_df["_age_meta"].notna()
+            & (meta_df["_age_meta"] <= (age_spec + AGE_FUDGE))
+        )
+
+        # ----------  condition B  ----------
+        cond_B_mask = (
+            meta_df["MetsDzPrimaryDiagnosisSite"].str.contains(
+                r"skin|ear|eyelid|vulva", case=False, na=False
+            )
+            & meta_df["MetastaticDiseaseInd"].str.strip().str.lower().eq("yes - distant")
+            & meta_df["AgeAtMetastaticSite"].str.strip().eq("Age Unknown/Not Recorded")
+        )
+
+        if cond_A_mask.any() or (not cond_B_mask.any()):
+            return "III", "SKINREG"
+
+
+    # RULE 10 - SKINUNK
     def find_match(pattern: str, text: str):
         """
         Search `text` for the first occurrence of `pattern`.
@@ -579,27 +633,8 @@ def assign_stage_and_rule(
             return False, None
     
     MetsDzPrimaryDiagnosisSite_matched, MetsDzPrimaryDiagnosisSite_match = find_match(r"skin|ear|eyelid|vulva", MetsDzPrimaryDiagnosisSite)
-    MetastaticDiseaseInd_matched, MetastaticDiseaseInd_match = find_match(r"yes - regional|yes - nos", MetastaticDiseaseInd)
     MetastaticDiseaseInd_matched_on_yes_distant_or_yes_nos, MetastaticDiseaseInd_match_on_yes_distant_or_yes_nos = find_match(r"yes - distant|yes - nos", MetastaticDiseaseInd)
-    AgeAtMetastaticSite_is_less_than_or_equal_to_Age_At_Specimen_Collection_fudged = AgeAtMetastaticSite is not None and age_spec is not None and AgeAtMetastaticSite <= age_spec_fudged
     
-    MetastaticDiseaseSite_matched_on_more, MetastaticDiseaseSite_match_on_more = find_match(r"skin|ear|eyelid|vulva|head|soft tissues|breast|lymph node", metastatic_sites_text)
-    MetastaticDiseaseInd_matched_on_yes_distant, MetastaticDiseaseInd_match_on_yes_distant = find_match(r"yes - distant", MetastaticDiseaseInd)
-    if (
-        (
-            MetsDzPrimaryDiagnosisSite_matched and
-            MetastaticDiseaseInd_matched and
-            MetastaticDiseaseSite_matched_on_more and
-            AgeAtMetastaticSite_is_less_than_or_equal_to_Age_At_Specimen_Collection_fudged
-        ) or not (
-            MetsDzPrimaryDiagnosisSite_matched and
-            MetastaticDiseaseInd_matched_on_yes_distant and
-            ("Age Unknown/Not Recorded" in data_frame_of_metastatic_disease_data_for_patient["AgeAtMetastaticSite"].to_list())
-        )
-    ):
-        return "III", "SKINREG"
-
-    # RULE 10 - SKINUNK
     if (
         MetsDzPrimaryDiagnosisSite_matched and
         MetastaticDiseaseInd_matched_on_yes_distant_or_yes_nos and
