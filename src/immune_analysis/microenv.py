@@ -1,5 +1,6 @@
 '''
 Usage:
+conda activate ici_sex
 ./miniconda3/envs/ici_sex/bin/python -m src.immune_analysis.microenv
 '''
 
@@ -236,6 +237,152 @@ def process_melanoma_immune_data(base_path, output_dir=None):
         logger.error(f"Error processing melanoma immune data: {e}", exc_info=True)
         return None
 
+    
+from rpy2.robjects.vectors import StrVector
+
+# --------------------------------------------------------------------------
+def _clean_expression_df(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    • make 'gene_id' the index (if still a column)
+    • strip Ensembl version (.15  →  ENSG00000000003)
+    • map Ensembl IDs → HGNC symbols     (via AnnotationDbi::mapIds)
+    • drop duplicates / unmapped rows, coerce to numeric
+    Returns a tidy gene-by-sample matrix ready for xCell.
+    """
+    # ensure index is str
+    df.index = df.index.astype(str)
+
+    # ── 1. strip version suffix ─────────────────────────────────────────────
+    df.index = df.index.str.replace(r"\.\d+$", "", regex=True)
+
+    # ── 2. Ensembl → HGNC mapping via org.Hs.eg.db / AnnotationDbi ----------    
+    try:
+        ro.r('suppressPackageStartupMessages(library(org.Hs.eg.db))')
+        orgdb = ro.r('org.Hs.eg.db')                     # actual OrgDb env
+        annotation_dbi = importr("AnnotationDbi")
+
+        # unique keys only — speeds things up
+        keys = df.index.unique().to_list()
+
+        
+        with localconverter(ro.default_converter + pandas2ri.converter):
+            res_r = annotation_dbi.select(
+                orgdb,
+                keys = StrVector(keys),
+                columns = StrVector(["SYMBOL"]),
+                keytype = "ENSEMBL"
+            )
+            res_df: pd.DataFrame = ro.conversion.rpy2py(res_r)
+
+        print("First row of multiple rows per Ensembl ID will be selected.")
+            
+        # keep first symbol per Ensembl, drop NAs / blanks
+        res_df = (res_df[["ENSEMBL", "SYMBOL"]]
+                  .dropna()
+                  .query("SYMBOL != ''")
+                  .drop_duplicates("ENSEMBL"))
+        ens2sym = dict(zip(res_df["ENSEMBL"], res_df["SYMBOL"]))
+
+    except Exception as e:
+        logger.error("Failed during Ensembl→HGNC mapping: %s", e, exc_info=True)
+        raise
+
+    # ── 3. keep mapped genes, rename index to symbols -----------------------
+    df = df.loc[df.index.isin(ens2sym)].copy()
+    df.index = df.index.map(ens2sym.get)
+
+    # ── 4. housekeeping -----------------------------------------------------
+    df = df[~df.index.duplicated(keep="first")]          # drop duplicate symbols
+    df = df.apply(pd.to_numeric, errors="coerce").fillna(0.0)
+
+    # write an intermediate file for debugging
+    df.to_csv("cleaned_expression_matrix.csv")
+
+    return df
+
+
+from rpy2.rinterface import NULLType
+
+# ---------------------------------------------------------------- helpers
+def _safe_r_names(r_call_result) -> list[str]:
+    """Return row/col names or an empty list when the R value is NULL."""
+    return [] if isinstance(r_call_result, NULLType) else list(map(str, r_call_result))
+
+
+# ------------------------------------------------------------------ main function
+def run_xcell_analysis(expr_df: pd.DataFrame,
+                       clinical_df: pd.DataFrame,
+                       base_path: str,
+                       output_dir: str | None = None) -> bool:
+    """
+    Run xCell on a gene-by-sample matrix and write
+    `xcell_scores_raw.csv` and `xcell_scores_focused_panel.csv`.
+    """
+    try:
+        if output_dir is None:
+            output_dir = os.path.join(base_path, "output", "xcell")
+        os.makedirs(output_dir, exist_ok=True)
+
+        # ---------- 1 : tidy the matrix so xCell will recognise the genes -----
+        expr_df = _clean_expression_df(expr_df)
+        if expr_df.empty:
+            logger.error("Expression matrix is empty after cleaning — aborting.")
+            return False
+        logger.info("Matrix after cleaning: %s genes × %s samples",
+                    expr_df.shape[0], expr_df.shape[1])
+
+        # ---------- 2 : Python → R conversion ---------------------------------
+        logger.info("Converting expression matrix to R and launching xCell …")
+        with localconverter(ro.default_converter + pandas2ri.converter):
+            expr_r = ro.conversion.py2rpy(expr_df)
+
+        # ---------- 3 : run xCell ---------------------------------------------
+        xcell  = importr("xCell")
+        scores_r = xcell.xCellAnalysis(expr_r, rnaseq=True)
+
+        # ---------- 4 : R → Python back ---------------------------------------
+        with localconverter(ro.default_converter + pandas2ri.converter):
+            scores_py = ro.conversion.rpy2py(scores_r)
+
+        # ── wrap bare ndarray, handling possible NULL row/col names ──────────────
+        if isinstance(scores_py, np.ndarray):
+            row_names = _safe_r_names(ro.r("rownames")(scores_r))
+            col_names = _safe_r_names(ro.r("colnames")(scores_r))
+
+            scores_df = pd.DataFrame(
+                scores_py,
+                index=row_names if row_names else range(scores_py.shape[0]),
+                columns=col_names if col_names else range(scores_py.shape[1]),
+            )
+        else:
+            scores_df = scores_py        # already a DataFrame
+
+        scores_df = scores_df.T          # rows = samples
+        scores_df.index.name = "SampleID"
+
+        # ---------- 5 : write results -----------------------------------------
+        full_out = os.path.join(output_dir, "xcell_scores_raw.csv")
+        scores_df.to_csv(full_out)
+        logger.info("Full xCell score matrix written to %s", full_out)
+
+        panel_cols = [c for c in FOCUSED_XCELL_PANEL if c in scores_df.columns]
+        missing    = set(FOCUSED_XCELL_PANEL) - set(panel_cols)
+        if missing:
+            logger.warning("Focused panel — missing columns: %s",
+                           ", ".join(sorted(missing)))
+
+        focused_df = scores_df[panel_cols]
+        focused_out = os.path.join(output_dir, "xcell_scores_focused_panel.csv")
+        focused_df.to_csv(focused_out)
+        logger.info("Focused panel written to %s", focused_out)
+
+        return True
+
+    except Exception as exc:
+        logger.error("run_xcell_analysis failed: %s", exc, exc_info=True)
+        return False
+    
+    
 def main():
     """Main execution function"""
     base_path = "/project/orien/data/aws/24PRJ217UVA_IORIG/Understanding_How_Sex_Impacts_Recovery_From_Tumors"
@@ -255,6 +402,8 @@ def main():
         return
 
     # Run the analysis (which now includes R execution and file writing)
+    expr_matrix.to_csv("expression_matrix.csv", index = True)
+    clinical_data_processed.to_csv("clinical_data_processed.csv", index = True)
     success = run_xcell_analysis(expr_matrix, clinical_data_processed, base_path)
 
     if success:
