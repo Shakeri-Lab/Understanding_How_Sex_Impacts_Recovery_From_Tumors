@@ -545,7 +545,7 @@ def assign_stage_and_rule(
                 r"skin|ear|eyelid|vulva", case=False, na=False
             )
             & meta_df["MetastaticDiseaseInd"].str.contains(
-                r"yes\s*-\s*(regional|nos)", case=False, na=False
+                r"yes\s*-\s*(?:regional|nos)", case=False, na=False
             )
             & meta_df["MetastaticDiseaseSite"].str.contains(
                 r"skin|ear|eyelid|vulva|breast", case=False, na=False
@@ -596,7 +596,7 @@ def assign_stage_and_rule(
                 r"skin|ear|eyelid|vulva", case=False, na=False
             )
             & meta_df["MetastaticDiseaseInd"].str.contains(
-                r"yes\s*-\s*(regional|nos)", case=False, na=False
+                r"yes\s*-\s*(?:regional|nos)", case=False, na=False
             )
             & meta_df["MetastaticDiseaseSite"].str.contains(
                 r"skin|ear|eyelid|vulva|head|soft tissues|breast|lymph node",
@@ -637,7 +637,7 @@ def assign_stage_and_rule(
                 r"skin|ear|eyelid|vulva", case=False, na=False
             )
             & meta_df["MetastaticDiseaseInd"].str.contains(
-                r"yes\s*-\s*(distant|nos)", case=False, na=False
+                r"yes\s*-\s*(?:distant|nos)", case=False, na=False
             )
             & meta_df["AgeAtMetastaticSite"].str.strip().eq("Age Unknown/Not Recorded")
         )
