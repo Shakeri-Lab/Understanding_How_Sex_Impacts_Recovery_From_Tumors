@@ -29,21 +29,21 @@ pandas2ri.activate()
 
 # Define the standard xCell cell types/scores in their typical output order
 # Corrected 67 items list including Keratinocytes and Hepatocytes (kept for reference)
-# XCELL_CELL_TYPES_ORDERED = [
-#     'Adipocytes', 'Astrocytes', 'B-cells', 'Basophils', 'CD4+ memory T-cells',
-#     'CD4+ naive T-cells', 'CD4+ T-cells', 'CD4+ Tcm', 'CD4+ Tem', 'CD8+ naive T-cells',
-#     'CD8+ T-cells', 'CD8+ Tcm', 'CD8+ Tem', 'Chondrocytes', 'Class-switched memory B-cells',
-#     'CLP', 'CMP', 'cDC', 'DC', 'Endothelial cells', 'Eosinophils', 'Epithelial cells',
-#     'Erythrocytes', 'Fibroblasts', 'GMP', 'HSC', 'iDC', 'Keratinocytes',  # Added
-#     'ly Endothelial cells', 'Macrophages', 'Macrophages M1', 'Macrophages M2', 
-#     'Mast cells', 'Megakaryocytes', 'Memory B-cells', 'MEP', 'Mesangial cells', 
-#     'Monocytes', 'MPP', 'mv Endothelial cells', 'naive B-cells', 'Neutrophils', 
-#     'NK cells', 'NKT', 'Osteoblast', 'pDC', 'Pericytes', 'Plasma cells', 'Platelets', 
-#     'Preadipocytes', 'pro B-cells', 'Sebocytes', 'Skeletal muscle', 'Smooth muscle', 
-#     'Tgd cells', 'Th1 cells', 'Th2 cells', 'Tregs', 'aDC', 'Neurons', 'Hepatocytes',  # Added
-#     'MSC', 'common myeloid progenitor', 'melanocyte', 'ImmuneScore', 'StromaScore', 
-#     'MicroenvironmentScore'
-# ]  # Now 67 items
+XCELL_CELL_TYPES_ORDERED = [
+     'Adipocytes', 'Astrocytes', 'B-cells', 'Basophils', 'CD4+ memory T-cells',
+     'CD4+ naive T-cells', 'CD4+ T-cells', 'CD4+ Tcm', 'CD4+ Tem', 'CD8+ naive T-cells',
+     'CD8+ T-cells', 'CD8+ Tcm', 'CD8+ Tem', 'Chondrocytes', 'Class-switched memory B-cells',
+     'CLP', 'CMP', 'cDC', 'DC', 'Endothelial cells', 'Eosinophils', 'Epithelial cells',
+     'Erythrocytes', 'Fibroblasts', 'GMP', 'HSC', 'iDC', 'Keratinocytes',  # Added
+     'ly Endothelial cells', 'Macrophages', 'Macrophages M1', 'Macrophages M2', 
+     'Mast cells', 'Megakaryocytes', 'Memory B-cells', 'MEP', 'Mesangial cells', 
+     'Monocytes', 'MPP', 'mv Endothelial cells', 'naive B-cells', 'Neutrophils', 
+     'NK cells', 'NKT', 'Osteoblast', 'pDC', 'Pericytes', 'Plasma cells', 'Platelets', 
+     'Preadipocytes', 'pro B-cells', 'Sebocytes', 'Skeletal muscle', 'Smooth muscle', 
+     'Tgd cells', 'Th1 cells', 'Th2 cells', 'Tregs', 'aDC', 'Neurons', 'Hepatocytes',  # Added
+     'MSC', 'common myeloid progenitor', 'melanocyte', 'ImmuneScore', 'StromaScore', 
+     'MicroenvironmentScore'
+]  # Now 67 items
 
 # Define the Focused Panel for ICB Response Analysis (14 items)
 FOCUSED_XCELL_PANEL = [
@@ -342,29 +342,60 @@ def run_xcell_analysis(expr_df: pd.DataFrame,
         logger.info("HGNC symbols that are elements of the index of the expression matrix were matched with gene sets.")
 
         # ---------- 4 : R → Python back ---------------------------------------
+        #
+        #  • `scores_r` is an R matrix:   rows = cell-types,  cols = samples
+        #  • We pull the numeric data *and* the true row/col names explicitly
+        #    so nothing is lost in translation.
+        #
         with localconverter(ro.default_converter + pandas2ri.converter):
-            scores_py = ro.conversion.rpy2py(scores_r)
+            scores_np = ro.conversion.rpy2py(scores_r)           # numpy array
 
-        # ── wrap bare ndarray, handling possible NULL row/col names ──────────────
-        scores_r_df = ro.r("as.data.frame")(scores_r)
-        with localconverter(ro.default_converter + pandas2ri.converter):
-            scores_df = ro.conversion.rpy2py(scores_r_df)
 
-        # ---------------------------------------------------------------------
-        # R puts the cell types in the row index *and* silently drops the
-        # sample names.  They are therefore recovered here from the original
-        # expression matrix (the order is guaranteed to be identical).
-        # ---------------------------------------------------------------------
-        if scores_df.shape[1] == expr_df.shape[1]:
-            scores_df.columns = expr_df.columns.astype(str)
-        else:
-            logger.warning(
-                "xCell returned %d samples, but the input matrix had %d. "
-                "Keeping default column names.",
-                scores_df.shape[1], expr_df.shape[1]
+        r_samp_ids = _safe_r_names(ro.r("colnames")(scores_r))
+        
+        # -----------------------------------------------------------------
+        # Retrieve cell-type names (rows of the R matrix)
+        # -----------------------------------------------------------------
+        cell_types = _safe_r_names(ro.r("rownames")(scores_r))
+
+        if not cell_types:                       # probe #1 failed → try data.frame
+            tmp_df_r   = ro.r("as.data.frame")(scores_r)
+            cell_types = _safe_r_names(ro.r("rownames")(tmp_df_r))
+
+        # If we still only have digits ("1","2",…) assume xCell dropped names
+        if cell_types and all(ct.strip().isdigit() for ct in cell_types):
+            logger.warning("xCell returned numeric row-names; "
+                           "substituting canonical xCell cell-type list.")
+            cell_types = XCELL_CELL_TYPES_ORDERED.copy()
+
+        if len(cell_types) != scores_np.shape[0]:
+            raise RuntimeError(
+                f"Expected {scores_np.shape[0]} cell-type names but got "
+                f"{len(cell_types)}"
             )
+        
+        # ---------------------------------------------------------------------
+        # Align sample IDs:  prefer the order coming from xCell;  if sizes
+        # mismatch fall back to the cleaned expression matrix (xCell may drop
+        # duplicate / empty columns).
+        # ---------------------------------------------------------------------
+        if r_samp_ids and len(r_samp_ids) == scores_np.shape[1]:
+            sample_ids = r_samp_ids
+        else:
+            sample_ids = list(expr_df.columns.astype(str))[: scores_np.shape[1]]
+            logger.warning("Recovered %d sample IDs from expression matrix "
+                           "because xCell returned %d columns.",
+                           len(sample_ids), scores_np.shape[1])
 
-        # now put the samples on the index axis
+        # Build the DataFrame *with correct labels on both axes*
+        scores_df = pd.DataFrame(scores_np,
+                                 index=pd.Index(cell_types,   name="CellType"),
+                                 columns=pd.Index(sample_ids, name="SampleID"))
+        # House-keeping
+        scores_df.index   = scores_df.index.str.strip()
+        scores_df.columns = scores_df.columns.str.strip()
+
+        # transpose → rows = SampleID, cols = cell-types
         scores_df = scores_df.T
         scores_df.index.name = "SampleID"
 
