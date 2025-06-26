@@ -723,13 +723,43 @@ def assign_stage_and_rule(
             
             return "IV", "PRIORDISTANT"
 
-    # RULE 6 - NOMETS
+    '''
+    From "ORIEN Specimen Staging Revised Rules":
+    10.g. Rule #6: NOMETS
+        - If Metastatic Disease file field MetastaticDiseaseInd = "No", THEN AssignedStage = numerical value of PathGroupStage OR ClinGroupStage (if PathGroupStage is [“Unknown/Not Reported” OR “No TNM applicable for this site/histology combination” OR “Unknown/Not Applicable”])
+            - No recorded regional or distant metastatic disease. Rule assigns stage at initial diagnosis. 
+            - Must add 0.005 to the AgeAtSpecimenCollection due to only 2 decimal points recorded for age in that file, but 3 decimal points recorded on the diagnosis file.
+            - 27 patients, all cutaneous 
+                - 21 patients in group A; 1 patient in group B (92S5RV6HJS), 2 patients in group C (5BS8L7PCCE, L5876HQBT9) 
+            - MetastaticDiseaseInd = No (meaning no regional or distant metastatic disease reported). 
+                - Except for 1 lymph node specimen (5BS8L7PCCE), all that have MetastaticDiseaseInd = No are skin specimens listed as "Primary". However, the time between age at specimen collection and age at diagnosis ranges from 0 days to 721 days, including about half that were obtained within 30 days of initial diagnosis. About 70% have clinical or pathologic stage II disease at initial diagnosis. While some could represent new primaries, the skin site of specimen collection is the same as the primary skin site of diagnosis for all but one, and in that one case, the specimen site is "skin NOS". While some of these may represent new primaries, this rule treats all specimens as related to the initial diagnosis given the limited information to know if these are truly new primaries.  
+            - Three patients with specimens obtained > 90 days: 
+                - 9DLKDVIQ2W: initial IIB upper extremity diagnosis; specimen is skin of upper extremity obtained 721 days later; likely represents new primary; given limited information, keep as stage II 
+                    - For this patient ID, set Discrepancy = 1
+                    - For this patient ID, set Possible New Primary = 1 
+                - MD5OTA3E8A: initial IIC lower extremity diagnosis; specimen is skin of lower extremity obtained 592 days later; likely represents new primary; given limited information, keep as stage II 
+                    - For this patient ID, set Discrepancy = 1
+                    - For this patient ID, set Possible New Primary = 1 
+                - MPHAPLR8K1: initial IIIC face melanoma diagnosis; specimen is skin of face obtained 94 days later; keep as stage III assuming locoregional recurrence (not new primary) 
+                    - For this patient ID, set Discrepancy = 1
+    '''
     if data_frame_of_metastatic_disease_data_for_patient.empty or data_frame_of_metastatic_disease_data_for_patient["MetastaticDiseaseInd"].str.lower().eq("no").all():
-        if pathological_group_stage.lower() in ["unknown/not reported", "no tnm applicable for this site/histology combination", "unknown/not applicable"]:
-            return (roman_numeral_in(clinical_group_stage) or "Unknown"), "NOMETS"
-        return (roman_numeral_in(pathological_group_stage) or "Unknown"), "NOMETS"
+        if pathological_group_stage in ["unknown/not reported", "no tnm applicable for this site/histology combination", "unknown/not applicable"]:
+            roman_numeral_in_clinical_group_stage = roman_numeral_in(clinical_group_stage)
+            if roman_numeral_in_clinical_group_stage:
+                return roman_numeral_in_clinical_group_stage, "AGE"
+            else:
+                return "Unknown", "AGE"
+        roman_numeral_in_pathological_group_stage = roman_numeral_in(pathological_group_stage)
+        if roman_numeral_in_pathological_group_stage:
+            return roman_numeral_in_pathological_group_stage, "AGE"
+        else:
+            return "Unknown", "AGE"
 
-    # RULE 7 - NODE
+    '''
+    From "ORIEN Specimen Staging Revised Rules":
+    10.h. Rule #7: NODE
+    '''
     if ("lymph node" in specimen_site_of_collection) or ("parotid" in specimen_site_of_collection):
         return "III", "NODE"
     
