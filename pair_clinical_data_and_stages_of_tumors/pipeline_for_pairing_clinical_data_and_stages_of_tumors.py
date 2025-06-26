@@ -78,6 +78,14 @@ SITE_KEYWORDS = {
 }
 
 
+def assign_primary_site(primary_diagnosis_site: str) -> str:
+    lowercase_primary_diagnosis_site = str(primary_diagnosis_site).lower()
+    for primary_site, pattern in SITE_KEYWORDS.items():
+        if re.search(pattern, lowercase_primary_diagnosis_site):
+            return primary_site
+    raise ValueError(f"A primary site could not be assigned for primary diagnosis site {primary_diagnosis_site}.")
+
+
 def run_pipeline(
     path_to_clinical_molecular_linkage_data: Path,
     path_to_diagnosis_data: Path,
@@ -136,7 +144,7 @@ def run_pipeline(
         '''
         From "ORIEN Specimen Staging Revised Rules":
         9. Additional Fields for Stage Assignments 
-        Field Name: Discrepancy (0/1 or No/Yes) 
+            a. Field Name: Discrepancy (0/1 or No/Yes) 
         This is to keep track of all the questionable ones that I reviewed with Dr. Slingluff regardless of whether we made an exception to the rule for staging or kept with the staging assigned by the rule. These will be identified under each rule, but are summarized here since I imagine this will be coded separately from the rules (this field doesn’t impact the rules/exceptions).
             - Discrepancy = 1 if the AvatarKey = ["087FO3NF65" or "227RDTKST8" or "2AP9EDU231" or "2X7USSLPJC" or "6DL054517A" or "6HWEJIP63S" or "7YX8AJLMWR" or "87AJ4KITK8" or "9DLKDVIQ2W" or "9EYYI5H9SU" or "9HA9MZCSU2" or "A594OFU98I" or "AC2EJBKWJO" or "APGLZDFLYJ" or "DTUPUJ06B5" or "EKZGU61JTP" or "FUAZTE7LVQ" or "GEM0S42KIH" or "GITAF8OSTV" or "HTKAEZOC7V" or "HZD0O858UJ" or "IALUL9JC9Y" or "ILE2DL0KMW" or "KEHK6YTVAK" or "L2R9RJJ88C" or "MD5OTA3E8A" or "MPHAPLR8K1" or "N5Q9122LTG" or "NXPOH3RBWY" or "QC7QX0VWAY" or "QE43I70DGC" or "QLWU5QNQIB" or "TIZXXXVCV9" or "X9AZUY3R1C" or "XHTXLE3MLC" or "XPZE95IE7I" or "YMC959TA29" or "YRGE6MVYNK" or "Z7CEUA8SAJ"]
             - For all other AvatarKey IDs not specified, Discrepancy = 0
@@ -187,7 +195,7 @@ def run_pipeline(
             discrepancy = 1
         
         '''
-        Field Name: Possible New Primary (0/1 or No/Yes) 
+        9.b. Field Name: Possible New Primary (0/1 or No/Yes) 
         This is to keep track of the ones that may be new primary melanomas but we do not have an additional diagnosis or other information to definitively know this. The staging for these will be carried out like all the others. These will be identified under each rule, but are summarized here since I imagine this will be coded separately from the rules (this field doesn’t impact the rules/exceptions). 
         - Possible New Primary = 1 if the AvatarKey = ["87AJ4KITK8" or "9DLKDVIQ2W" or "9EYYI5H9SU" or "9HA9MZCSU2" or "A594OFU98I" or "AC2EJBKWJO" or "FUAZTE7LVQ" or "HZD0O858UJ" or "L2R9RJJ88C" or "MD5OTA3E8A" or "NXPOH3RBWY" or "QC7QX0VWAY" or "QE43I70DGC" or "XHTXLE3MLC"] 
         - For all other AvatarKey IDs not specified, Possible New Primary = 0
@@ -514,88 +522,12 @@ def select_diagnosis_for_patient_in_D(
         return copy_of_data_frame_of_diagnosis_data_for_patient.sort_values("_age", na_position = "last").iloc[0]
     
 
-AGE_FUDGE = 0.005 # years, or approximately 1.8 days.
-_ROMAN_RE = re.compile(r"\b(?:Stage\s*)?([IV]{1,3})(?:[ABCD])?\b", re.I)
-
-ICB_PATTERN = re.compile(r"immune checkpoint|pembrolizumab|nivolumab|ipilimumab|atezolizumab|durvalumab|avelumab|cemiplimab|relatlimab", re.I)
-
-CUTANEOUS_RE = re.compile(SITE_KEYWORDS["cutaneous"], re.I)
-_SITE_LOCAL_RE = re.compile(r"skin|ear|eyelid|vulva|head|soft tissues|breast|lymph node|parotid|vagina", re.I)
-
-
-#################
-# SMALL UTILITIES
-#################
-
-def _float(val) -> float | None:
-    try:
-        return float(val)
-    except (TypeError, ValueError):
-        return None
-
-    
-def _first_roman(stage_txt: str) -> Optional[str]:
-    '''
-    Return the core Roman numeral (I, II, III, or IV) in a stage string or None.
-    '''
-    m = _ROMAN_RE.search(str(stage_txt))
-    return None if m is None else m.group(1).upper()
-    
-    
-def load_data(
-    path_to_clinical_molecular_linkage_data: Path,
-    path_to_diagnosis_data: Path,
-    path_to_metastatic_disease_data: Path
-) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    
-    logging.info("Clinical molecular linkage data will be loaded.")
-    data_frame_of_clinical_molecular_linkage_data = pd.read_csv(path_to_clinical_molecular_linkage_data, dtype = str)
-    data_frame_of_clinical_molecular_linkage_data.columns = data_frame_of_clinical_molecular_linkage_data.columns.str.strip()
-    mask_of_indicators_that_specimens_are_tumors = data_frame_of_clinical_molecular_linkage_data["Tumor/Germline"].str.lower() == "tumor"
-    data_frame_of_clinical_molecular_linkage_data = data_frame_of_clinical_molecular_linkage_data[mask_of_indicators_that_specimens_are_tumors]
-
-    logging.info("Diagnosis data will be loaded.")
-    data_frame_of_diagnosis_data = pd.read_csv(path_to_diagnosis_data, dtype = str)
-    data_frame_of_diagnosis_data.columns = data_frame_of_diagnosis_data.columns.str.strip()
-    pattern_of_histology_codes_of_melanoma = re.compile(r"^87\d\d/\d$")
-    mask_of_indicators_that_histology_codes_represent_melanoma = data_frame_of_diagnosis_data["HistologyCode"].str.match(pattern_of_histology_codes_of_melanoma, na = False)
-    data_frame_of_diagnosis_data = data_frame_of_diagnosis_data[mask_of_indicators_that_histology_codes_represent_melanoma]
-
-    logging.info("Metastatic disease data will be loaded.")
-    data_frame_of_metastatic_disease_data = pd.read_csv(path_to_metastatic_disease_data, dtype = str)
-    data_frame_of_metastatic_disease_data.columns = data_frame_of_metastatic_disease_data.columns.str.strip()
-
-    return data_frame_of_clinical_molecular_linkage_data, data_frame_of_diagnosis_data, data_frame_of_metastatic_disease_data
-
-
-#########################
-# PRIMARY‑SITE ASSIGNMENT
-#########################
-
-def assign_primary_site(primary_diagnosis_site: str) -> str:
-    txt = str(primary_diagnosis_site).lower()
-    for site, pat in SITE_KEYWORDS.items():
-        if re.search(pat, txt): # i.e., if the text is in the pattern
-            return site
-    raise ValueError(f"Unrecognized primary diagnosis site: '{primary_diagnosis_site}'")
-
-
-##############################################################################################
-# STAGING RULES
-# The first rule that matches wins.
-# A specimen is not evaluated against any rule later than a rule that applies to the specimen.
-##############################################################################################
-
 def assign_stage_and_rule(
     spec: pd.Series,
     dx: pd.Series,
     data_frame_of_metastatic_disease_data_for_patient: pd.DataFrame
 ) -> Tuple[str, str]:
-    '''
-    Return (EKN Assigned Stage, NEW RULE) following the 10 ordered rules of "ORIEN Specimen Staging Revised Rules".
-    '''
 
-    # Short aliases ----------------------------------------------------------
     age_diag_txt = str(dx.get("AgeAtDiagnosis", "")).strip()
     age_diag_f = _float(age_diag_txt)
     path_stg = str(dx.get("PathGroupStage", "")).strip()
@@ -631,6 +563,7 @@ def assign_stage_and_rule(
         AgeAtMetastaticSite = ages.min() if ages.notna().any() else None
     
     age_spec = _float(spec.get("Age At Specimen Collection"))
+    
     
     # Rule 0 - EXCEPTION
     '''
@@ -841,6 +774,65 @@ def assign_stage_and_rule(
 
     # Fallback (should never be reached according to ORIEN Specimen Staging Revised Rules)
     return "Unknown", "UNMATCHED"
+    
+
+AGE_FUDGE = 0.005 # years, or approximately 1.8 days.
+_ROMAN_RE = re.compile(r"\b(?:Stage\s*)?([IV]{1,3})(?:[ABCD])?\b", re.I)
+
+ICB_PATTERN = re.compile(r"immune checkpoint|pembrolizumab|nivolumab|ipilimumab|atezolizumab|durvalumab|avelumab|cemiplimab|relatlimab", re.I)
+
+CUTANEOUS_RE = re.compile(SITE_KEYWORDS["cutaneous"], re.I)
+_SITE_LOCAL_RE = re.compile(r"skin|ear|eyelid|vulva|head|soft tissues|breast|lymph node|parotid|vagina", re.I)
+
+
+#################
+# SMALL UTILITIES
+#################
+
+def _float(val) -> float | None:
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return None
+
+    
+def _first_roman(stage_txt: str) -> Optional[str]:
+    '''
+    Return the core Roman numeral (I, II, III, or IV) in a stage string or None.
+    '''
+    m = _ROMAN_RE.search(str(stage_txt))
+    return None if m is None else m.group(1).upper()
+    
+    
+def load_data(
+    path_to_clinical_molecular_linkage_data: Path,
+    path_to_diagnosis_data: Path,
+    path_to_metastatic_disease_data: Path
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    
+    logging.info("Clinical molecular linkage data will be loaded.")
+    data_frame_of_clinical_molecular_linkage_data = pd.read_csv(path_to_clinical_molecular_linkage_data, dtype = str)
+    data_frame_of_clinical_molecular_linkage_data.columns = data_frame_of_clinical_molecular_linkage_data.columns.str.strip()
+    mask_of_indicators_that_specimens_are_tumors = data_frame_of_clinical_molecular_linkage_data["Tumor/Germline"].str.lower() == "tumor"
+    data_frame_of_clinical_molecular_linkage_data = data_frame_of_clinical_molecular_linkage_data[mask_of_indicators_that_specimens_are_tumors]
+
+    logging.info("Diagnosis data will be loaded.")
+    data_frame_of_diagnosis_data = pd.read_csv(path_to_diagnosis_data, dtype = str)
+    data_frame_of_diagnosis_data.columns = data_frame_of_diagnosis_data.columns.str.strip()
+    pattern_of_histology_codes_of_melanoma = re.compile(r"^87\d\d/\d$")
+    mask_of_indicators_that_histology_codes_represent_melanoma = data_frame_of_diagnosis_data["HistologyCode"].str.match(pattern_of_histology_codes_of_melanoma, na = False)
+    data_frame_of_diagnosis_data = data_frame_of_diagnosis_data[mask_of_indicators_that_histology_codes_represent_melanoma]
+
+    logging.info("Metastatic disease data will be loaded.")
+    data_frame_of_metastatic_disease_data = pd.read_csv(path_to_metastatic_disease_data, dtype = str)
+    data_frame_of_metastatic_disease_data.columns = data_frame_of_metastatic_disease_data.columns.str.strip()
+
+    return data_frame_of_clinical_molecular_linkage_data, data_frame_of_diagnosis_data, data_frame_of_metastatic_disease_data
+
+
+
+
+
 
 
 def are_within_90_days(age_spec: float | None, age_diag: float | None) -> bool:
