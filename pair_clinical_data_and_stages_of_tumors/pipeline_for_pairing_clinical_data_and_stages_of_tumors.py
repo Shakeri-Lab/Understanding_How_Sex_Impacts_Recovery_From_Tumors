@@ -521,25 +521,23 @@ def select_diagnosis_for_patient_in_D(
         
         return copy_of_data_frame_of_diagnosis_data_for_patient.sort_values("_age", na_position = "last").iloc[0]
     
-
+    
 def assign_stage_and_rule(
-    spec: pd.Series,
-    dx: pd.Series,
+    series_of_clinical_molecular_linkage_data_for_patient: pd.Series,
+    series_of_diagnosis_data_for_patient: pd.Series,
     data_frame_of_metastatic_disease_data_for_patient: pd.DataFrame
 ) -> Tuple[str, str]:
 
-    age_diag_txt = str(dx.get("AgeAtDiagnosis", "")).strip()
-    age_diag_f = _float(age_diag_txt)
-    path_stg = str(dx.get("PathGroupStage", "")).strip()
-    clin_stg = str(dx.get("ClinGroupStage", "")).strip()
-    site_coll = str(spec.get("SpecimenSiteOfCollection", "")).lower()
-    age_coll = float(90.0 if spec.get("Age At Specimen Collection") == "Age 90 or older" else spec.get("Age At Specimen Collection"))
+    site_coll = str(series_of_clinical_molecular_linkage_data_for_patient.get("SpecimenSiteOfCollection", "")).lower()
+    age_coll = float(90.0 if series_of_clinical_molecular_linkage_data_for_patient.get("Age At Specimen Collection") == "Age 90 or older" else series_of_clinical_molecular_linkage_data_for_patient.get("Age At Specimen Collection"))
+
+    MetsDzPrimaryDiagnosisSite = ""
+    MetastaticDiseaseInd = ""
+    metastatic_sites_text = ""
+    ages = None
+    AgeAtMetastaticSite = None
     
-    if data_frame_of_metastatic_disease_data_for_patient.empty:
-        MetsDzPrimaryDiagnosisSite = ""
-        MetastaticDiseaseInd      = ""
-        AgeAtMetastaticSite       = None
-    else:
+    if not data_frame_of_metastatic_disease_data_for_patient.empty:
         MetsDzPrimaryDiagnosisSite = "|".join(
             data_frame_of_metastatic_disease_data_for_patient["MetsDzPrimaryDiagnosisSite"]
             .dropna()
@@ -562,35 +560,61 @@ def assign_stage_and_rule(
         )
         AgeAtMetastaticSite = ages.min() if ages.notna().any() else None
     
-    age_spec = _float(spec.get("Age At Specimen Collection"))
+    age_spec = _float(series_of_clinical_molecular_linkage_data_for_patient.get("Age At Specimen Collection"))
     
     
-    # Rule 0 - EXCEPTION
     '''
     From "ORIEN Specimen Staging Revised Rules":
-    These are the exceptions to the staging rules. I imagine this should be coded before the other staging rules in your script, so I’ve named it Rule#0 EXCEPTION, but you can put it in your code differently if there is a better way.
+    10. These are the exceptions to the staging rules. I imagine this should be coded before the other staging rules in your script, so I’ve named it Rule#0 EXCEPTION, but you can put it in your code differently if there is a better way.
     
-    RULE#0 EXCEPTION
-    - If AvatarKey = ["227RDTKST8" or "ILE2DL0KMW" or "YRGE6MVYNK" or "EKZGU61JTP"], then AssignedStage = III
-    - If AvatarKey = ["GEM0S42KIH" or "CG6JRI0XIX" or "WDMTMU4SV2"], then AssignedStage = IV 
-    - This rule applies to 6 patients, all cutaneous; 5 patients in Group A and 1 patient in Group C (ILE2DL0KMW)
+    10.a. RULE#0 EXCEPTION
+    - If AvatarKey = ["227RDTKST8" or "ILE2DL0KMW" or "YRGE6MVYNK" or "EKZGU61JTP" or "3Z82S0R5IE" or "MXL3WK5YF0"], then AssignedStage = III
+        - EKZGU61JTP: vulvar melanoma stage IIIB (T3bN1aM0, 7th) at age 67.0. Specimen is vagina (NOS), designated as “primary”, obtained at age 67.73. Reported to have regional nodes (inguinal) at age 67.07 and 67.20. Rule seems appropriate to consider this vaginal specimen as metastatic site of vulvar disease rather than new primary mucosal lesion; however, will be considered regional disease, not distant.
+            - For this patient ID, set Discrepancy = 1.
+    - If AvatarKey = ["GEM0S42KIH" or "CG6JRI0XIX" or "WDMTMU4SV2"], then AssignedStage = IV
+    - This rule applies to 9 patients, all cutaneous; 8 patients in Group A and 1 patient in Group C (ILE2DL0KMW)
     '''
-    
-    if spec["ORIENAvatarKey"] in ["227RDTKST8", "ILE2DL0KMW", "YRGE6MVYNK", "EKZGU61JTP", "3Z82S0R5IE", "MXL3WK5YF0"]:#, "DVJMQLZBJV"]:
+    if series_of_clinical_molecular_linkage_data_for_patient["ORIENAvatarKey"] in ["227RDTKST8", "ILE2DL0KMW", "YRGE6MVYNK", "EKZGU61JTP", "3Z82S0R5IE", "MXL3WK5YF0"]:
         return "III", "EXCEPTION"
-    elif spec["ORIENAvatarKey"] in ["GEM0S42KIH", "CG6JRI0XIX", "WDMTMU4SV2"]:
+    elif series_of_clinical_molecular_linkage_data_for_patient["ORIENAvatarKey"] in ["GEM0S42KIH", "CG6JRI0XIX", "WDMTMU4SV2"]:
         return "IV", "EXCEPTION"
     
-    # RULE 1 - AGE
-    if age_diag_txt.lower() == "age 90 or older":
-        return (_first_roman(path_stg or clin_stg) or "Unknown"), "AGE"
+    '''
+    From "ORIEN Specimen Staging Revised Rules":
+    10.b. Once AssignedStage field is populated by a rule, it should not be further evaluated by the remainder of the script. This simplifies the rules if the script can be written so that the assignment happens in this order and the patient is no longer evaluated once assigned.
+        - For example, patient 50I7H1PID7 has AgeAtSpecimenCollection = "Age 90 or older" and a Path Stage of IV. It will be assigned stage IV by the AGE rule and then removed from further evaluation, so should not then be evaluated/assigned for the PATHIV rule.
+        - Simplified rules now apply to all specimens regardless of their primary site (cutaneous, ocular, mucosal, or unknown)
+        - I have provided the counts that meet each rule by primary site and group.
+    
+    Rule #1: Age
+        - If AgeAtDiagnosis = "Age 90 or older", then AssignedStage = numerical value of PathGroupStage OR ClinGroupStage (if PathGroupStage is [“Unknown/Not Reported” OR “No TNM applicable for this site/histology combination” OR  “Unknown/Not Applicable”])
+            - Total: 5 patients, all cutaneous
+                - 4 in group A
+                - 1 in group B (D42OPM2PLC)
+    '''
+    string_representation_of_age_at_diagnosis = str(series_of_diagnosis_data_for_patient.get("AgeAtDiagnosis", "")).strip().lower()
+    pathological_group_stage = str(series_of_diagnosis_data_for_patient.get("PathGroupStage", "")).strip().lower()
+    clinical_group_stage = str(series_of_diagnosis_data_for_patient.get("ClinGroupStage", "")).strip().lower()
+    
+    if string_representation_of_age_at_diagnosis == "age 90 or older":
+        if pathological_group_stage in ["unknown/not reported", "no tnm applicable for this site/histology combination", "unknown/not applicable"]:
+            roman_numeral_in_clinical_group_stage = roman_numeral_in(clinical_group_stage)
+            if roman_numeral_in_clinical_group_stage:
+                return roman_numeral_in_clinical_group_stage, "AGE"
+            else:
+                return "Unknown", "AGE"
+        roman_numeral_in_pathological_group_stage = roman_numeral_in(pathological_group_stage)
+        if roman_numeral_in_pathological_group_stage:
+            return roman_numeral_in_pathological_group_stage, "AGE"
+        else:
+            return "Unknown", "AGE"
 
     # RULE 2 - PATHIV
-    if "IV" in path_stg.upper():
+    if "IV" in pathological_group_stage.upper():
         return "IV", "PATHIV"
 
     # RULE 3 - CLINIV
-    if "IV" in clin_stg.upper():
+    if "IV" in clinical_group_stage.upper():
         return "IV", "CLINIV"
 
     # RULE 4 - METSITE
@@ -632,9 +656,9 @@ def assign_stage_and_rule(
 
     # RULE 6 - NOMETS
     if data_frame_of_metastatic_disease_data_for_patient.empty or data_frame_of_metastatic_disease_data_for_patient["MetastaticDiseaseInd"].str.lower().eq("no").all():
-        if path_stg.lower() in ["unknown/not reported", "no tnm applicable for this site/histology combination", "unknown/not applicable"]:
-            return (_first_roman(clin_stg) or "Unknown"), "NOMETS"
-        return (_first_roman(path_stg) or "Unknown"), "NOMETS"
+        if pathological_group_stage.lower() in ["unknown/not reported", "no tnm applicable for this site/histology combination", "unknown/not applicable"]:
+            return (roman_numeral_in(clinical_group_stage) or "Unknown"), "NOMETS"
+        return (roman_numeral_in(pathological_group_stage) or "Unknown"), "NOMETS"
 
     # RULE 7 - NODE
     if ("lymph node" in site_coll) or ("parotid" in site_coll):
@@ -650,7 +674,9 @@ def assign_stage_and_rule(
     #       • MetastaticDiseaseInd matching "yes - regional|yes - nos",
     #       • MetastaticDiseaseSite matching "skin|ear|eyelid|vulva|breast", and
     #       • AgeAtMetastaticSite ≤ AgeSpec + AGE_FUDGE
-    # ────────────────────────────────────────────────────────────────        
+    # ────────────────────────────────────────────────────────────────
+    age_diag_f = _float(string_representation_of_age_at_diagnosis)
+    
     age_spec_fudged = None if age_spec is None else age_spec + AGE_FUDGE
     within_90d = are_within_90_days(age_spec_fudged, age_diag_f)
 
@@ -684,13 +710,13 @@ def assign_stage_and_rule(
         no_row_hits_all_four = not four_crit_mask.any()
 
     if within_90d and no_row_hits_all_four:
-        if path_stg.lower() in {
+        if pathological_group_stage.lower() in {
             "unknown/not reported",
             "no tnm applicable for this site/histology combination",
             "unknown/not applicable",
         }:
-            return (_first_roman(clin_stg) or "Unknown"), "SKINLESS90D"
-        return (_first_roman(path_stg) or "Unknown"), "SKINLESS90D"
+            return (roman_numeral_in(clinical_group_stage) or "Unknown"), "SKINLESS90D"
+        return (roman_numeral_in(pathological_group_stage) or "Unknown"), "SKINLESS90D"
 
 
     # ────────────────────────────────────────────────────────────────
@@ -776,32 +802,24 @@ def assign_stage_and_rule(
     return "Unknown", "UNMATCHED"
     
 
+def roman_numeral_in(stage: str) -> str | None:
+    pattern = re.compile(r"(IV|III|II|I)(?![IV])", re.I)
+    match = pattern.search(str(stage))
+    return None if match is None else match.group(1).upper()
+    
+
 AGE_FUDGE = 0.005 # years, or approximately 1.8 days.
-_ROMAN_RE = re.compile(r"\b(?:Stage\s*)?([IV]{1,3})(?:[ABCD])?\b", re.I)
-
 ICB_PATTERN = re.compile(r"immune checkpoint|pembrolizumab|nivolumab|ipilimumab|atezolizumab|durvalumab|avelumab|cemiplimab|relatlimab", re.I)
-
 CUTANEOUS_RE = re.compile(SITE_KEYWORDS["cutaneous"], re.I)
 _SITE_LOCAL_RE = re.compile(r"skin|ear|eyelid|vulva|head|soft tissues|breast|lymph node|parotid|vagina", re.I)
 
 
-#################
-# SMALL UTILITIES
-#################
 
 def _float(val) -> float | None:
     try:
         return float(val)
     except (TypeError, ValueError):
         return None
-
-    
-def _first_roman(stage_txt: str) -> Optional[str]:
-    '''
-    Return the core Roman numeral (I, II, III, or IV) in a stage string or None.
-    '''
-    m = _ROMAN_RE.search(str(stage_txt))
-    return None if m is None else m.group(1).upper()
     
     
 def load_data(
