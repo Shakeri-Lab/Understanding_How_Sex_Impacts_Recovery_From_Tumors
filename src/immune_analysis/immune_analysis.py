@@ -1,3 +1,9 @@
+'''
+Usage:
+./miniconda3/envs/ici_sex/bin/python src/immune_analysis/immune_analysis.py
+'''
+
+
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
