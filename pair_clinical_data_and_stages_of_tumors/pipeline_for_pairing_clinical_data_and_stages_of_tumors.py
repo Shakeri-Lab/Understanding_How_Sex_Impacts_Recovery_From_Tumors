@@ -463,6 +463,57 @@ def are_greater_than_90_days_after(age_spec: float | None, age_diag: float | Non
     return diff > 90 / 365.25
 
 
+def select_tumor_for_patient_in_D(data_frame_of_clinical_molecular_linkage_data_for_patient: pd.DataFrame) -> pd.Series:
+    '''
+    From "ORIEN Specimen Staging Revised Rules":
+    8. Group D: >1 melanoma diagnosis and >1 tumor sequenced -> n=3
+    CHANGE FROM PRIOR: Rules below instead of using rules from Group B and C, to ensure correct tumors [tumor] and diagnosis pairs are selected.
+    SpecimenSiteofCollection [SpecimenSiteOfCollection] is the correct field.
+        8.a. First select tumor:
+            i. If just one tumor with RNAseq data, then select that tumor.
+                1. 59OP5X1AZL, FUAZTE7LVQ
+            ii. If > 1 tumor with RNAseq data, then select tumor with earliest Age At Specimen Collection
+                1. 7HOWLJKDEM
+    '''
+    
+    data_frame_of_clinical_molecular_linkage_data_for_patient_with_RNA_sequencing_data = data_frame_of_clinical_molecular_linkage_data_for_patient[data_frame_of_clinical_molecular_linkage_data_for_patient["RNASeq"].notna()]
+    
+    if len(data_frame_of_clinical_molecular_linkage_data_for_patient_with_RNA_sequencing_data) == 1:
+        
+        return data_frame_of_clinical_molecular_linkage_data_for_patient_with_RNA_sequencing_data.iloc[0]
+    
+    if len(data_frame_of_clinical_molecular_linkage_data_for_patient_with_RNA_sequencing_data) > 1:
+        
+        data_frame_of_clinical_molecular_linkage_data_for_patient_with_RNA_sequencing_data["_age"] = pd.to_numeric(data_frame_of_clinical_molecular_linkage_data_for_patient_with_RNA_sequencing_data["Age At Specimen Collection"], errors = "raise")
+        return data_frame_of_clinical_molecular_linkage_data_for_patient_with_RNA_sequencing_data.sort_values("_age", na_position = "last").iloc[0]
+
+    
+def select_diagnosis_for_patient_in_D(
+    data_frame_of_diagnosis_data_for_patient: pd.DataFrame,
+    series_of_clinical_molecular_linkage_data_for_patient: pd.Series
+) -> pd.Series:
+    '''
+    From "ORIEN Specimen Staging Revised Rules":
+    8.b. Then select diagnosis:
+        i. If SpecimenSiteOfCollection contains "lymph node", then select diagnosis with latest Age At Diagnosis
+            1. 59OP5X1AZL
+        ii. If SpecimenSiteOfCollection contains either "skin" or "soft tissue", then select diagnosis with earliest Age At Diagnosis
+            - 7HOWLJKDEM, FUAZTE7LVQ
+    '''
+    
+    copy_of_data_frame_of_diagnosis_data_for_patient = data_frame_of_diagnosis_data_for_patient.copy()
+    copy_of_data_frame_of_diagnosis_data_for_patient["_age"] = pd.to_numeric(copy_of_data_frame_of_diagnosis_data_for_patient["AgeAtDiagnosis"], errors = "raise")
+    specimen_site_of_collection = series_of_clinical_molecular_linkage_data_for_patient["SpecimenSiteOfCollection"].lower()
+    
+    if "lymph node" in specimen_site_of_collection:
+        
+        return copy_of_data_frame_of_diagnosis_data_for_patient.sort_values("_age", ascending = False, na_position = "last").iloc[0]
+    
+    if re.search("skin|soft tissue", specimen_site_of_collection):
+        
+        return copy_of_data_frame_of_diagnosis_data_for_patient.sort_values("_age", na_position = "last").iloc[0]
+    
+
 AGE_FUDGE = 0.005 # years, or approximately 1.8 days.
 _ROMAN_RE = re.compile(r"\b(?:Stage\s*)?([IV]{1,3})(?:[ABCD])?\b", re.I)
 
@@ -801,29 +852,6 @@ def are_within_90_days(age_spec: float | None, age_diag: float | None) -> bool:
         
 def _hist_clean(txt: str) -> str:
     return re.sub(r"[^A-Za-z]", "", str(txt)).lower()
-
-
-def select_tumor_for_patient_in_D(patient_cm: pd.DataFrame) -> pd.Series:
-    cm = patient_cm.copy()
-    cm_rna = cm[cm["RNASeq"].notna()]
-    if len(cm_rna) == 1:
-        return cm_rna.iloc[0]
-    if len(cm_rna) > 1:
-        cm_rna["_age"] = cm_rna["Age At Specimen Collection"].apply(_float)
-        return cm_rna.sort_values("_age", na_position = "last").iloc[0]
-    cm["_age"] = cm["Age At Specimen Collection"].apply(_float)
-    return cm.sort_values("_age", na_position = "last").iloc[0]
-
-
-def select_diagnosis_for_patient_in_D(dx_patient: pd.DataFrame, spec_row: pd.Series) -> pd.Series:
-    site = spec_row["SpecimenSiteOfCollection"].lower()
-    dxp = dx_patient.copy()
-    dxp["_age"] = dxp["AgeAtDiagnosis"].apply(_float)
-    if re.search(r"lymph node", site):
-        return dxp.sort_values("_age", ascending = False).iloc[0]
-    if re.search(r"skin|soft tissue", site):
-        return dxp.sort_values("_age").iloc[0]
-    return dxp.sort_values("_age").iloc[0]
 
 
 def main():
