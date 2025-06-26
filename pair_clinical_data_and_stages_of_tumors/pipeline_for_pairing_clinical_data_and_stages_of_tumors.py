@@ -759,6 +759,29 @@ def assign_stage_and_rule(
     '''
     From "ORIEN Specimen Staging Revised Rules":
     10.h. Rule #7: NODE
+    SpecimenSiteofCollection [SpecimenSiteOfCollection] is the correct field
+        - IF SpecimenSiteofCollection contains [“lymph node” OR “parotid”], THEN AssignedStage = III
+            - Assigns stage III to node specimens that remain after the above rules have been evaluated.
+            - 100 patients
+                - 98 cutaneous
+                    - 87 patients in Group A
+                    - 1 patient in Group B: WOW011YH6I
+                        - This patient was appropriately captured by this rule in your script, but I had an error in my file (key) that had the correct stage (III) but incorrect rule called. The key has been corrected.
+                    - 9 patients in Group C: 383CIRVHH2, 39TYSJBNKK, 643X8OLYWR, 6RX3G5GV02, 7HU06PZK4Q, ILKRH6I83A, KWLPMWV0FM, RAB7UH51TS, XPZE95IE7I
+                    - 1 patient in Group D: 59OP5X1AZL
+                - 1 ocular patient: 8OR7RX5NO5 (group A) 
+                - 1 mucosal patient: Z7CEUA8SAJ (group A)
+        - Confirm with Slingluff; confirmed, all to follow rule (stage III), but all should be marked with Discrepancy = 1. 
+            - N5Q9122LTG: Lower extremity stage III (clinical, no path information) diagnosed age 36. Specimen is lymph node (NOS) obtained at age 55 (~20 years later). Reported to only have "distant" inguinal nodes at unknown age. Surgery file has multiple entries ranging from age 43 – 57.9 associated with this diagnosis (no information on what the specimens were). No additional information to suggest distant mets. Specimen obtained Pre-ICB treatment. Rule seems appropriate given the limited information.
+            - 2X7USSLPJC: Lower extremity stage III (clinical T3cN1bM0, no path information) at age 55.13. Specimen is a lymph node (NOS) obtained at age 55.54. Only one entry in metastatic disease file: distant pelvic nodes at age 55.578 (so about 2 weeks after specimen collection). Surgery file has 3 entries (no information on types of specimens): two done at 55.13 (so likely represents skin + node) and then one done at 55.578. Specimen obtained post-ICB treatment (looks like just one dose ipi/nivo since both meds have start and stop ages at 55.197). Rule seems appropriate given information available.
+            - 7YX8AJLMWR: Lower extremity stage IIIB (T4bN1aM0, 7th) disease at age 47.29. Specimen is lymph node (NOS) obtained at age 49.19 (about 2 years after initial diagnosis). Metastatic disease file only has two entries for regional node (inguinal) and regional skin met, both at age 47.468. Multiple surgery file entries ranging from age 47.29 at diagnosis to age 50.23 (no specimen information available). Specimen obtained post-ICB treatment (end age 48.995). Rule seems appropriate given limited information.
+            - DTUPUJ06B5: Trunk melanoma IIIA (T2N1aM0, 7th) at age 77. Reported regional inguinal nodes at 77.44 (160 days after initial diagnosis). Specimen is lymph node ("intra-abdominal") at 77.44 (same age as reported regional inguinal nodes). Two entries in surgery file: one at 77 and the other at 77.44. No ICB treatment. Despite being labeled as "intra-abdominal" nodes, no other information to suggest stage IV disease, so rule seems appropriate with assumption that these were the regional inguinal nodes.
+            - X9AZUY3R1C: Lower extremity IIIC (T4bN2cM0, 7th) at age 48.67. Regional inguinal nodes reported at that initial diagnosis. Specimen is lymph node (NOS) obtained at 52.7. No ICB treatment. No additional information to suggest other mets. Rule seems appropriate.
+            - 2AP9EDU231: Face melanoma III (T3N2cM0, 8th) at age 62.56. Reported regional nodes of face/head/neck at unknown age. Specimen is node (NOS, non-sentinel) at age 69.66. Surgery file with just one entry at 69.658. Specimen obtained pre-ICB treatment. No other information. Rule seems appropriate given limited information.
+            - 6HWEJIP63S: Lower extremity III (T4aN2bM0, 7th) at age 52.9. Reported regional nodes (NOS) at unknown age. Also brain mets at unknown age. Specimen is node (NOS, regional) obtained at 55.14. Specimen is pre-ICB treatment. Rule seems appropriate given limited information.
+            - GITAF8OSTV: Lower extremity III (T3bN3Mx, 7th) at age 60.29. Regional node (NOS) reported at unknown age. Specimen is node (NOS) at age 60.72. No ICB treatment. Rule seems appropriate given limited information.
+            - XPZE95IE7I: Lower extremity III (T3bN2Mx, 7th) at age 62.87. Regional nodes (inguinal, pelvic) both at unknown age. Specimen is pelvic node obtained at 63.99, post-ICB treatment. Rule seems appropriate given limited information.
+            - Z7CEUA8SAJ: Urethra melanoma stage III at initial diagnosis at age 77.78. Specimen is a lymph node (NOS, non-sentinel) obtained at age 77.82 (48 days after initial diagnosis). Reported to have distant inguinal nodes at unknown age. No additional entries in the metastatic disease file or surgery file to suggest additional later distant mets. Rule keeps this stage as III and ignores the "distant" classification for the inguinal nodes. Rule seems appropriate in this case.
     '''
     if ("lymph node" in specimen_site_of_collection) or ("parotid" in specimen_site_of_collection):
         return "III", "NODE"
