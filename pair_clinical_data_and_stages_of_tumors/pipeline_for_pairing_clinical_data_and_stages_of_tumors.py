@@ -346,12 +346,16 @@ def select_diagnosis_for_patient_in_C(
             - 643X8OLYWR, ILKRH6I83A, RAB7UH51TS
         - IF SpecimenSiteOfCollection contains "lymph node" AND AgeAtSpecimenCollection is WITHIN 90 days AFTER the AgeAtDiagnosis for more than one diagnosis AND only one diagnosis has PathNStage that does NOT contain ["N0", "Nx", "Unknown/Not Applicable", "No TNM applicable for this site/histology combination"], then use that diagnosis (the one with known positive nodes of PathNStage).
             - 39TYSJBNKK, 5BS8L7PCCE, 6RX3G5GV02
-        - 
+        - IF SpecimenSiteOfCollection contains "lymph node" AND AgeAtSpecimenCollection is GREATER THAN 90 days AFTER the AgeAtDiagnosis for all of the diagnoses AND the PrimaryDiagnosisSite (from Diagnosis file) = SpecimenSiteofOrigin for only one of the diagnosis [diagnoses], then use the diagnosis associated with that PrimaryDiagnosisSite.
+            - 7HU06PZK4Q, KWLPMWV0FM, XPZE95IE7I
+        - IF SpecimenSiteOfCollection contains "lymph node" AND AgeAtSpecimenCollection is GREATER THAN 90 days AFTER the AgeAtDiagnosis for all of the diagnoses AND the PrimaryDiagnosisSite (from Diagnosis file) DOES NOT EQUAL SpecimenSiteOfOrigin for any diagnosis, then use the diagnosies [diagnosis] with earliest age of AgeAtDiagnosis [AgeAtDiagnosis].
+            - 383CIRVHH2
     '''
     value_of_field_primary_met = series_of_clinical_molecular_linkage_data_for_patient["Primary/Met"].strip().lower()
     series_of_ages_at_diagnosis = data_frame_of_diagnosis_data_for_patient["AgeAtDiagnosis"].apply(lambda x: pd.NA if x == "Age Unknown/Not Recorded" else float(x))
     age_at_specimen_collection = pd.to_numeric(series_of_clinical_molecular_linkage_data_for_patient["Age At Specimen Collection"], errors = "raise")
     mask_of_indicators_that_age_at_specimen_collection_is_within_90_days_after_ages_at_diagnosis = series_of_ages_at_diagnosis.apply(lambda age_at_diagnosis: are_within_90_days_after(age_at_specimen_collection, age_at_diagnosis) if pd.notna(age_at_diagnosis) else False)
+    mask_of_indicators_that_age_at_specimen_collection_is_greater_than_90_days_after_ages_at_diagnosis = series_of_ages_at_diagnosis.apply(lambda age_at_diagnosis: are_greater_than_90_days_after(age_at_specimen_collection, age_at_diagnosis) if pd.notna(age_at_diagnosis) else False)
     series_of_primary_diagnosis_sites = data_frame_of_diagnosis_data_for_patient["PrimaryDiagnosisSite"].str.lower()
     specimen_site_origin = str(series_of_clinical_molecular_linkage_data_for_patient["SpecimenSiteOfOrigin"]).lower()
     mask_of_indicators_that_primary_diagnosis_sites_are_specimen_site_of_origin = series_of_primary_diagnosis_sites == specimen_site_origin
@@ -368,6 +372,9 @@ def select_diagnosis_for_patient_in_C(
             data_frame_of_diagnosis_data_for_patient_where_primary_diagnosis_sites_are_specimen_site_of_origin = data_frame_of_diagnosis_data_for_patient[mask_of_indicators_that_primary_diagnosis_sites_are_specimen_site_of_origin].copy()
             
             if not data_frame_of_diagnosis_data_for_patient_where_primary_diagnosis_sites_are_specimen_site_of_origin.empty:
+                
+                if data_frame_of_diagnosis_data_for_patient_where_primary_diagnosis_sites_are_specimen_site_of_origin.shape[0] > 1:
+                    logging.warning("7.1.2. A case is not specified.")
                 
                 data_frame_of_diagnosis_data_for_patient_where_primary_diagnosis_sites_are_specimen_site_of_origin["_age"] = pd.to_numeric(data_frame_of_diagnosis_data_for_patient_where_primary_diagnosis_sites_are_specimen_site_of_origin["AgeAtDiagnosis"], errors = "raise")
                 return data_frame_of_diagnosis_data_for_patient_where_primary_diagnosis_sites_are_specimen_site_of_origin.sort_values("_age", na_position = "last").iloc[0]
@@ -418,7 +425,7 @@ def select_diagnosis_for_patient_in_C(
                     
                     return data_frame_of_diagnosis_data_for_patient[mask_of_indicators_of_positives_nodes].iloc[0]
                
-            if mask_of_indicators_that_age_at_specimen_collection_is_within_90_days_after_ages_at_diagnosis.all():
+            if mask_of_indicators_that_age_at_specimen_collection_is_greater_than_90_days_after_ages_at_diagnosis.all():
                 
                 if mask_of_indicators_that_primary_diagnosis_sites_are_specimen_site_of_origin.sum() == 1:
                     
@@ -440,6 +447,20 @@ def select_diagnosis_for_patient_in_C(
     copy_of_data_frame_of_diagnosis_data_for_patient = data_frame_of_diagnosis_data_for_patient.copy()
     copy_of_data_frame_of_diagnosis_data_for_patient["_age"] = series_of_ages_at_diagnosis
     return copy_of_data_frame_of_diagnosis_data_for_patient.sort_values("_age").iloc[0]
+
+
+def are_within_90_days_after(age_spec: float | None, age_diag: float | None) -> bool:
+    if age_spec is None or age_diag is None:
+        return False
+    diff = age_spec - age_diag
+    return 0 <= diff <= 90 / 365.25
+
+
+def are_greater_than_90_days_after(age_spec: float | None, age_diag: float | None) -> bool:
+    if age_spec is None or age_diag is None:
+        return False
+    diff = age_spec - age_diag
+    return diff > 90 / 365.25
 
 
 AGE_FUDGE = 0.005 # years, or approximately 1.8 days.
@@ -769,13 +790,6 @@ def assign_stage_and_rule(
 
     # Fallback (should never be reached according to ORIEN Specimen Staging Revised Rules)
     return "Unknown", "UNMATCHED"
-
-
-def are_within_90_days_after(age_spec: float | None, age_diag: float | None) -> bool:
-    if age_spec is None or age_diag is None:
-        return False
-    diff = age_spec - age_diag
-    return 0 <= diff <= 90 / 365.25
 
 
 def are_within_90_days(age_spec: float | None, age_diag: float | None) -> bool:
