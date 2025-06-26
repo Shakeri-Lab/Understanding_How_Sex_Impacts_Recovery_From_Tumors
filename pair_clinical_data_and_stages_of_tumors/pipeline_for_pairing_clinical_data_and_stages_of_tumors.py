@@ -62,7 +62,7 @@ def add_counts(data_frame_of_clinical_molecular_linkage_data: pd.DataFrame, data
 '''
 From "ORIEN Specimen Staging Revised Rules":
 4. AssignedPrimarySite (SAME DEFINITIONS AS BEFORE)
-    - IF PrimaryDiagnosisSite contains "skin" OR "EAR" OR "eyelid" OR "vulva", THEN AssignedPrimarySite = cutaneous
+    - IF PrimaryDiagnosisSite contains "skin" OR "ear" OR "eyelid" OR "vulva", THEN AssignedPrimarySite = cutaneous
         - Vulvar melanoma is included here given that all appear to have been staged as cutaneous (not mucosal) melanoma.
     - If PrimaryDiagnosisSite contains "choroid" OR "ciliary body" OR "conjunctiva", then AssignedPrimarySite = ocular.
     - If PrimaryDiagnosisSite contains "sinus" OR "gum" OR "nasal" OR "urethra" then AssignedPrimarySite = mucosal
@@ -245,7 +245,7 @@ def select_tumor_for_patient_in_B(data_frame_of_clinical_molecular_linkage_data_
     From "ORIEN Specimen Staging Revised Rules":
     6. AssignedGroup
     Group B = 1 melanoma diagnosis and >1 tumor sequenced -> n=19
-    CHANGE FROM PRIOR: Do not exclude any, can still use those with WES only for TMB analysis.
+    CHANGE FROM PRIOR: Do not exclude any, can still use those with WES only for TMB analysis. A few clarifications on the rules also in red text below.
     SpecimenSiteofCollection is the correct field 
 For the record: these two patients had the wrong SpecimenID in my file but the correct SpecimenID in by your code according to the rules below. Patient ID 317K6G9N41 should have SpecimenID = 53LFUMZSW8ACOX5IPUZ45ICJ0. Patient ID U2CUPQJ4T1 should have SpecimenID = HIWF190182C5JJE3FHYR5BIXR
     A few clarifications on the rules also in red text below.
@@ -255,7 +255,9 @@ For the record: these two patients had the wrong SpecimenID in my file but the c
                 - If multiple skin specimens meet this rule, then use the one with earliest Age At Specimen Collection
             - If none of the patient's tumors have SpecimenSiteofCollection [SpecimenSiteOfCollection] that contains "skin" or "soft tissue", then select the tumor with SpecimenSiteofCollection [SpecimenSiteOfCollection] that contains "lymph node"
             - If a patient has a tumor with a SpecimenSiteofCollection [SpecimenSiteOfCollection] that contains ["skin" OR "soft tissue"] AND a tumor with a SpecimenSiteofCollection that contains "lymph node", then select the one [the tumor with specimen site of collection containing "skin" or "soft tissue" or the tumor with a specimen site of collection containing "lymph node"] with the earliest Age At Specimen Collection.
-            
+                - If both skin/soft tissue and lymph node collected at same age (including if both are in the Age 90 or older category), then use the specimen with Primary/Met field = "Primary" (usually will be the skin specimen)
+                - If none of the specimens have Primary/Met field = "Primary", then use the lymph node specimen.
+            - If the patient does NOT have any tumor with a SpecimenSiteofCollection [SpecimenSiteOfCollection] that contains ["skin" OR "soft tissue" OR "lymph node"], then select the tumor with the earliest Age At Specimen Collection
     '''
     
     mask_of_indicators_that_RNA_sequencing_data_is_available = data_frame_of_clinical_molecular_linkage_data_for_patient["RNASeq"].notna() & data_frame_of_clinical_molecular_linkage_data_for_patient["RNASeq"].str.strip().ne("")
@@ -318,7 +320,127 @@ For the record: these two patients had the wrong SpecimenID in my file but the c
     
     logging.warn("We reached the end of the process for selecting a tumor for a patient in B without selecting a patient.")
     return data_frame_of_clinical_molecular_linkage_data_for_patient.sort_values(by = "Age At Specimen Collection").iloc[0]
+
+
+def select_diagnosis_for_patient_in_C(
+    data_frame_of_diagnosis_data_for_patient: pd.DataFrame,
+    series_of_clinical_molecular_linkage_data_for_patient: pd.Series,
+    data_frame_of_metastatic_disease_data_for_patient: pd.DataFrame
+) -> pd.Series:
+    '''
+    From "ORIEN Specimen Staging Revised Rules":
+    7. Group C = > 1 melanoma diagnosis and 1 tumor sequenced -> n=30
+    CHANGE FROM PRIOR: Simplified rules with changes in red text to ensure correct diagnosis is selected.
+    SpecimenSiteofCollection [SpecimenSiteOfCollection] is the correct field.
+    - For specimens with the field Primary/Met = "Primary"
+        - IF AgeAtSpecimenCollection is WITHIN 90 days AFTER the AgeAtDiagnosis for only one of the diagnoses, then use that diagnosis.
+            - 2FEX3JHKCW, 8BCBHGEO4N, FNP53S81KA, L5876HQBT9, MD578977I9, QC7QX0VWAY, VLY2FWYN29
+        - If AgeAtSpecimenCollection is WITHIN 90 days AFTER the AgeAtDiagnosis for more than one of the diagnoses OR AgeAtDiagnosis is unknown for at least one of the diagnoses, but the PrimaryDiagnosisSite (from the Diagnosis file) is NOT the same for all diagnoses, then then use the diagnosis that has a PrimaryDiagnosisSite = SpecimenSiteOfOrigin
+            - ILE2DL0KMW, L2R9RJJ88C
+    - For specimens with the filed Primary/Met = "Metastatic"
+        - IF "SpecimenSiteOfCollection does not contain "lymph node" AND only one diagnosis contains PathGroupStage EQUALS "IV" OR [ClinGroupStage EQUALS "IV" AND PathGroupStage is ["Unknown/Not Reported" OR "No TNM applicable for this site/histology combination" OR "Unknown/Not Applicable"]], then use the diagnosis with stage IV
+            - 9NOLH4M870, HLIXS3VDZ6, SHTJKKY76C, DEB9M36STN
+        - IF SpecimenSiteOfCollection does not contain "lymph node" AND NONE of the diagnoses have {PathGroupStage EQUALS "IV" OR [ClinGroupStage EQUALS "IV" AND PathGroupStage is ["Unknown/Not Reported" OR "No TNM applicable for this site/histology combination" OR "Unknown/Not Applicable"]]}, then use the diagnosis with the earliest AgeAtDiagnosis
+            - 087FO3NF65, AC2EJBKWJO, BXVDLL792A, F3BE85LAWN, JUDAJ1LHL9, R06W2EUXCM, R2TNVTF684
+        - IF SpecimenSiteOfCollection contains "lymph node" AND AgeAtSpecimenCollection is WITHIN 90 days AFTER the AgeAtDiagnosis for only one diagnosis, then use that diagnosis within 90 days of specimen collection.
+            - 643X8OLYWR, ILKRH6I83A, RAB7UH51TS
+        - IF SpecimenSiteOfCollection contains "lymph node" AND AgeAtSpecimenCollection is WITHIN 90 days AFTER the AgeAtDiagnosis for more than one diagnosis AND only one diagnosis has PathNStage that does NOT contain ["N0", "Nx", "Unknown/Not Applicable", "No TNM applicable for this site/histology combination"], then use that diagnosis (the one with known positive nodes of PathNStage).
+            - 39TYSJBNKK, 5BS8L7PCCE, 6RX3G5GV02
+        - 
+    '''
+    value_of_field_primary_met = series_of_clinical_molecular_linkage_data_for_patient["Primary/Met"].strip().lower()
+    series_of_ages_at_diagnosis = data_frame_of_diagnosis_data_for_patient["AgeAtDiagnosis"].apply(lambda x: pd.NA if x == "Age Unknown/Not Recorded" else float(x))
+    age_at_specimen_collection = pd.to_numeric(series_of_clinical_molecular_linkage_data_for_patient["Age At Specimen Collection"], errors = "raise")
+    mask_of_indicators_that_age_at_specimen_collection_is_within_90_days_after_ages_at_diagnosis = series_of_ages_at_diagnosis.apply(lambda age_at_diagnosis: are_within_90_days_after(age_at_specimen_collection, age_at_diagnosis) if pd.notna(age_at_diagnosis) else False)
+    series_of_primary_diagnosis_sites = data_frame_of_diagnosis_data_for_patient["PrimaryDiagnosisSite"].str.lower()
+    specimen_site_origin = str(series_of_clinical_molecular_linkage_data_for_patient["SpecimenSiteOfOrigin"]).lower()
+    mask_of_indicators_that_primary_diagnosis_sites_are_specimen_site_of_origin = series_of_primary_diagnosis_sites == specimen_site_origin
+    
+    if value_of_field_primary_met == "primary":
         
+        if mask_of_indicators_that_age_at_specimen_collection_is_within_90_days_after_ages_at_diagnosis.sum() == 1:
+            return data_frame_of_diagnosis_data_for_patient[mask_of_indicators_that_age_at_specimen_collection_is_within_90_days_after_ages_at_diagnosis].iloc[0]
+
+        unknown_age_exists = series_of_ages_at_diagnosis.isna().any()
+        primary_diagnosis_sites_differ = series_of_primary_diagnosis_sites.nunique() > 1
+        if (mask_of_indicators_that_age_at_specimen_collection_is_within_90_days_after_ages_at_diagnosis.sum() > 1 or unknown_age_exists) and primary_diagnosis_sites_differ:
+            
+            data_frame_of_diagnosis_data_for_patient_where_primary_diagnosis_sites_are_specimen_site_of_origin = data_frame_of_diagnosis_data_for_patient[mask_of_indicators_that_primary_diagnosis_sites_are_specimen_site_of_origin].copy()
+            
+            if not data_frame_of_diagnosis_data_for_patient_where_primary_diagnosis_sites_are_specimen_site_of_origin.empty:
+                
+                data_frame_of_diagnosis_data_for_patient_where_primary_diagnosis_sites_are_specimen_site_of_origin["_age"] = pd.to_numeric(data_frame_of_diagnosis_data_for_patient_where_primary_diagnosis_sites_are_specimen_site_of_origin["AgeAtDiagnosis"], errors = "raise")
+                return data_frame_of_diagnosis_data_for_patient_where_primary_diagnosis_sites_are_specimen_site_of_origin.sort_values("_age", na_position = "last").iloc[0]
+
+    elif value_of_field_primary_met == "metastatic":
+        
+        specimen_site_of_collection = series_of_clinical_molecular_linkage_data_for_patient["SpecimenSiteOfCollection"].lower()
+        
+        if "lymph node" not in specimen_site_of_collection:
+            
+            series_of_raw_pathological_group_stages = data_frame_of_diagnosis_data_for_patient["PathGroupStage"].fillna("").str.strip()
+            series_of_uppercase_pathological_group_stages = series_of_raw_pathological_group_stages.str.upper()
+            series_of_uppercase_clinical_group_stages = data_frame_of_diagnosis_data_for_patient["ClinGroupStage"].fillna("").str.strip().str.upper()
+
+            mask_of_indicators_that_group_stage_is_IV = (
+                (series_of_uppercase_pathological_group_stages == "IV") |
+                (
+                    (series_of_uppercase_clinical_group_stages == "IV") &
+                    series_of_raw_pathological_group_stages.str.lower().isin(
+                        {"unknown/not reported", "no tnm applicable for this site/histology combination", "unknown/not applicable"}
+                    )
+                )
+            )
+
+            if mask_of_indicators_that_group_stage_is_IV.sum() == 1:
+                return data_frame_of_diagnosis_data_for_patient[mask_of_indicators_that_group_stage_is_IV].iloc[0]
+            
+            if mask_of_indicators_that_group_stage_is_IV.sum() == 0:
+                copy_of_data_frame_of_diagnosis_data_for_patient = data_frame_of_diagnosis_data_for_patient.copy()
+                copy_of_data_frame_of_diagnosis_data_for_patient["_age"] = series_of_ages_at_diagnosis
+                return copy_of_data_frame_of_diagnosis_data_for_patient.sort_values("_age", na_position = "last").iloc[0]
+
+        if "lymph node" in specimen_site_of_collection:
+            
+            if mask_of_indicators_that_age_at_specimen_collection_is_within_90_days_after_ages_at_diagnosis.sum() == 1:
+                
+                return data_frame_of_diagnosis_data_for_patient[mask_of_indicators_that_age_at_specimen_collection_is_within_90_days_after_ages_at_diagnosis].iloc[0]
+            
+            if mask_of_indicators_that_age_at_specimen_collection_is_within_90_days_after_ages_at_diagnosis.sum() > 1:
+                
+                mask_of_indicators_of_positives_nodes = ~data_frame_of_diagnosis_data_for_patient["PathNStage"].str.contains(
+                    r"N0|Nx|unknown/not applicable|no tnm applicable for this site/histology combination",
+                    case = False,
+                    na = False
+                )
+                
+                if mask_of_indicators_of_positives_nodes.sum() == 1:
+                    
+                    return data_frame_of_diagnosis_data_for_patient[mask_of_indicators_of_positives_nodes].iloc[0]
+               
+            if mask_of_indicators_that_age_at_specimen_collection_is_within_90_days_after_ages_at_diagnosis.all():
+                
+                if mask_of_indicators_that_primary_diagnosis_sites_are_specimen_site_of_origin.sum() == 1:
+                    
+                    data_frame_of_diagnosis_data_for_patient_where_primary_diagnosis_sites_are_specimen_site_of_origin = data_frame_of_diagnosis_data_for_patient[mask_of_indicators_that_primary_diagnosis_sites_are_specimen_site_of_origin].copy()
+                    
+                    if not data_frame_of_diagnosis_data_for_patient_where_primary_diagnosis_sites_are_specimen_site_of_origin.empty:
+                        
+                        data_frame_of_diagnosis_data_for_patient_where_primary_diagnosis_sites_are_specimen_site_of_origin["_age"] = pd.to_numeric(data_frame_of_diagnosis_data_for_patient_where_primary_diagnosis_sites_are_specimen_site_of_origin["AgeAtDiagnosis"], errors = "raise")
+                        return data_frame_of_diagnosis_data_for_patient_where_primary_diagnosis_sites_are_specimen_site_of_origin.sort_values("_age", na_position = "last").iloc[0]
+                    
+                if mask_of_indicators_that_primary_diagnosis_sites_are_specimen_site_of_origin.sum() == 0:
+                    
+                    copy_of_data_frame_of_diagnosis_data_for_patient = data_frame_of_diagnosis_data_for_patient.copy()
+                    copy_of_data_frame_of_diagnosis_data_for_patient["_age"] = pd.to_numeric(data_frame_of_diagnosis_data_for_patient["AgeAtDiagnosis"], errors = "raise")
+                    return copy_of_data_frame_of_diagnosis_data_for_patient.sort_values("_age", na_position = "last").iloc[0]
+                
+    deid_specimen_id = series_of_clinical_molecular_linkage_data_for_patient["DeidSpecimenID"].strip()
+    logging.warning(f"We reached the end of selecting diagnosis for patient in C for specimen with ID {deid_specimen_id} and value of field `Primary/Met` {value_of_field_primary_met}.")
+    copy_of_data_frame_of_diagnosis_data_for_patient = data_frame_of_diagnosis_data_for_patient.copy()
+    copy_of_data_frame_of_diagnosis_data_for_patient["_age"] = series_of_ages_at_diagnosis
+    return copy_of_data_frame_of_diagnosis_data_for_patient.sort_values("_age").iloc[0]
+
 
 AGE_FUDGE = 0.005 # years, or approximately 1.8 days.
 _ROMAN_RE = re.compile(r"\b(?:Stage\s*)?([IV]{1,3})(?:[ABCD])?\b", re.I)
@@ -649,7 +771,7 @@ def assign_stage_and_rule(
     return "Unknown", "UNMATCHED"
 
 
-def _within_90_days_after(age_spec: float | None, age_diag: float | None) -> bool:
+def are_within_90_days_after(age_spec: float | None, age_diag: float | None) -> bool:
     if age_spec is None or age_diag is None:
         return False
     diff = age_spec - age_diag
@@ -665,90 +787,6 @@ def are_within_90_days(age_spec: float | None, age_diag: float | None) -> bool:
         
 def _hist_clean(txt: str) -> str:
     return re.sub(r"[^A-Za-z]", "", str(txt)).lower()
-
-
-def select_diagnosis_for_patient_in_C(dx_patient: pd.DataFrame, spec_row: pd.Series, meta_patient: pd.DataFrame) -> pd.Series:
-    age_spec = _float(spec_row["Age At Specimen Collection"])
-    
-    if dx_patient.empty:
-        raise ValueError("No diagnosis rows supplied to _select_diagnosis_C")
-    dxp = dx_patient.copy()
-    age_diag = dxp["AgeAtDiagnosis"].apply(_float)
-    
-    prox = age_diag.apply(lambda x: _within_90_days_after(age_spec, x))
-    
-    primary_sites_lower  = dxp["PrimaryDiagnosisSite"].str.lower()
-    specimen_site_origin = str(spec_row["SpecimenSiteOfOrigin"]).lower()
-    site_match = primary_sites_lower == specimen_site_origin
-    
-    primary_met = spec_row["Primary/Met"].strip().lower()
-    if primary_met == "primary":
-        if prox.sum() == 1:
-            return dxp[prox].iloc[0]
-
-        unknown_age_exists   = age_diag.isna().any()
-        primary_sites_differ = primary_sites_lower.nunique() > 1
-        if (prox.sum() > 1 or unknown_age_exists) and primary_sites_differ:
-            match_rows = dxp[site_match].copy()
-            if not match_rows.empty:
-                match_rows["_age"] = match_rows["AgeAtDiagnosis"].apply(_float)
-                return match_rows.sort_values("_age", na_position = "last").iloc[0]
-
-    elif primary_met == "metastatic":
-        
-        site_coll = spec_row["SpecimenSiteOfCollection"].lower()
-        if "lymph node" not in site_coll:
-            path_stage_raw = dxp["PathGroupStage"].fillna("").str.strip()
-            path_stage_U   = path_stage_raw.str.upper()
-            clin_stage_U   = dxp["ClinGroupStage"].fillna("").str.strip().str.upper()
-
-            stage_iv_mask = (
-                (path_stage_U == "IV") |
-                (
-                    (clin_stage_U == "IV") &
-                    path_stage_raw.str.lower().isin({
-                        "unknown/not reported",
-                        "no tnm applicable for this site/histology combination",
-                        "unknown/not applicable",
-                    })
-                )
-            )
-
-            if stage_iv_mask.sum() == 1:
-                return dxp[stage_iv_mask].iloc[0]
-            
-            if stage_iv_mask.sum() == 0:
-                dxp["_age"] = age_diag
-                return dxp.sort_values("_age", na_position = "last").iloc[0]
-
-        if "lymph node" in site_coll:
-            if prox.sum() == 1:
-                return dxp[prox].iloc[0]
-            
-            if prox.sum() > 1:
-                pos_node = ~dxp["PathNStage"].str.contains(
-                    r"N0|Nx|unknown/not applicable|no tnm applicable for this site/histology combination",
-                    case = False,
-                    na = False
-                )
-                if pos_node.sum() == 1:
-                    return dxp[pos_node].iloc[0]
-               
-            if prox.all():
-                
-                if site_match.sum() == 1:
-                    match_rows = dxp[site_match].copy()
-                    if not match_rows.empty:
-                        match_rows["_age"] = match_rows["AgeAtDiagnosis"].apply(_float)
-                        return match_rows.sort_values("_age", na_position = "last").iloc[0]
-                    
-                if site_match.sum() == 0:
-                    copy_of_dxp = dxp.copy()
-                    dxp["_age"] = dxp["AgeAtDiagnosis"].apply(_float)
-                    return dxp.sort_values("_age", na_position = "last").iloc[0]
-                
-    dxp["_age"] = dxp["AgeAtDiagnosis"].astype(float)
-    return dxp.sort_values("_age").iloc[0]
 
 
 def select_tumor_for_patient_in_D(patient_cm: pd.DataFrame) -> pd.Series:
