@@ -424,7 +424,7 @@ def select_diagnosis_for_patient_in_C(
             if mask_of_indicators_that_age_at_specimen_collection_is_within_90_days_after_ages_at_diagnosis.sum() > 1:
                 
                 mask_of_indicators_of_positives_nodes = ~data_frame_of_diagnosis_data_for_patient["PathNStage"].str.contains(
-                    r"N0|Nx|unknown/not applicable|no tnm applicable for this site/histology combination",
+                    "N0|Nx|unknown/not applicable|no tnm applicable for this site/histology combination",
                     case = False,
                     na = False
                 )
@@ -457,17 +457,17 @@ def select_diagnosis_for_patient_in_C(
     return copy_of_data_frame_of_diagnosis_data_for_patient.sort_values("_age").iloc[0]
 
 
-def are_within_90_days_after(age_spec: float | None, age_diag: float | None) -> bool:
-    if age_spec is None or age_diag is None:
+def are_within_90_days_after(age_at_specimen_collection: float | None, age_diag: float | None) -> bool:
+    if age_at_specimen_collection is None or age_diag is None:
         return False
-    diff = age_spec - age_diag
+    diff = age_at_specimen_collection - age_diag
     return 0 <= diff <= 90 / 365.25
 
 
-def are_greater_than_90_days_after(age_spec: float | None, age_diag: float | None) -> bool:
-    if age_spec is None or age_diag is None:
+def are_greater_than_90_days_after(age_at_specimen_collection: float | None, age_diag: float | None) -> bool:
+    if age_at_specimen_collection is None or age_diag is None:
         return False
-    diff = age_spec - age_diag
+    diff = age_at_specimen_collection - age_diag
     return diff > 90 / 365.25
 
 
@@ -528,7 +528,6 @@ def assign_stage_and_rule(
     data_frame_of_metastatic_disease_data_for_patient: pd.DataFrame
 ) -> Tuple[str, str]:
 
-    site_coll = str(series_of_clinical_molecular_linkage_data_for_patient.get("SpecimenSiteOfCollection", "")).lower()
     age_coll = float(90.0 if series_of_clinical_molecular_linkage_data_for_patient.get("Age At Specimen Collection") == "Age 90 or older" else series_of_clinical_molecular_linkage_data_for_patient.get("Age At Specimen Collection"))
 
     MetsDzPrimaryDiagnosisSite = ""
@@ -560,8 +559,6 @@ def assign_stage_and_rule(
         )
         AgeAtMetastaticSite = ages.min() if ages.notna().any() else None
     
-    age_spec = _float(series_of_clinical_molecular_linkage_data_for_patient.get("Age At Specimen Collection"))
-    
     
     '''
     From "ORIEN Specimen Staging Revised Rules":
@@ -586,15 +583,15 @@ def assign_stage_and_rule(
         - Simplified rules now apply to all specimens regardless of their primary site (cutaneous, ocular, mucosal, or unknown)
         - I have provided the counts that meet each rule by primary site and group.
     
-    Rule #1: Age
+    Rule #1: AGE
         - If AgeAtDiagnosis = "Age 90 or older", then AssignedStage = numerical value of PathGroupStage OR ClinGroupStage (if PathGroupStage is [“Unknown/Not Reported” OR “No TNM applicable for this site/histology combination” OR  “Unknown/Not Applicable”])
             - Total: 5 patients, all cutaneous
                 - 4 in group A
                 - 1 in group B (D42OPM2PLC)
     '''
     string_representation_of_age_at_diagnosis = str(series_of_diagnosis_data_for_patient.get("AgeAtDiagnosis", "")).strip().lower()
-    pathological_group_stage = str(series_of_diagnosis_data_for_patient.get("PathGroupStage", "")).strip().lower()
-    clinical_group_stage = str(series_of_diagnosis_data_for_patient.get("ClinGroupStage", "")).strip().lower()
+    pathological_group_stage = str(series_of_diagnosis_data_for_patient.get("PathGroupStage", "")).strip().upper()
+    clinical_group_stage = str(series_of_diagnosis_data_for_patient.get("ClinGroupStage", "")).strip().upper()
     
     if string_representation_of_age_at_diagnosis == "age 90 or older":
         if pathological_group_stage in ["unknown/not reported", "no tnm applicable for this site/histology combination", "unknown/not applicable"]:
@@ -609,49 +606,121 @@ def assign_stage_and_rule(
         else:
             return "Unknown", "AGE"
 
-    # RULE 2 - PATHIV
-    if "IV" in pathological_group_stage.upper():
+    '''
+    From "ORIEN Specimen Staging Revised Rules":
+    10.c. Rule #2: PATHIV
+        - If PathGroupStage contains "IV", then AssignedStage = "IV"
+            - Total: 75 patients
+                - Cutaneous: 70 patients
+                    - 66 in group A; 1 in group B (317K6G9N41); 3 in group C (9NOLH4M870, DEB9M36STN, HLIXS3VDZ6)
+                - Ocular: 1 patient, group A
+                - Mucosal: 3 patients
+                    - 2 patients in group A; 1 patient in group C (R06W2EUXCM)
+                - Unknown: 1 patient, group B (MYCVCULC8L)
+    '''
+    if "IV" in pathological_group_stage:
         return "IV", "PATHIV"
 
-    # RULE 3 - CLINIV
-    if "IV" in clinical_group_stage.upper():
+    '''
+    From "ORIEN Specimen Staging Revised Rules":
+    10.d. Rule #3: CLINIV
+        - If ClinGroupStage contains "IV", THEN AssignedStage = "IV"
+            - This rule no longer state requires [requires] path staging to be unknown. In all but one case is the path stage also IV or unknown. In that one case, the path staging and metastatic disease file are unclear, and it appears appropriate to classify as stage IV disease.
+                - Confirm with Slingluff: confirmed to follow rule, keep as stage IV
+                    - QLWU5QNQIB: Trunk melanoma diagnosed at age 60.35 with path stage III (TxN3M0, 7th) and clinical stage IV (but recorded as TxN3M0 for that as well). Specimen is lymph node (NOS) obtained at age 60.64 (105 days after initial diagnosis). Reported to have "regional" colon and peritoneum mets at unknown age, as well as regional node (NOS) at unknown age, all associated with the trunk diagnosis. Also reported to have a distant skin met on lower extremity, also at unknown age and associated with trunk diagnosis. Rule seems appropriate given unknowns.
+                        - For this patient ID, set Discrepancy = 1.
+            - 27 patients
+                - Cutaneous: 24 patients
+                    - 22 patients in group A; 1 patient in group B (WAYUEWGM1O), 1 patient in group C (SHTJKKY76C)
+                - Mucosal: 2 patients, group A
+                - Ocular: 1 patient, group A
+    '''
+    if "IV" in clinical_group_stage:
         return "IV", "CLINIV"
 
-    # RULE 4 - METSITE
-    if not _SITE_LOCAL_RE.search(site_coll):
+    '''
+    From "ORIEN Specimen Staging Revised Rules":
+    10.e. Rule #4: METSITE
+    SpecimenSiteofCollection [SpecimenSiteOfCollection] is the correct field.
+        - IF SpecimenSiteofCollection [SpecimenSiteOfCollection] does not contain ["skin" OR "ear" OR "eyelid" OR "vulva", OR "head" OR "soft tissues" OR "breast" OR "lymph node" OR "parotid" OR "vagina"], THEN AssignedStage = "IV"
+            - Specimen from a distant metastatic site 
+                - Confirm with Slingluff: confirmed, rule captures any muscle or chest wall invasion as stage IV, but does not automatically assign breast or other soft tissue specimens as stage IV due to these not all appearing to be stage IV disease in this database
+            - This rule applies to all patients regardless of primary site (cutaneous, ocular, mucosal, or unknown). This works for our database since it does not appear that we have any primary mucosal specimens. This rule would need to be edited if used in the future with mucosal melanomas. 
+            - Confirm with Slingluff the appropriateness of stage IV assignment, confirmed; updated rule to exclude vaginal specimen and move EKZGU61JTP to rule #8 (SKINLESS90D)
+                - KEHK6YTVAK: trunk melanoma stage IIIC (T4aN3M0, 8th) at age 63.28. Specimen is anus (NOS), designated as "primary", obtained at age 63.55. Reported to have distant pelvic nodes at 63.55 associated with trunk melanoma, and then two additional distant mets reported (inguinal nodes, soft tissue of pelvis) associated with trunk diagnosis. No mention of an anal melanoma. Rule seems appropriate to consider this as metastatic site instead of new primary mucosal (in addition to cutaneous primary of trunk); confirmed, follow rule to assign stage IV given previously reported distant mets
+                    - For this patient ID, set Discrepancy = 1.
+            - 37 patients 
+                - Cutaneous: 35 patients 
+                    - 30 patients in group A; 3 patients in group B (CILTNWAT6B, P5JJX6UI7G, 48J2GNDBEN); 2 patients in group C (F3BE85LAWN, BXVDLL792A)
+                - Ocular: 2 patients, both group C (JUDAJ1LHL9, R2TNVTF684)
+    '''
+    specimen_site_of_collection = str(series_of_clinical_molecular_linkage_data_for_patient.get("SpecimenSiteOfCollection", "")).lower()
+    pattern = re.compile("skin|ear|eyelid|vulva|head|soft tissues|breast|lymph node|parotid|vagina", re.I)
+    if not pattern.search(specimen_site_of_collection):
         return "IV", "METSITE"
 
-    # ────────────────────────────────────────────────────────────────
-    # RULE 5 – PRIORDISTANT
-    # A specimen is stage IV if -- in the same metastatic disease row --
-    #   • MetsDzPrimaryDiagnosisSite matches a cutaneous / ocular / mucosal keyword
-    #   • MetastaticDiseaseInd == "yes - distant"
-    #   • AgeAtMetastaticSite <= Age At Specimen Collection (fudged)
-    # ────────────────────────────────────────────────────────────────
-    if (
-        not data_frame_of_metastatic_disease_data_for_patient.empty
-        and age_spec is not None
-    ):
-        meta_df = data_frame_of_metastatic_disease_data_for_patient.copy()
-
-        # float-convert the metastatic ages (treat “Age 90 or older” as 90.0)
-        meta_df["_age_meta"] = meta_df["AgeAtMetastaticSite"].apply(
-            lambda x: 90.0 if str(x).strip() == "Age 90 or older" else _float(x)
-        )
-
-        # build one row-wise mask that requires all three criteria simultaneously
-        priordistant_mask = (
-            meta_df["MetsDzPrimaryDiagnosisSite"].str.contains(
-                r"skin|ear|eyelid|vulva|eye|choroid|ciliary body|conjunctiva|sinus|gum|nasal|urethra",
+    '''
+    From "ORIEN Specimen Staging Revised Rules":
+    10.f. Rule #5: PRIORDISTANT
+        - IF {combined entry on Metastatic file with: MetsDzPrimaryDiagnosisSite contains ["skin" OR "ear" OR "eyelid" OR "vulva" OR "eye" OR "choroid" OR "ciliary body" OR "conjunctiva" OR ["]sinus" OR "gum" OR "nasal" OR "urethra"] AND MetastaticDiseaseInd = "Yes – Distant", AND AgeAtMetastaticSite <= AgeAtSpecimenCollection+0.005}, THEN AssignedStage = "IV"
+            - Patients with recorded distant metastatic disease prior to specimen collection 
+            - Must add 0.005 to the AgeAtSpecimenCollection due to only 2 decimal points recorded for age in that file, but 3 decimal points recorded on the metastatic disease file.
+            - This works for our database. This rule would need to be edited if used in the future to reflect the primary diagnosis site keywords applicable to that dataset (e.g., if there are other mucosal sites that should be included).
+                - 37 patients 
+                    - Cutaneous: 36 patients
+                        - 31 patients in group A; 3 patients in group B (PP7QY6B66M, U2CUPQJ4T1, WX0NQIQIXM); 2 patients in group C (087FO3NF65, QC7QX0VWAY) 
+                    - Ocular: 1 patient, group A 
+                - Count update reflects exceptions listed below as well as the two patients (CG6JRI0XIX, WDMTMU4SV2) that I had erroneously counted by this rule but that weren’t actually captured. CG6JRI0XIX has prior metastatic disease (liver) reported with MetastaticDiseaseInd = "Yes – NOS". WDMTMU4SV2 has prior metastatic disease (bone) reported with MetastaticDiseaseInd = "Yes – Regional" due to upper extremity melanoma; consider metastasis to bone as stage IV disease.
+            - This rule assumes that the designation of "Distant" (instead of Regional or NOS) in the metastatic disease file is accurate. In general, this designation seems appropriate for our database, but it is possible that some cases are misclassified. 
+                - Confirm with Slingluff the appropriateness of stage IV assignment, confirmed details below 
+                    - 087FO3NF65: Trunk IIIC (T3aN2aM0, 7th) at age 61.8. Regional axillary nodes at 62, then “Breast, NOS” met classified as “Distant” at age 63.59. Specimen is the Breast NOS met. Reported to have lung mets with “regional” intrathoracic nodes at age 64.32. Rule seems appropriate in this case; keep as stage IV for distant met.
+                        - For this patient ID, set Discrepancy = 1 and Exception = 0. 
+                    - ILE2DL0KMW: Two diagnoses at the same time: scalp IIC and trunk IIIC (T4bN2cM0, 8th). Specimen is skin of trunk, collected 57 days after diagnosis, designated as "primary". Reported to have "distant" axillary nodes associated with the trunk diagnosis (at the same time as the trunk skin specimen collection) and multiple "regional" skin mets associated with the scalp diagnosis. No additional entries to suggest later distant mets. No ICB treatment. Surgery file shows trunk diagnosis with first related biopsy taken at time of specimen collection. This may represent the primary lesion at IIIC diagnosis. Make exception to the rule to assign as stage III. 
+                        - For this patient ID, set Discrepancy = 1. The PRIORDISTANT rule does not apply since this patient will be captured by EXCEPTION rule. This patient is not included in the patient counts for this rule anymore. 
+                    - 227RDTKST8: Trunk IIIC (T3N3cM0, 8th) initial diagnosis. Specimen is lymph node (NOS), designated as "metastatic", collected 35 days after diagnosis. Reported to have "distant" axillary nodes at same age as diagnosis, then "regional" inguinal nodes at same age as specimen collection. Specimen likely represents an inguinal node. Specimen collected Pre-ICB treatment. No additional entries to suggest later distant mets. Surgery file shows three entries, one at diagnosis and two at age of specimen collection. Perhaps axillary node was found first, then later discovered skin lesion and inguinal nodal basin involvement, but this would still be IIIC disease.  Make exception to the rule to assign as stage III. 
+                        - For this patient ID, set Discrepancy = 1. The PRIORDISTANT rule does not apply since this patient will be captured by EXCEPTION rule. This patient is not included in the patient counts for this rule anymore.   
+                    - 9EYYI5H9SU: Lower extremity clinical IIB disease (no path stage) at initial diagnosis at age 43. Reported to have lung mets at age 59 associated with lower extremity diagnosis. Specimen is skin of trunk, designated as "primary", collected at age 63.46. Reported to later develop pancreas mets at age 63.64, associated with lower extremity diagnosis. Surgery file only contains entries for lower extremity diagnosis, including time points that correspond to age of specimen collection. Trunk lesion could represent new primary, but rule seems appropriate in this case.  Keep as stage IV with likely new primary in the setting of metastatic disease. 
+                        - For this patient ID, set Discrepancy = 1. 
+                        - For this patient ID, set Possible New Primary = 1.
+                    - HTKAEZOC7V: Scalp/neck III (T4bN2bM0, 6th) disease at initial diagnosis at age 70.9. Specimen is axillary node, designated as “metastatic”, at age 82.55. Reported to have regional skin mets at age 71, then "distant" axillary nodes at age 79.7, followed by regional nodes of head/face/neck at age 81. Later lung mets at age 83.9. Specimen collected post-ICB. Rule seems appropriate in this case. Follow rule, keep as stage IV. 
+                        - For this patient ID, set Discrepancy = 1.
+                    - IALUL9JC9Y: Trunk IIIA (T3aN1aM0, 7th) at age 26.08. Reported to have "distant" nodes of head/face/neck at age 26.12 associated with trunk diagnosis. Then reported to have "regional" lymph node (NOS) associated with trunk diagnosis at age 27.22. Specimen is lymph node (NOS) at age 27.22. No ICB treatment. No additional entries to suggest later distant mets. Given prior "distant" nodes in head/face/neck, considered stage IV. Not sure about how different nodal basins are generally viewed for trunk melanomas. Follow rule, keep as stage IV. 
+                        - For this patient ID, set Discrepancy = 1.
+                    - QE43I70DGC: Lower extremity IIIB (T3bN1M0, 6th) disease at age 55.115. Reported to have “distant” inguinal nodes at age 55.115 (same time as initial diagnosis). Specimen is a skin of lower extremity obtained at age 63.6, designated as a "primary". Reported to later have brain mets at age 64. Skin specimen could represent new primary given timing, but could also represent regional recurrence of prior disease. Not sure why inguinal nodes were labelled as distant at initial diagnosis since not reported as stage IV at the time. Surgery file reports two specimens at age 55.115 (likely skin + node), but then another surgery at 55.293 before the specimen that we have at 63.4, and another later surgery at 63.79. Specimen obtained post-ICB treatment. Given brain mets within a year of specimen, rule likely appropriate given limited information. Keep as stage IV with likely new primary in the setting of metastatic disease. 
+                        - For this patient ID, set Discrepancy = 1. 
+                        - For this patient ID, set Possible New Primary = 1.
+                    - XHTXLE3MLC: Lower extremity IIC disease at age 50.5. Reported distant upper extremity skin met at 53.44, associated with the lower extremity diagnosis. Specimen is skin from lower extremity, designated as "primary", obtained at age 54.56. No additional entries to suggest additional distant disease. Specimen obtained post-ICB treatment. While specimen could represent new primary, rule seems appropriate given limited information. Keep as stage IV with likely new primary in the setting of metastatic disease.
+                        - For this patient ID, set Discrepancy = 1. 
+                        - For this patient ID, set Possible New Primary = 1.
+                    - YMC959TA29: Trunk IIIB (T4aN3cM0, 7th) disease at age 37.35. Specimen is skin (NOS), designated as "metastatic", obtained at age 37.43 (29 days after initial diagnosis). Reported to have "distant" skin met (NOS) at that time, associated with trunk diagnosis. Specimen collected pre-ICB treatment. Surgery file has first entry at 37.43, followed by two later (age 40) entries. This could represent the skin from the initial IIIB diagnosis, but since listed as "metastatic" and there is a reported "distant" skin (NOS) met, classified as stage IV. Rule seems appropriate given limited information. Follow rule, keep as stage IV. 
+                        - For this patient ID, set Discrepancy = 1.
+                    - YRGE6MVYNK: Lower extremity IIIA (T2aN1aM0, 8th) disease at age 29.97. Reported "distant" inguinal nodes at age 30.02, associated with lower extremity diagnosis. Specimen is skin from lower extremity, designated as "primary", obtained at age 30.02 (same age as "distant" inguinal nodes). No additional entries to suggest later distant mets. No ICB treatment. Surgery file has an entry at same age of diagnosis labeled as “unknown site” and another entry at same age of specimen collection, also labeled as "unknown site", followed by another surgery at age 30.56 that does have lower extremity diagnosis associated with it. This skin specimen likely represents the initial IIIA diagnosis. Make exception to the rule to assign as stage III. 
+                        - For this patient ID, set Discrepancy = 1. The PRIORDISTANT rule does not apply since this patient will be captured by EXCEPTION rule. This patient is not included in the patient counts for this rule anymore.
+                    - QC7QX0VWAY: Two melanoma diagnoses: trunk IIB at age 68.518 and lower extremity IIB at age 75.08. Lung met reported at age 71 associated with the trunk melanoma. No other mets reported. Specimen is skin from lower extremity, designated as "primary", obtained at age 75.08 (time of that diagnosis). Specimen obtained pre-ICB treatment. Since the rule does not distinguish by site (trunk, extremity, etc), it counts the lung met as distant disease for the lower extremity melanoma, and thus assigns stage IV. If this lesion represents a new primary, then this is incorrect. Unable to know from information available. Keep as stage IV with likely new primary in the setting of metastatic disease. 
+                        - For this patient ID, set Discrepancy = 1. 
+                        - For this patient ID, set Possible New Primary = 1.
+                        - This is the patient that had the correct stage (IV) by your script according to the rules, but an error in my file (key) for this patient. The key has been corrected.
+    '''
+    age_at_specimen_collection = float(series_of_clinical_molecular_linkage_data_for_patient.get("Age At Specimen Collection"))
+    AGE_FUDGE = 0.005 # years, or approximately 1.8 days.
+    
+    if not data_frame_of_metastatic_disease_data_for_patient.empty:
+        
+        copy_of_data_frame_of_metastatic_disease_data_for_patient = data_frame_of_metastatic_disease_data_for_patient.copy()
+        copy_of_data_frame_of_metastatic_disease_data_for_patient["_age_at_metastatic_site"] = copy_of_data_frame_of_metastatic_disease_data_for_patient["AgeAtMetastaticSite"].apply(numericize_age_at_metastatic_site)
+        mask_of_indicators_that_condition_for_rule_5_is_met = (
+            copy_of_data_frame_of_metastatic_disease_data_for_patient["MetsDzPrimaryDiagnosisSite"].str.contains(
+                "skin|ear|eyelid|vulva|eye|choroid|ciliary body|conjunctiva|sinus|gum|nasal|urethra",
                 case = False,
-                na = False,
+                na = False
             )
-            & meta_df["MetastaticDiseaseInd"].str.strip().str.lower().eq("yes - distant")
-            & meta_df["_age_meta"].notna()
-            & (meta_df["_age_meta"] <= (age_spec + AGE_FUDGE))
+            & copy_of_data_frame_of_metastatic_disease_data_for_patient["MetastaticDiseaseInd"].str.strip().str.lower().eq("yes - distant")
+            & copy_of_data_frame_of_metastatic_disease_data_for_patient["_age_at_metastatic_site"].notna()
+            & (copy_of_data_frame_of_metastatic_disease_data_for_patient["_age_at_metastatic_site"] <= (age_at_specimen_collection + AGE_FUDGE))
         )
 
-        if priordistant_mask.any():
+        if mask_of_indicators_that_condition_for_rule_5_is_met.any():
+            
             return "IV", "PRIORDISTANT"
 
     # RULE 6 - NOMETS
@@ -661,7 +730,7 @@ def assign_stage_and_rule(
         return (roman_numeral_in(pathological_group_stage) or "Unknown"), "NOMETS"
 
     # RULE 7 - NODE
-    if ("lymph node" in site_coll) or ("parotid" in site_coll):
+    if ("lymph node" in specimen_site_of_collection) or ("parotid" in specimen_site_of_collection):
         return "III", "NODE"
     
     # ────────────────────────────────────────────────────────────────
@@ -677,14 +746,14 @@ def assign_stage_and_rule(
     # ────────────────────────────────────────────────────────────────
     age_diag_f = _float(string_representation_of_age_at_diagnosis)
     
-    age_spec_fudged = None if age_spec is None else age_spec + AGE_FUDGE
-    within_90d = are_within_90_days(age_spec_fudged, age_diag_f)
+    age_at_specimen_collection_fudged = None if age_at_specimen_collection is None else age_at_specimen_collection + AGE_FUDGE
+    within_90d = are_within_90_days(age_at_specimen_collection_fudged, age_diag_f)
 
     no_row_hits_all_four = True
     if (
         within_90d
         and not data_frame_of_metastatic_disease_data_for_patient.empty
-        and age_spec_fudged is not None
+        and age_at_specimen_collection_fudged is not None
     ):
         meta_df = data_frame_of_metastatic_disease_data_for_patient.copy()
 
@@ -695,16 +764,16 @@ def assign_stage_and_rule(
 
         four_crit_mask = (
             meta_df["MetsDzPrimaryDiagnosisSite"].str.contains(
-                r"skin|ear|eyelid|vulva", case=False, na=False
+                "skin|ear|eyelid|vulva", case=False, na=False
             )
             & meta_df["MetastaticDiseaseInd"].str.contains(
                 r"yes\s*-\s*(?:regional|nos)", case=False, na=False
             )
             & meta_df["MetastaticDiseaseSite"].str.contains(
-                r"skin|ear|eyelid|vulva|breast", case=False, na=False
+                "skin|ear|eyelid|vulva|breast", case=False, na=False
             )
             & meta_df["_age_meta"].notna()
-            & (meta_df["_age_meta"] <= age_spec_fudged)
+            & (meta_df["_age_meta"] <= age_at_specimen_collection_fudged)
         )
 
         no_row_hits_all_four = not four_crit_mask.any()
@@ -735,7 +804,7 @@ def assign_stage_and_rule(
     #        • MetastaticDiseaseInd       == "yes - distant"
     #        • AgeAtMetastaticSite        == "Age Unknown/Not Recorded"
     # ────────────────────────────────────────────────────────────────
-    if not data_frame_of_metastatic_disease_data_for_patient.empty and age_spec is not None:
+    if not data_frame_of_metastatic_disease_data_for_patient.empty and age_at_specimen_collection is not None:
         meta_df = data_frame_of_metastatic_disease_data_for_patient.copy()
 
         # numeric version of AgeAtMetastaticSite
@@ -746,24 +815,24 @@ def assign_stage_and_rule(
         # ----------  condition A  ----------
         cond_A_mask = (
             meta_df["MetsDzPrimaryDiagnosisSite"].str.contains(
-                r"skin|ear|eyelid|vulva", case=False, na=False
+                "skin|ear|eyelid|vulva", case=False, na=False
             )
             & meta_df["MetastaticDiseaseInd"].str.contains(
                 r"yes\s*-\s*(?:regional|nos)", case=False, na=False
             )
             & meta_df["MetastaticDiseaseSite"].str.contains(
-                r"skin|ear|eyelid|vulva|head|soft tissues|breast|lymph node",
+                "skin|ear|eyelid|vulva|head|soft tissues|breast|lymph node",
                 case=False,
                 na=False,
             )
             & meta_df["_age_meta"].notna()
-            & (meta_df["_age_meta"] <= (age_spec + AGE_FUDGE))
+            & (meta_df["_age_meta"] <= (age_at_specimen_collection + AGE_FUDGE))
         )
 
         # ----------  condition B  ----------
         cond_B_mask = (
             meta_df["MetsDzPrimaryDiagnosisSite"].str.contains(
-                r"skin|ear|eyelid|vulva", case=False, na=False
+                "skin|ear|eyelid|vulva", case=False, na=False
             )
             & meta_df["MetastaticDiseaseInd"].str.strip().str.lower().eq("yes - distant")
             & meta_df["AgeAtMetastaticSite"].str.strip().eq("Age Unknown/Not Recorded")
@@ -787,7 +856,7 @@ def assign_stage_and_rule(
 
         skinunk_mask = (
             meta_df["MetsDzPrimaryDiagnosisSite"].str.contains(
-                r"skin|ear|eyelid|vulva", case=False, na=False
+                "skin|ear|eyelid|vulva", case=False, na=False
             )
             & meta_df["MetastaticDiseaseInd"].str.contains(
                 r"yes\s*-\s*(?:distant|nos)", case=False, na=False
@@ -803,15 +872,24 @@ def assign_stage_and_rule(
     
 
 def roman_numeral_in(stage: str) -> str | None:
-    pattern = re.compile(r"(IV|III|II|I)(?![IV])", re.I)
+    pattern = re.compile("(IV|III|II|I)(?![IV])", re.I)
     match = pattern.search(str(stage))
     return None if match is None else match.group(1).upper()
     
+    
+def numericize_age_at_metastatic_site(string_representation_of_age_at_metastatic_site: str):
+    if str(string_representation_of_age_at_metastatic_site).strip() == "Age 90 or older":
+        return 90.0
+    elif str(string_representation_of_age_at_metastatic_site).strip() == "Age Unknown/Not Recorded":
+        return pd.NA
+    elif str(string_representation_of_age_at_metastatic_site).strip() == "Unknown/Not Applicable":
+        return pd.NA
+    else:
+        return float(string_representation_of_age_at_metastatic_site)
+    
 
-AGE_FUDGE = 0.005 # years, or approximately 1.8 days.
-ICB_PATTERN = re.compile(r"immune checkpoint|pembrolizumab|nivolumab|ipilimumab|atezolizumab|durvalumab|avelumab|cemiplimab|relatlimab", re.I)
+ICB_PATTERN = re.compile("immune checkpoint|pembrolizumab|nivolumab|ipilimumab|atezolizumab|durvalumab|avelumab|cemiplimab|relatlimab", re.I)
 CUTANEOUS_RE = re.compile(SITE_KEYWORDS["cutaneous"], re.I)
-_SITE_LOCAL_RE = re.compile(r"skin|ear|eyelid|vulva|head|soft tissues|breast|lymph node|parotid|vagina", re.I)
 
 
 
@@ -853,15 +931,15 @@ def load_data(
 
 
 
-def are_within_90_days(age_spec: float | None, age_diag: float | None) -> bool:
-    if age_spec is None or age_diag is None:
+def are_within_90_days(age_at_specimen_collection: float | None, age_diag: float | None) -> bool:
+    if age_at_specimen_collection is None or age_diag is None:
         return False
-    diff = age_spec - age_diag
+    diff = age_at_specimen_collection - age_diag
     return 0 <= abs(diff) <= 90 / 365.25
 
         
 def _hist_clean(txt: str) -> str:
-    return re.sub(r"[^A-Za-z]", "", str(txt)).lower()
+    return re.sub("[^A-Za-z]", "", str(txt)).lower()
 
 
 def main():
