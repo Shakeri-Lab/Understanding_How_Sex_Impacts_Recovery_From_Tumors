@@ -786,59 +786,62 @@ def assign_stage_and_rule(
     if ("lymph node" in specimen_site_of_collection) or ("parotid" in specimen_site_of_collection):
         return "III", "NODE"
     
-    # ────────────────────────────────────────────────────────────────
-    # RULE 8 – SKINLESS90D
-    #
-    #   Apply stage III if BOTH are true:
-    #   1.  Age At Specimen Collection (fudged) is within ±90 days of Age At Diagnosis, and
-    #   2.  There is no single metastatic-disease row that simultaneously has
-    #       • MetsDzPrimaryDiagnosisSite matching "skin|ear|eyelid|vulva",
-    #       • MetastaticDiseaseInd matching "yes - regional|yes - nos",
-    #       • MetastaticDiseaseSite matching "skin|ear|eyelid|vulva|breast", and
-    #       • AgeAtMetastaticSite ≤ AgeSpec + AGE_FUDGE
-    # ────────────────────────────────────────────────────────────────
-    age_diag_f = _float(string_representation_of_age_at_diagnosis)
-    
+    '''
+    From "ORIEN Specimen Staging Revised Rules":
+    10.i. At this point, only cutaneous melanomas with skin/soft tissue/other subcutaneous tissue specimens should remain unassigned.  
+
+    RULE#8: SKINLESS90D 
+    This rule needs to use MetastaticDiseaseSite from the Metastatic file and has been edited to reflect that.
+        - IF AgeAtSpecimenCollection+0.005 WITHIN 90 days of AgeAtDiagnosis AND does not have any {combined entry on Metastatic file with: MetsDzPrimaryDiagnosisSite contains ["skin" OR "ear" OR "eyelid" OR "vulva"] AND MetastaticDiseaseInd = ["Yes - Regional" OR "Yes – NOS"] AND MetastaticDiseaseSite contains ["skin" OR "ear" OR "eyelid" OR "vulva" OR "breast"] AND [AgeAtMetastaticSite <= AgeAtSpecimenCollection+0.005]}, THEN AssignedStage = numerical value of PathGroupStage OR ClinGroupStage (if PathGroupStage is ["Unknown/Not Reported" OR "No TNM applicable for this site/histology combination" OR  "Unknown/Not Applicable"])
+        - Skin specimens collected within 90 days of initial diagnosis and no SKIN metastatic sites reported prior to specimen collection. Rule only specifies Regional and NOS for the metastatic sites since all Distant sites have already been assigned with previous rule. Rule assigns path stage (or clinical stage if no path information) at initial diagnosis.
+        - Rule allows for regional lymph node metastatic sites prior to specimen collection with the assumption that these will have been captured by the initial staging (since these or skin specimens, not node specimens, which have been previously captured by a prior rule), which appears true for this database. This rule will need to be edited if used in the future for other datasets, since it is possible for node metastases to occur within 90 days of diagnosis that may result in re-staging from initial staging. 
+        - 46 patients, all cutaneous (count not edited since one patient was removed for exception, but one patient was added) 
+            - 33 patients in Group A
+                - You noted an issue with patient ID = YQJCZJ5Z6U, but we determined that this issue should be resolved with the correction to the rule to use MetastaticDiseaseSite instead of SpecimenSiteofCollection. 
+            - 7 patients in Group B (EXW43C3IGC, FWQ9OSPM9E, NJ6HY2U9GC, QMSJQAHVG2, ZFCLZOPWSJ, CVKXM5RBNR, DVJMQLZBJV) 
+                - Patient ID WOW011YH6I was erroneously included in this count. This patient is captured by rule NODE.
+            - 4 patients in Group C (2FEX3JHKCW, 8BCBHGEO4N, FNP53S81KA, MD578977I9, VLY2FWYN29) 
+            - 1 patient in group D (7HOWLJKDEM)
+        - Confirm with Slingluff; confirmed, details below: 
+            - APGLZDFLYJ: Trunk melanoma IIIA (T4N1aMx, clinical M0; 7th) diagnosed at 53.09. Specimen is skin of trunk (back), designated as "primary", obtained at age 53.10 (4 days after diagnosis). Metastatic disease file shows a distant lung met ('overlapping lesion of lung') at age 53.162 (23 days after specimen collection/diagnosis), but this met is associated with a scalp/neck melanoma. This scalp/neck melanoma is not listed as a separate diagnosis for this patient. Rule seems appropriate despite close distant disease.
+                - For this patient ID, set Discrepancy = 1
+            - GEM0S42KIH: Lower extremity III (T3aNxMx, 6th; not sure how stage III by this) diagnosed at age 53.20. Specimen is skin of heel, designated as "primary", obtained at 53.28 (28 days after diagnosis). Reported distant nodes (axilla) and skin met (trunk) at age 53.299 (1 week after specimen collected). Rule assigns as stage III based on the ages/dates, but likely represents missed metastatic disease, particularly since substaging was incomplete at initial diagnosis.  Make exception to rule to assign this as stage IV.
+                - For this patient ID, set Discrepancy = 1. The SKINLESS90D rule does not apply since this patient will be captured by EXCEPTION rule. This patient is not included in the patient counts for this rule anymore.
+    '''
     age_at_specimen_collection_fudged = None if age_at_specimen_collection is None else age_at_specimen_collection + AGE_FUDGE
-    within_90d = are_within_90_days(age_at_specimen_collection_fudged, age_diag_f)
-
-    no_row_hits_all_four = True
-    if (
-        within_90d
-        and not data_frame_of_metastatic_disease_data_for_patient.empty
-        and age_at_specimen_collection_fudged is not None
-    ):
-        meta_df = data_frame_of_metastatic_disease_data_for_patient.copy()
-
-        # numeric metastatic age
-        meta_df["_age_meta"] = meta_df["AgeAtMetastaticSite"].apply(
-            lambda x: 90.0 if str(x).strip() == "Age 90 or older" else _float(x)
+    
+    condition_for_row = True
+    if not data_frame_of_metastatic_disease_data_for_patient.empty and age_at_specimen_collection_fudged is not None:
+        copy_of_data_frame_of_metastatic_disease_data_for_patient = data_frame_of_metastatic_disease_data_for_patient.copy()
+        copy_of_data_frame_of_metastatic_disease_data_for_patient["_age_at_metastatic_site"] = copy_of_data_frame_of_metastatic_disease_data_for_patient["AgeAtMetastaticSite"].apply(numericize_age_at_metastatic_site)
+        mask_of_indicators_that_row_meets_condition = (
+            copy_of_data_frame_of_metastatic_disease_data_for_patient["MetsDzPrimaryDiagnosisSite"].str.contains(
+                "skin|ear|eyelid|vulva", case = False, na = False
+            ) &
+            copy_of_data_frame_of_metastatic_disease_data_for_patient["MetastaticDiseaseInd"].str.contains(
+                "yes - regional|yes - nos", case = False, na = False
+            ) &
+            copy_of_data_frame_of_metastatic_disease_data_for_patient["MetastaticDiseaseSite"].str.contains(
+                "skin|ear|eyelid|vulva|breast", case = False, na = False
+            ) &
+            copy_of_data_frame_of_metastatic_disease_data_for_patient["_age_at_metastatic_site"].notna() &
+            (copy_of_data_frame_of_metastatic_disease_data_for_patient["_age_at_metastatic_site"] <= age_at_specimen_collection_fudged)
         )
+        condition_for_row = mask_of_indicators_that_row_meets_condition.any()
 
-        four_crit_mask = (
-            meta_df["MetsDzPrimaryDiagnosisSite"].str.contains(
-                "skin|ear|eyelid|vulva", case=False, na=False
-            )
-            & meta_df["MetastaticDiseaseInd"].str.contains(
-                r"yes\s*-\s*(?:regional|nos)", case=False, na=False
-            )
-            & meta_df["MetastaticDiseaseSite"].str.contains(
-                "skin|ear|eyelid|vulva|breast", case=False, na=False
-            )
-            & meta_df["_age_meta"].notna()
-            & (meta_df["_age_meta"] <= age_at_specimen_collection_fudged)
-        )
-
-        no_row_hits_all_four = not four_crit_mask.any()
-
-    if within_90d and no_row_hits_all_four:
-        if pathological_group_stage.lower() in {
-            "unknown/not reported",
-            "no tnm applicable for this site/histology combination",
-            "unknown/not applicable",
-        }:
-            return (roman_numeral_in(clinical_group_stage) or "Unknown"), "SKINLESS90D"
-        return (roman_numeral_in(pathological_group_stage) or "Unknown"), "SKINLESS90D"
+    age_at_diagnosis = float(string_representation_of_age_at_diagnosis)
+    if are_within_90_days(age_at_specimen_collection_fudged, age_at_diagnosis) and not condition_for_row:
+        if pathological_group_stage.lower() in ["unknown/not reported", "no tnm applicable for this site/histology combination", "unknown/not applicable"]:
+            roman_numeral_in_clinical_group_stage = roman_numeral_in(clinical_group_stage)
+            if roman_numeral_in_clinical_group_stage:
+                return roman_numeral_in_clinical_group_stage, "SKINLESS90D"
+            else:
+                return "Unknown", "SKINLESS90D"
+        roman_numeral_in_pathological_group_stage = roman_numeral_in(pathological_group_stage)
+        if roman_numeral_in_pathological_group_stage:
+            return roman_numeral_in_pathological_group_stage, "SKINLESS90D"
+        else:
+            return "Unknown", "SKINLESS90D"
 
 
     # ────────────────────────────────────────────────────────────────
