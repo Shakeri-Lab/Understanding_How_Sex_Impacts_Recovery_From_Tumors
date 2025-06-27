@@ -527,38 +527,6 @@ def assign_stage_and_rule(
     series_of_diagnosis_data_for_patient: pd.Series,
     data_frame_of_metastatic_disease_data_for_patient: pd.DataFrame
 ) -> Tuple[str, str]:
-
-    age_coll = float(90.0 if series_of_clinical_molecular_linkage_data_for_patient.get("Age At Specimen Collection") == "Age 90 or older" else series_of_clinical_molecular_linkage_data_for_patient.get("Age At Specimen Collection"))
-
-    MetsDzPrimaryDiagnosisSite = ""
-    MetastaticDiseaseInd = ""
-    metastatic_sites_text = ""
-    ages = None
-    AgeAtMetastaticSite = None
-    
-    if not data_frame_of_metastatic_disease_data_for_patient.empty:
-        MetsDzPrimaryDiagnosisSite = "|".join(
-            data_frame_of_metastatic_disease_data_for_patient["MetsDzPrimaryDiagnosisSite"]
-            .dropna()
-            .astype(str)
-        ).lower()
-        
-        MetastaticDiseaseInd = "|".join(
-            data_frame_of_metastatic_disease_data_for_patient["MetastaticDiseaseInd"]
-            .dropna()
-            .astype(str)
-        ).lower()
-        
-        metastatic_sites_text = "|".join(data_frame_of_metastatic_disease_data_for_patient["MetastaticDiseaseSite"].dropna().astype(str)).lower()
-
-        # ❷  Convert every age entry to float (treat “Age 90 or older” as 90.0),
-        #     then take the earliest (minimum) non-null value.
-        ages = (
-            data_frame_of_metastatic_disease_data_for_patient["AgeAtMetastaticSite"]
-            .apply(lambda x: 90.0 if str(x).strip() == "Age 90 or older" else _float(x))
-        )
-        AgeAtMetastaticSite = ages.min() if ages.notna().any() else None
-    
     
     '''
     From "ORIEN Specimen Staging Revised Rules":
@@ -895,35 +863,36 @@ def assign_stage_and_rule(
         if mask_of_indicators_that_row_meets_first_condition.any() or not mask_of_indicators_that_row_meets_second_condition.any():
             return "III", "SKINREG"
 
-
-    # ────────────────────────────────────────────────────────────────
-    # RULE 10 – SKINUNK
-    #
-    # Stage IV if there exists at least one row in the metastatic disease
-    # table that simultaneously has
-    #   • MetsDzPrimaryDiagnosisSite matching "skin|ear|eyelid|vulva",
-    #   • MetastaticDiseaseInd matching "yes - distant|yes - nos", and
-    #   • AgeAtMetastaticSite of "Age Unknown/Not Recorded".
-    # ────────────────────────────────────────────────────────────────
+    '''
+    From "ORIEN Specimen Staging Revised Rules":
+    10.k. RULE#10: SKINUNK
+        - IF {combined entry on Metastatic file with: MetsDzPrimaryDiagnosisSite contains ["skin" OR "ear" OR "eyelid" OR "vulva"] AND MetastaticDiseaseInd = ["Yes - Distant" OR "Yes – NOS"] AND AgeAtMetastaticSite = "Age Unknown/Not Recorded"}, THEN AssignedStage = IV
+        - Remaining patients with skin specimens that have distant disease reported at an unknown time. This rule assumes that these skin specimens represent stage IV disease.
+        - This works for our database. For generalizability, this would need to be edited if used in the future with other datasets.
+        - 7 patients, all cutaneous 
+            - 6 patients in Group A
+            - 1 patient in Group C (AC2EJBKWJO) 
+        - Confirm with Slingluff; confirmed, follow rule to assign stage IV
+            - Two patients not only have unknown age of distant mets, but also unknown age of regional skin mets, so these specimens could represent new primary or stage III disease (AC2EJBKWJO (possible new primary), TIZXXXVCV9), but unable to definitively determine with available information 
+                - These 2 patient IDs should have Discrepancy = 1
+                - Patient ID AC2EJBKWJO should have Possible New Primary = 1
+    '''
     if not data_frame_of_metastatic_disease_data_for_patient.empty:
-        meta_df = data_frame_of_metastatic_disease_data_for_patient.copy()
+        copy_of_data_frame_of_metastatic_disease_data_for_patient = data_frame_of_metastatic_disease_data_for_patient.copy()
 
-        skinunk_mask = (
-            meta_df["MetsDzPrimaryDiagnosisSite"].str.contains(
-                "skin|ear|eyelid|vulva", case=False, na=False
-            )
-            & meta_df["MetastaticDiseaseInd"].str.contains(
-                r"yes\s*-\s*(?:distant|nos)", case=False, na=False
-            )
-            & meta_df["AgeAtMetastaticSite"].str.strip().eq("Age Unknown/Not Recorded")
+        mask_of_indicators_that_row_meets_condition = (
+            copy_of_data_frame_of_metastatic_disease_data_for_patient["MetsDzPrimaryDiagnosisSite"].str.contains(
+                "skin|ear|eyelid|vulva", case = False, na = False
+            ) &
+            copy_of_data_frame_of_metastatic_disease_data_for_patient["MetastaticDiseaseInd"].str.contains(
+                "yes - distant|yes - nos", case = False, na = False
+            ) &
+            copy_of_data_frame_of_metastatic_disease_data_for_patient["AgeAtMetastaticSite"].str.strip().eq("Age Unknown/Not Recorded")
         )
 
-        if skinunk_mask.any():
+        if mask_of_indicators_that_row_meets_condition.any():
             return "IV", "SKINUNK"
 
-    # Fallback (should never be reached according to ORIEN Specimen Staging Revised Rules)
-    return "Unknown", "UNMATCHED"
-    
 
 def roman_numeral_in(stage: str) -> str | None:
     pattern = re.compile("(IV|III|II|I)(?![IV])", re.I)
@@ -940,18 +909,6 @@ def numericize_age_at_metastatic_site(string_representation_of_age_at_metastatic
         return pd.NA
     else:
         return float(string_representation_of_age_at_metastatic_site)
-    
-
-ICB_PATTERN = re.compile("immune checkpoint|pembrolizumab|nivolumab|ipilimumab|atezolizumab|durvalumab|avelumab|cemiplimab|relatlimab", re.I)
-CUTANEOUS_RE = re.compile(SITE_KEYWORDS["cutaneous"], re.I)
-
-
-
-def _float(val) -> float | None:
-    try:
-        return float(val)
-    except (TypeError, ValueError):
-        return None
     
     
 def load_data(
@@ -980,20 +937,11 @@ def load_data(
     return data_frame_of_clinical_molecular_linkage_data, data_frame_of_diagnosis_data, data_frame_of_metastatic_disease_data
 
 
-
-
-
-
-
 def are_within_90_days(age_at_specimen_collection: float | None, age_diag: float | None) -> bool:
     if age_at_specimen_collection is None or age_diag is None:
         return False
     diff = age_at_specimen_collection - age_diag
     return 0 <= abs(diff) <= 90 / 365.25
-
-        
-def _hist_clean(txt: str) -> str:
-    return re.sub("[^A-Za-z]", "", str(txt)).lower()
 
 
 def main():
