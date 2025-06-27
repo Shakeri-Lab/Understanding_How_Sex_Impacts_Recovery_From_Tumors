@@ -594,7 +594,7 @@ def assign_stage_and_rule(
     clinical_group_stage = str(series_of_diagnosis_data_for_patient.get("ClinGroupStage", "")).strip().upper()
     
     if string_representation_of_age_at_diagnosis == "age 90 or older":
-        if pathological_group_stage in ["unknown/not reported", "no tnm applicable for this site/histology combination", "unknown/not applicable"]:
+        if pathological_group_stage.lower() in ["unknown/not reported", "no tnm applicable for this site/histology combination", "unknown/not applicable"]:
             roman_numeral_in_clinical_group_stage = roman_numeral_in(clinical_group_stage)
             if roman_numeral_in_clinical_group_stage:
                 return roman_numeral_in_clinical_group_stage, "AGE"
@@ -744,17 +744,17 @@ def assign_stage_and_rule(
                     - For this patient ID, set Discrepancy = 1
     '''
     if data_frame_of_metastatic_disease_data_for_patient.empty or data_frame_of_metastatic_disease_data_for_patient["MetastaticDiseaseInd"].str.lower().eq("no").all():
-        if pathological_group_stage in ["unknown/not reported", "no tnm applicable for this site/histology combination", "unknown/not applicable"]:
+        if pathological_group_stage.lower() in ["unknown/not reported", "no tnm applicable for this site/histology combination", "unknown/not applicable"]:
             roman_numeral_in_clinical_group_stage = roman_numeral_in(clinical_group_stage)
             if roman_numeral_in_clinical_group_stage:
-                return roman_numeral_in_clinical_group_stage, "AGE"
+                return roman_numeral_in_clinical_group_stage, "NOMETS"
             else:
-                return "Unknown", "AGE"
+                return "Unknown", "NOMETS"
         roman_numeral_in_pathological_group_stage = roman_numeral_in(pathological_group_stage)
         if roman_numeral_in_pathological_group_stage:
-            return roman_numeral_in_pathological_group_stage, "AGE"
+            return roman_numeral_in_pathological_group_stage, "NOMETS"
         else:
-            return "Unknown", "AGE"
+            return "Unknown", "NOMETS"
 
     '''
     From "ORIEN Specimen Staging Revised Rules":
