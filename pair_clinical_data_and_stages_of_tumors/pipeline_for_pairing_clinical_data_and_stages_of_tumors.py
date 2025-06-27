@@ -12,7 +12,7 @@ From "ORIEN Specimen Staging Revised Rules":
     - Metastatic Disease (to help assign stage)
 
 Usage:
-python pipeline_for_pairing_clinical_data_and_stages_of_tumors.py --path_to_clinical_molecular_linkage_data ../../Clinical_Data/24PRJ217UVA_NormalizedFiles/24PRJ217UVA_20241112_ClinicalMolLinkage_V4.csv --path_to_diagnosis_data ../../Clinical_Data/24PRJ217UVA_NormalizedFiles/24PRJ217UVA_20241112_Diagnosis_V4.csv --path_to_metastatic_disease_data ../../Clinical_Data/24PRJ217UVA_NormalizedFiles/24PRJ217UVA_20241112_MetastaticDisease_V4.csv --path_to_output_data output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors.csv > output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors.txt 2>&1
+../miniconda3/envs/ici_sex/bin/python pipeline_for_pairing_clinical_data_and_stages_of_tumors.py --path_to_clinical_molecular_linkage_data ../../Clinical_Data/24PRJ217UVA_NormalizedFiles/24PRJ217UVA_20241112_ClinicalMolLinkage_V4.csv --path_to_diagnosis_data ../../Clinical_Data/24PRJ217UVA_NormalizedFiles/24PRJ217UVA_20241112_Diagnosis_V4.csv --path_to_metastatic_disease_data ../../Clinical_Data/24PRJ217UVA_NormalizedFiles/24PRJ217UVA_20241112_MetastaticDisease_V4.csv --path_to_output_data output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors.csv > output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors.txt 2>&1
 
 From "ORIEN Specimen Staging Revised Rules":
 2. Definitions
@@ -450,25 +450,26 @@ def select_diagnosis_for_patient_in_C(
                     copy_of_data_frame_of_diagnosis_data_for_patient["_age"] = pd.to_numeric(data_frame_of_diagnosis_data_for_patient["AgeAtDiagnosis"], errors = "raise")
                     return copy_of_data_frame_of_diagnosis_data_for_patient.sort_values("_age", na_position = "last").iloc[0]
                 
+    orien_avatar_key = series_of_clinical_molecular_linkage_data_for_patient["ORIENAvatarKey"].strip()
     deid_specimen_id = series_of_clinical_molecular_linkage_data_for_patient["DeidSpecimenID"].strip()
-    logging.warning(f"We reached the end of selecting diagnosis for patient in C for specimen with ID {deid_specimen_id} and value of field `Primary/Met` {value_of_field_primary_met}.")
+    logging.error(f"We reached the end of selecting diagnosis for patient in C for specimen with ORIENAvatarKey and DeidSpecimenID {orien_avatar_key} and {deid_specimen_id} and value of field `Primary/Met` {value_of_field_primary_met}.")
     copy_of_data_frame_of_diagnosis_data_for_patient = data_frame_of_diagnosis_data_for_patient.copy()
     copy_of_data_frame_of_diagnosis_data_for_patient["_age"] = series_of_ages_at_diagnosis
     return copy_of_data_frame_of_diagnosis_data_for_patient.sort_values("_age").iloc[0]
 
 
-def are_within_90_days_after(age_at_specimen_collection: float | None, age_diag: float | None) -> bool:
-    if age_at_specimen_collection is None or age_diag is None:
+def are_within_90_days_after(age_at_specimen_collection: float | None, age_at_diagnosis: float | None) -> bool:
+    if age_at_specimen_collection is None or age_at_diagnosis is None:
         return False
-    diff = age_at_specimen_collection - age_diag
-    return 0 <= diff <= 90 / 365.25
+    difference = age_at_specimen_collection - age_at_diagnosis
+    return 0 <= difference <= 90 / 365.25
 
 
-def are_greater_than_90_days_after(age_at_specimen_collection: float | None, age_diag: float | None) -> bool:
-    if age_at_specimen_collection is None or age_diag is None:
+def are_greater_than_90_days_after(age_at_specimen_collection: float | None, age_at_diagnosis: float | None) -> bool:
+    if age_at_specimen_collection is None or age_at_diagnosis is None:
         return False
-    diff = age_at_specimen_collection - age_diag
-    return diff > 90 / 365.25
+    difference = age_at_specimen_collection - age_at_diagnosis
+    return difference > 90 / 365.25
 
 
 def select_tumor_for_patient_in_D(data_frame_of_clinical_molecular_linkage_data_for_patient: pd.DataFrame) -> pd.Series:
@@ -494,6 +495,8 @@ def select_tumor_for_patient_in_D(data_frame_of_clinical_molecular_linkage_data_
         
         data_frame_of_clinical_molecular_linkage_data_for_patient_with_RNA_sequencing_data["_age"] = pd.to_numeric(data_frame_of_clinical_molecular_linkage_data_for_patient_with_RNA_sequencing_data["Age At Specimen Collection"], errors = "raise")
         return data_frame_of_clinical_molecular_linkage_data_for_patient_with_RNA_sequencing_data.sort_values("_age", na_position = "last").iloc[0]
+    
+    logging.error("We reached the end of selecting a tumor for a patient in D.")
 
     
 def select_diagnosis_for_patient_in_D(
@@ -520,6 +523,8 @@ def select_diagnosis_for_patient_in_D(
     if re.search("skin|soft tissue", specimen_site_of_collection):
         
         return copy_of_data_frame_of_diagnosis_data_for_patient.sort_values("_age", na_position = "last").iloc[0]
+    
+    logging.error("We reached the end of selecting a diagnosis for a patient in D.")
     
     
 def assign_stage_and_rule(
@@ -892,6 +897,8 @@ def assign_stage_and_rule(
 
         if mask_of_indicators_that_row_meets_condition.any():
             return "IV", "SKINUNK"
+    
+    logging.error("We reached the end of assigning a stage and a rule.")
 
 
 def roman_numeral_in(stage: str) -> str | None:
@@ -909,6 +916,13 @@ def numericize_age_at_metastatic_site(string_representation_of_age_at_metastatic
         return pd.NA
     else:
         return float(string_representation_of_age_at_metastatic_site)
+    
+    
+def are_within_90_days(age_at_specimen_collection: float | None, age_at_diagnosis: float | None) -> bool:
+    if age_at_specimen_collection is None or age_at_diagnosis is None:
+        return False
+    difference = age_at_specimen_collection - age_at_diagnosis
+    return 0 <= abs(difference) <= 90 / 365.25
     
     
 def load_data(
@@ -935,13 +949,6 @@ def load_data(
     data_frame_of_metastatic_disease_data.columns = data_frame_of_metastatic_disease_data.columns.str.strip()
 
     return data_frame_of_clinical_molecular_linkage_data, data_frame_of_diagnosis_data, data_frame_of_metastatic_disease_data
-
-
-def are_within_90_days(age_at_specimen_collection: float | None, age_diag: float | None) -> bool:
-    if age_at_specimen_collection is None or age_diag is None:
-        return False
-    diff = age_at_specimen_collection - age_diag
-    return 0 <= abs(diff) <= 90 / 365.25
 
 
 def main():
