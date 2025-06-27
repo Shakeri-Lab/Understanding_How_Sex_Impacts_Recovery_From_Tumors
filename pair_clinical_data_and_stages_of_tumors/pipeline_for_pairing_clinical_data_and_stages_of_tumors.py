@@ -788,7 +788,7 @@ def assign_stage_and_rule(
     
     '''
     From "ORIEN Specimen Staging Revised Rules":
-    10.i. At this point, only cutaneous melanomas with skin/soft tissue/other subcutaneous tissue specimens should remain unassigned.  
+    10.i. At this point, only cutaneous melanomas with skin/soft tissue/other subcutaneous tissue specimens should remain unassigned. 
 
     RULE#8: SKINLESS90D 
     This rule needs to use MetastaticDiseaseSite from the Metastatic file and has been edited to reflect that.
@@ -844,57 +844,55 @@ def assign_stage_and_rule(
             return "Unknown", "SKINLESS90D"
 
 
-    # ────────────────────────────────────────────────────────────────
-    # RULE 9 – SKINREG
-    #
-    # Stage III if EITHER of the following is true:
-    #
-    #   A)  There exists ≥ 1 metastatic-disease row that simultaneously has
-    #        • MetsDzPrimaryDiagnosisSite ∼ "skin|ear|eyelid|vulva"
-    #        • MetastaticDiseaseInd      ∼ "yes - regional|yes - nos"
-    #        • MetastaticDiseaseSite     ∼ "skin|ear|eyelid|vulva|head|soft tissues|breast|lymph node"
-    #        • AgeAtMetastaticSite       ≤ AgeSpec + AGE_FUDGE
-    #
-    #   B)  No metastatic-disease row simultaneously has
-    #        • MetsDzPrimaryDiagnosisSite ∼ "skin|ear|eyelid|vulva"
-    #        • MetastaticDiseaseInd       == "yes - distant"
-    #        • AgeAtMetastaticSite        == "Age Unknown/Not Recorded"
-    # ────────────────────────────────────────────────────────────────
+    '''
+    From "ORIEN Specimen Staging Revised Rules":
+    10.j. RULE#9: SKINREG
+    This rule needs to use MetastaticDiseaseSite from the Metastatic file and has been edited to reflect that.
+        - IF {combined entry on Metastatic file with: MetsDzPrimaryDiagnosisSite contains ["skin" OR "ear" OR "eyelid" OR "vulva"] AND MetastaticDiseaseInd = ["Yes - Regional" OR "Yes – NOS"] AND MetastaticDiseaseSite contains ["skin" OR "ear" OR "eyelid" OR "vulva", OR "head" OR "soft tissues" OR "breast" OR "lymph node"] AND [AgeAtMetastaticSite <= AgeAtSpecimenCollection+0.005]} OR does not contain any {combined entry on Metastatic file with: MetsDzPrimaryDiagnosisSite contains ["skin" OR "ear" OR "eyelid" OR "vulva"] AND MetastaticDiseaseInd = ["Yes - Distant"] AND AgeAtMetastaticSite = "Age Unknown/Not Recorded"}, THEN AssignedStage = III 
+        - These are the remaining skin specimens with reported regional skin or nodal metastases prior to specimen collection. It also covers special cases that don’t fit other rules.  
+            - No distant metastatic sites at unknown age reported (and no regional disease and the only distant disease is after specimen collection):  2 patients (WLYUAJ9AAE, 9HA9MZCSU2) with initial stage III disease that should remain stage III. 
+        - This works for our database. This rule would need to be edited if used for future datasets.
+            - Confirm with Slingluff, confirmed to follow rule: This rule primarily captures those that were initial stage II disease, but now likely represent stage III disease. However, it is possible that some represent new primaries, local recurrence, or distant disease not otherwise recorded, but this cannot be definitively determined from available information. 
+                - 8 patients for which the specimen really may not represent stage III disease (i.e. either new primary, local recurrence, or distant disease): 6DL054517A (could be distant), 87AJ4KITK8 (could be new primary), 9HA9MZCSU2 (could be new primary or distant skin met), A594OFU98I (could be new primary), FUAZTE7LVQ (could be new primary or distant skin met), HZD0O858UJ (could be new primary), L2R9RJJ88C (could represent new primary), NXPOH3RBWY (could be new primary) 
+                - These 8 patient IDs should have Discrepancy = 1. 
+                - Additionally these 7 IDs (87AJ4KITK8, 9HA9MZCSU2, A594OFU98I, FUAZTE7LVQ, HZD0O858UJ, L2R9RJJ88C, NXPOH3RBWY) should have Possible New Primary = 1.
+            - 12 patients, all cutaneous 
+                - 10 patients in Group A 
+                    - Patients 3Z82S0R5IE and MXL3WK5YF0 removed from this rule and written as exceptions due to Rule 8 (SKINLESS90D) being modified to resolve other errors, which then don't allow for these two to be appropriately excluded from that rule. This will allow for these specimens with regional skin metastases recorded in the MetastaticDiseaseFile to be evaluated consistently with the others as done in Rule 9 (SKINREG).
+                - 1 patient in Group C (L2R9RJJ88C)
+                - 1 patient in Group D (FUAZTE7LVQ)
+    '''
+    age_at_specimen_collection_fudged = None if age_at_specimen_collection is None else age_at_specimen_collection + AGE_FUDGE
+    
     if not data_frame_of_metastatic_disease_data_for_patient.empty and age_at_specimen_collection is not None:
-        meta_df = data_frame_of_metastatic_disease_data_for_patient.copy()
+        copy_of_data_frame_of_metastatic_disease_data_for_patient = data_frame_of_metastatic_disease_data_for_patient.copy()
+        copy_of_data_frame_of_metastatic_disease_data_for_patient["_age_at_metastatic_site"] = copy_of_data_frame_of_metastatic_disease_data_for_patient["AgeAtMetastaticSite"].apply(numericize_age_at_metastatic_site)
 
-        # numeric version of AgeAtMetastaticSite
-        meta_df["_age_meta"] = meta_df["AgeAtMetastaticSite"].apply(
-            lambda x: 90.0 if str(x).strip() == "Age 90 or older" else _float(x)
-        )
-
-        # ----------  condition A  ----------
-        cond_A_mask = (
-            meta_df["MetsDzPrimaryDiagnosisSite"].str.contains(
-                "skin|ear|eyelid|vulva", case=False, na=False
-            )
-            & meta_df["MetastaticDiseaseInd"].str.contains(
-                r"yes\s*-\s*(?:regional|nos)", case=False, na=False
-            )
-            & meta_df["MetastaticDiseaseSite"].str.contains(
+        mask_of_indicators_that_row_meets_first_condition = (
+            copy_of_data_frame_of_metastatic_disease_data_for_patient["MetsDzPrimaryDiagnosisSite"].str.contains(
+                "skin|ear|eyelid|vulva", case = False, na = False
+            ) &
+            copy_of_data_frame_of_metastatic_disease_data_for_patient["MetastaticDiseaseInd"].str.contains(
+                "yes - regional|yes - nos", case = False, na = False
+            ) &
+            copy_of_data_frame_of_metastatic_disease_data_for_patient["MetastaticDiseaseSite"].str.contains(
                 "skin|ear|eyelid|vulva|head|soft tissues|breast|lymph node",
-                case=False,
-                na=False,
-            )
-            & meta_df["_age_meta"].notna()
-            & (meta_df["_age_meta"] <= (age_at_specimen_collection + AGE_FUDGE))
+                case = False,
+                na = False
+            ) &
+            copy_of_data_frame_of_metastatic_disease_data_for_patient["_age_at_metastatic_site"].notna() &
+            (copy_of_data_frame_of_metastatic_disease_data_for_patient["_age_at_metastatic_site"] <= age_at_specimen_collection_fudged)
         )
 
-        # ----------  condition B  ----------
-        cond_B_mask = (
-            meta_df["MetsDzPrimaryDiagnosisSite"].str.contains(
-                "skin|ear|eyelid|vulva", case=False, na=False
-            )
-            & meta_df["MetastaticDiseaseInd"].str.strip().str.lower().eq("yes - distant")
-            & meta_df["AgeAtMetastaticSite"].str.strip().eq("Age Unknown/Not Recorded")
+        mask_of_indicators_that_row_meets_second_condition = (
+            copy_of_data_frame_of_metastatic_disease_data_for_patient["MetsDzPrimaryDiagnosisSite"].str.contains(
+                "skin|ear|eyelid|vulva", case = False, na = False
+            ) &
+            copy_of_data_frame_of_metastatic_disease_data_for_patient["MetastaticDiseaseInd"].str.strip().str.lower().eq("yes - distant") &
+            copy_of_data_frame_of_metastatic_disease_data_for_patient["AgeAtMetastaticSite"].str.strip().eq("Age Unknown/Not Recorded")
         )
 
-        if cond_A_mask.any() or (not cond_B_mask.any()):
+        if mask_of_indicators_that_row_meets_first_condition.any() or not mask_of_indicators_that_row_meets_second_condition.any():
             return "III", "SKINREG"
 
 
