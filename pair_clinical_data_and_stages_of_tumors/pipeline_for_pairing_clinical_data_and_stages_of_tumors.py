@@ -341,28 +341,30 @@ def select_diagnosis_for_patient_in_C(
     CHANGE FROM PRIOR: Simplified rules with changes in red text to ensure correct diagnosis is selected.
     SpecimenSiteofCollection [SpecimenSiteOfCollection] is the correct field.
     - For specimens with the field Primary/Met = "Primary"
-        - IF AgeAtSpecimenCollection is WITHIN 90 days AFTER the AgeAtDiagnosis for only one of the diagnoses, then use that diagnosis.
+        - IF AgeAtSpecimenCollection is (WITHIN 90 days AFTER the AgeAtDiagnosis OR WITHIN 1 day PRIOR to AgeAtDiagnosis) for only one of the diagnoses, then use that diagnosis.
             - 2FEX3JHKCW, 8BCBHGEO4N, FNP53S81KA, L5876HQBT9, MD578977I9, QC7QX0VWAY, VLY2FWYN29
-        - If AgeAtSpecimenCollection is WITHIN 90 days AFTER the AgeAtDiagnosis for more than one of the diagnoses OR AgeAtDiagnosis is unknown for at least one of the diagnoses, but the PrimaryDiagnosisSite (from the Diagnosis file) is NOT the same for all diagnoses, then then use the diagnosis that has a PrimaryDiagnosisSite = SpecimenSiteOfOrigin
+        - If AgeAtSpecimenCollection is (WITHIN 90 days AFTER the AgeAtDiagnosis OR WITHIN 1 day PRIOR to AgeAtDiagnosis) for more than one of the diagnoses OR AgeAtDiagnosis is unknown for at least one of the diagnoses, but the PrimaryDiagnosisSite (from the Diagnosis file) is NOT the same for all diagnoses, then then use the diagnosis that has a PrimaryDiagnosisSite = SpecimenSiteOfOrigin
             - ILE2DL0KMW, L2R9RJJ88C
-    - For specimens with the filed Primary/Met = "Metastatic"
+    - For specimens with the field Primary/Met = "Metastatic"
         - IF "SpecimenSiteOfCollection does not contain "lymph node" AND only one diagnosis contains PathGroupStage EQUALS "IV" OR [ClinGroupStage EQUALS "IV" AND PathGroupStage is ["Unknown/Not Reported" OR "No TNM applicable for this site/histology combination" OR "Unknown/Not Applicable"]], then use the diagnosis with stage IV
             - 9NOLH4M870, HLIXS3VDZ6, SHTJKKY76C, DEB9M36STN
         - IF SpecimenSiteOfCollection does not contain "lymph node" AND NONE of the diagnoses have {PathGroupStage EQUALS "IV" OR [ClinGroupStage EQUALS "IV" AND PathGroupStage is ["Unknown/Not Reported" OR "No TNM applicable for this site/histology combination" OR "Unknown/Not Applicable"]]}, then use the diagnosis with the earliest AgeAtDiagnosis
             - 087FO3NF65, AC2EJBKWJO, BXVDLL792A, F3BE85LAWN, JUDAJ1LHL9, R06W2EUXCM, R2TNVTF684
-        - IF SpecimenSiteOfCollection contains "lymph node" AND AgeAtSpecimenCollection is WITHIN 90 days AFTER the AgeAtDiagnosis for only one diagnosis, then use that diagnosis within 90 days of specimen collection.
+        - IF SpecimenSiteOfCollection contains "lymph node" AND AgeAtSpecimenCollection is either WITHIN 90 days AFTER the AgeAtDiagnosis OR WITHIN 1 day PRIOR to the AgeAtDiagnosis for only one diagnosis, then use that diagnosis within 90 days of specimen collection.
             - 643X8OLYWR, ILKRH6I83A, RAB7UH51TS
-        - IF SpecimenSiteOfCollection contains "lymph node" AND AgeAtSpecimenCollection is WITHIN 90 days AFTER the AgeAtDiagnosis for more than one diagnosis AND only one diagnosis has PathNStage that does NOT contain ["N0", "Nx", "Unknown/Not Applicable", "No TNM applicable for this site/histology combination"], then use that diagnosis (the one with known positive nodes of PathNStage).
+        - IF SpecimenSiteOfCollection contains "lymph node" AND AgeAtSpecimenCollection is either WITHIN 90 days AFTER the AgeAtDiagnosis OR WITHIN 1 day PRIOR to the AgeAtDiagnosis for more than one diagnosis AND only one diagnosis has PathNStage that does NOT contain ["N0", "Nx" OR "Unknown/Not Applicable" OR "No TNM applicable for this site/histology combination" OR "Unknown/Not Reported"], then use that diagnosis (the one with known positive nodes of PathNStage).
             - 39TYSJBNKK, 5BS8L7PCCE, 6RX3G5GV02
-        - IF SpecimenSiteOfCollection contains "lymph node" AND AgeAtSpecimenCollection is GREATER THAN 90 days AFTER the AgeAtDiagnosis for all of the diagnoses AND the PrimaryDiagnosisSite (from Diagnosis file) = SpecimenSiteofOrigin for only one of the diagnosis [diagnoses], then use the diagnosis associated with that PrimaryDiagnosisSite.
+        - IF SpecimenSiteOfCollection contains "lymph node" AND does NOT have any diagnoses with either (AgeAtSpecimenCollection WITHIN 90 days AFTER the AgeAtDiagnosis OR WITHIN 1 day PRIOR to the AgeAtDiagnosis) AND the PrimaryDiagnosisSite (from Diagnosis file) = SpecimenSiteofOrigin for only one of the diagnosis [diagnoses], then use the diagnosis associated with that PrimaryDiagnosisSite
             - 7HU06PZK4Q, KWLPMWV0FM, XPZE95IE7I
-        - IF SpecimenSiteOfCollection contains "lymph node" AND AgeAtSpecimenCollection is GREATER THAN 90 days AFTER the AgeAtDiagnosis for all of the diagnoses AND the PrimaryDiagnosisSite (from Diagnosis file) DOES NOT EQUAL SpecimenSiteOfOrigin for any diagnosis, then use the diagnosies [diagnosis] with earliest age of AgeAtDiagnosis [AgeAtDiagnosis].
+        - IF SpecimenSiteOfCollection contains "lymph node" AND does NOT have any diagnoses with either (AgeAtSpecimenCollection WITHIN 90 days AFTER the AgeAtDiagnosis OR WITHIN 1 day PRIOR to the AgeAtDiagnosis) AND the PrimaryDiagnosisSite (from Diagnosis file) DOES NOT EQUAL SpecimenSiteOfOrigin for any diagnosis, then use the diagnosies [diagnosis] with earliest age of AgeAtDiagnosis [AgeAtDiagnosis].
             - 383CIRVHH2
     '''
     value_of_field_primary_met = series_of_clinical_molecular_linkage_data_for_patient["Primary/Met"].strip().lower()
     series_of_ages_at_diagnosis = data_frame_of_diagnosis_data_for_patient["AgeAtDiagnosis"].apply(lambda x: pd.NA if x == "Age Unknown/Not Recorded" else float(x))
     age_at_specimen_collection = pd.to_numeric(series_of_clinical_molecular_linkage_data_for_patient["Age At Specimen Collection"], errors = "raise")
-    mask_of_indicators_that_age_at_specimen_collection_is_within_90_days_after_ages_at_diagnosis = series_of_ages_at_diagnosis.apply(lambda age_at_diagnosis: are_within_90_days_after(age_at_specimen_collection, age_at_diagnosis) if pd.notna(age_at_diagnosis) else False)
+    
+    mask_of_indicators_that_age_at_specimen_collection_is_within_90_days_after_ages_at_diagnosis_or_within_1_day_prior_to_ages_at_diagnosis = series_of_ages_at_diagnosis.apply(lambda age_at_diagnosis: is_within_90_days_after(age_at_specimen_collection, age_at_diagnosis) or is_within_1_day_prior(age_at_specimen_collection, age_at_diagnosis) if pd.notna(age_at_diagnosis) else False)
+    
     mask_of_indicators_that_age_at_specimen_collection_is_greater_than_90_days_after_ages_at_diagnosis = series_of_ages_at_diagnosis.apply(lambda age_at_diagnosis: are_greater_than_90_days_after(age_at_specimen_collection, age_at_diagnosis) if pd.notna(age_at_diagnosis) else False)
     series_of_primary_diagnosis_sites = data_frame_of_diagnosis_data_for_patient["PrimaryDiagnosisSite"].str.lower()
     specimen_site_origin = str(series_of_clinical_molecular_linkage_data_for_patient["SpecimenSiteOfOrigin"]).lower()
@@ -370,12 +372,12 @@ def select_diagnosis_for_patient_in_C(
     
     if value_of_field_primary_met == "primary":
         
-        if mask_of_indicators_that_age_at_specimen_collection_is_within_90_days_after_ages_at_diagnosis.sum() == 1:
-            return data_frame_of_diagnosis_data_for_patient[mask_of_indicators_that_age_at_specimen_collection_is_within_90_days_after_ages_at_diagnosis].iloc[0]
+        if mask_of_indicators_that_age_at_specimen_collection_is_within_90_days_after_ages_at_diagnosis_or_within_1_day_prior_to_ages_at_diagnosis.sum() == 1:
+            return data_frame_of_diagnosis_data_for_patient[mask_of_indicators_that_age_at_specimen_collection_is_within_90_days_after_ages_at_diagnosis_or_within_1_day_prior_to_ages_at_diagnosis].iloc[0]
 
         unknown_age_exists = series_of_ages_at_diagnosis.isna().any()
         primary_diagnosis_sites_differ = series_of_primary_diagnosis_sites.nunique() > 1
-        if (mask_of_indicators_that_age_at_specimen_collection_is_within_90_days_after_ages_at_diagnosis.sum() > 1 or unknown_age_exists) and primary_diagnosis_sites_differ:
+        if (mask_of_indicators_that_age_at_specimen_collection_is_within_90_days_after_ages_at_diagnosis_or_within_1_day_prior_to_ages_at_diagnosis.sum() > 1 or unknown_age_exists) and primary_diagnosis_sites_differ:
             
             data_frame_of_diagnosis_data_for_patient_where_primary_diagnosis_sites_are_specimen_site_of_origin = data_frame_of_diagnosis_data_for_patient[mask_of_indicators_that_primary_diagnosis_sites_are_specimen_site_of_origin].copy()
             
@@ -417,32 +419,29 @@ def select_diagnosis_for_patient_in_C(
 
         if "lymph node" in specimen_site_of_collection:
             
-            if mask_of_indicators_that_age_at_specimen_collection_is_within_90_days_after_ages_at_diagnosis.sum() == 1:
+            if mask_of_indicators_that_age_at_specimen_collection_is_within_90_days_after_ages_at_diagnosis_or_within_1_day_prior_to_ages_at_diagnosis.sum() == 1:
                 
-                return data_frame_of_diagnosis_data_for_patient[mask_of_indicators_that_age_at_specimen_collection_is_within_90_days_after_ages_at_diagnosis].iloc[0]
+                return data_frame_of_diagnosis_data_for_patient[mask_of_indicators_that_age_at_specimen_collection_is_within_90_days_after_ages_at_diagnosis_or_within_1_day_prior_to_ages_at_diagnosis].iloc[0]
             
-            if mask_of_indicators_that_age_at_specimen_collection_is_within_90_days_after_ages_at_diagnosis.sum() > 1:
+            if mask_of_indicators_that_age_at_specimen_collection_is_within_90_days_after_ages_at_diagnosis_or_within_1_day_prior_to_ages_at_diagnosis.sum() > 1:
                 
-                mask_of_indicators_of_positives_nodes = ~data_frame_of_diagnosis_data_for_patient["PathNStage"].str.contains(
-                    "N0|Nx|unknown/not applicable|no tnm applicable for this site/histology combination",
+                mask_of_indicators_of_positive_nodes = ~data_frame_of_diagnosis_data_for_patient["PathNStage"].str.lower().str.contains(
+                    "n0|nx|unknown/not applicable|no tnm applicable for this site/histology combination|unknown/not reported",
                     case = False,
                     na = False
                 )
                 
-                if mask_of_indicators_of_positives_nodes.sum() == 1:
+                if mask_of_indicators_of_positive_nodes.sum() == 1:
                     
-                    return data_frame_of_diagnosis_data_for_patient[mask_of_indicators_of_positives_nodes].iloc[0]
+                    return data_frame_of_diagnosis_data_for_patient[mask_of_indicators_of_positive_nodes].iloc[0]
                
-            if mask_of_indicators_that_age_at_specimen_collection_is_greater_than_90_days_after_ages_at_diagnosis.all():
+            if not mask_of_indicators_that_age_at_specimen_collection_is_within_90_days_after_ages_at_diagnosis_or_within_1_day_prior_to_ages_at_diagnosis.any():
                 
                 if mask_of_indicators_that_primary_diagnosis_sites_are_specimen_site_of_origin.sum() == 1:
                     
-                    data_frame_of_diagnosis_data_for_patient_where_primary_diagnosis_sites_are_specimen_site_of_origin = data_frame_of_diagnosis_data_for_patient[mask_of_indicators_that_primary_diagnosis_sites_are_specimen_site_of_origin].copy()
-                    
-                    if not data_frame_of_diagnosis_data_for_patient_where_primary_diagnosis_sites_are_specimen_site_of_origin.empty:
+                    data_frame_of_diagnosis_data_for_patient_where_primary_diagnosis_sites_are_specimen_site_of_origin = data_frame_of_diagnosis_data_for_patient[mask_of_indicators_that_primary_diagnosis_sites_are_specimen_site_of_origin]
                         
-                        data_frame_of_diagnosis_data_for_patient_where_primary_diagnosis_sites_are_specimen_site_of_origin["_age"] = pd.to_numeric(data_frame_of_diagnosis_data_for_patient_where_primary_diagnosis_sites_are_specimen_site_of_origin["AgeAtDiagnosis"], errors = "raise")
-                        return data_frame_of_diagnosis_data_for_patient_where_primary_diagnosis_sites_are_specimen_site_of_origin.sort_values("_age", na_position = "last").iloc[0]
+                    return data_frame_of_diagnosis_data_for_patient_where_primary_diagnosis_sites_are_specimen_site_of_origin.iloc[0]
                     
                 if mask_of_indicators_that_primary_diagnosis_sites_are_specimen_site_of_origin.sum() == 0:
                     
@@ -458,11 +457,18 @@ def select_diagnosis_for_patient_in_C(
     return copy_of_data_frame_of_diagnosis_data_for_patient.sort_values("_age").iloc[0]
 
 
-def are_within_90_days_after(age_at_specimen_collection: float | None, age_at_diagnosis: float | None) -> bool:
+def is_within_90_days_after(age_at_specimen_collection: float | None, age_at_diagnosis: float | None) -> bool:
     if age_at_specimen_collection is None or age_at_diagnosis is None:
         return False
     difference = age_at_specimen_collection - age_at_diagnosis
     return 0 <= difference <= 90 / 365.25
+
+
+def is_within_1_day_prior(age_at_specimen_collection: float | None, age_at_diagnosis: float | None) -> bool:
+    if age_at_specimen_collection is None or age_at_diagnosis is None:
+        return False
+    difference = age_at_specimen_collection - age_at_diagnosis
+    return -1 / 365.25 <= difference <= 0
 
 
 def are_greater_than_90_days_after(age_at_specimen_collection: float | None, age_at_diagnosis: float | None) -> bool:
