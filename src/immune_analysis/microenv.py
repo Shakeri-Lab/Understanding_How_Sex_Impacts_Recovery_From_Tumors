@@ -138,14 +138,38 @@ def process_melanoma_immune_data(base_path, output_dir=None):
                 logger.error(f"Error loading map file: {e}")
                 return None
         
-        # Add PATIENT_ID to the immune data
-        immune_df['PATIENT_ID'] = immune_df.index.map(lambda x: sample_to_patient.get(x, None))
+        # ---------------------------------------------------------------------------
+        # Build a tidy "one row per tumour sample" data-frame from sample_details
+        # ---------------------------------------------------------------------------
+        sample_rows = (
+            pd.DataFrame.from_dict(sample_details, orient="index")
+              .rename_axis("SLID")        # make SLID an index label
+              .reset_index()              # turn it into an ordinary column
+              .rename(columns = {"patient_id": "PATIENT_ID"})
+        )
         
-        # Drop samples without a PATIENT_ID mapping
-        missing_mapping = immune_df['PATIENT_ID'].isna().sum()
-        if missing_mapping > 0:
-            logger.warning(f"Dropping {missing_mapping} samples without patient ID mapping")
-            immune_df = immune_df.dropna(subset=['PATIENT_ID'])
+        sample_rows = sample_rows.rename(columns={
+            "specimen_site": "SpecimenSite",
+            "procedure_type": "ProcedureType",
+            "is_confirmed_melanoma": "IsConfirmedMelanoma",
+            "histology_code": "HistologyCode",
+            "diagnosis_id": "DiagnosisID",
+        })
+
+        # Bring in any extra fields you want from clinical_data
+        clinical_cols = [
+            "PATIENT_ID", "Sex", "Race", "AgeAtClinicalRecordCreation",
+            "EarliestMelanomaDiagnosisAge", "HAS_ICB", "ICB_START_AGE",
+            "STAGE_AT_ICB"
+        ]
+        available = [c for c in clinical_cols if c in clinical_data.columns]
+
+        immune_clinical = (
+            sample_rows
+                .merge(clinical_data[available], on="PATIENT_ID", how="left")
+                .set_index("SLID")
+        )
+        logger.info("Per-sample data-frame shape: %s", immune_clinical.shape)
         
         # Merge clinical info with immune data
         clinical_cols = ['PATIENT_ID', 'Sex', 'Race', 'AgeAtClinicalRecordCreation', 
@@ -154,30 +178,6 @@ def process_melanoma_immune_data(base_path, output_dir=None):
         if len(available_cols) < len(clinical_cols):
             missing_cols = set(clinical_cols) - set(available_cols)
             logger.warning(f"Missing clinical columns: {missing_cols}")
-        
-        # Merge with clinical data
-        if available_cols:
-            try:
-                immune_clinical = pd.merge(immune_df, clinical_data[available_cols], on='PATIENT_ID', how='left')
-                logger.info(f"Merged dataframe shape: {immune_clinical.shape}")
-            except Exception as e:
-                logger.error(f"Error merging clinical data: {e}")
-                immune_clinical = immune_df.copy()
-        else:
-            logger.warning("No clinical columns available for merging")
-            immune_clinical = immune_df.copy()
-        
-        # Add biopsy information from sample_details dictionary
-        logger.info("Adding biopsy information from SURGERYBIOPSY_V4 to the analysis")
-        # New columns for biopsy information
-        immune_clinical['SpecimenSite'] = immune_clinical.index.map(
-            lambda x: sample_details.get(x, {}).get('specimen_site', None))
-        immune_clinical['ProcedureType'] = immune_clinical.index.map(
-            lambda x: sample_details.get(x, {}).get('procedure_type', None))
-        immune_clinical['IsConfirmedMelanoma'] = immune_clinical.index.map(
-            lambda x: sample_details.get(x, {}).get('is_confirmed_melanoma', None))
-        immune_clinical['HistologyCode'] = immune_clinical.index.map(
-            lambda x: sample_details.get(x, {}).get('histology_code', None))
         
         # Add metastatic status based on specimen site information
         # Define keywords that might indicate metastatic sites
