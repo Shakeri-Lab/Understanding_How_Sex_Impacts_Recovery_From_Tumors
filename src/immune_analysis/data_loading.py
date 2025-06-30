@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 def load_clinical_data(base_path):
     try:
         # Define file paths
-        norm_files_dir = os.path.join(base_path, "Clinical_Data/24PRJ217UVA_NormalizedFiles")
+        norm_files_dir = os.path.join(base_path, "../Clinical_Data/24PRJ217UVA_NormalizedFiles")
         diag_file = os.path.join(norm_files_dir, "24PRJ217UVA_20241112_Diagnosis_V4.csv")
         patient_file = os.path.join(norm_files_dir, "24PRJ217UVA_20241112_PatientMaster_V4.csv")
         
@@ -126,8 +126,8 @@ def identify_melanoma_samples(base_path, clinical_data):
     """
     try:
         # Define actual file paths
-        qc_file = os.path.join(base_path, "Manifest_and_QC_Files", "24PRJ217UVA_20250130_RNASeq_QCMetrics.csv")
-        biopsy_file = os.path.join(base_path, "Clinical_Data", "24PRJ217UVA_NormalizedFiles", "24PRJ217UVA_20241112_SurgeryBiopsy_V4.csv")
+        qc_file = os.path.join(base_path, "../Manifest_and_QC_Files", "24PRJ217UVA_20250130_RNASeq_QCMetrics.csv")
+        biopsy_file = os.path.join(base_path, "../Clinical_Data", "24PRJ217UVA_NormalizedFiles", "24PRJ217UVA_20241112_SurgeryBiopsy_V4.csv")
         
         # Log the file paths being used
         logger.info(f"QC file path: {qc_file}")

@@ -83,18 +83,15 @@ def process_melanoma_immune_data(base_path, output_dir=None):
     try:
         # Set default output directory
         if output_dir is None:
-            output_dir = os.path.join(base_path, "codes/output/melanoma_analysis")
+            output_dir = os.path.join(base_path, "output/microenv")
             
         # Create output directory if it doesn't exist
         os.makedirs(output_dir, exist_ok=True)
         
-        # Set up logging
-        log_file = os.path.join(output_dir, 'microenv_processing.log')
-        setup_logging(log_file)
-        
         # Load clinical data and ID mapping
-        map_file_path = os.path.join(output_dir, "sample_to_patient_map.csv")
-        clinical_file_path = os.path.join(output_dir, "melanoma_patients_with_sequencing.csv")
+        path_to_eda_output = os.path.join(base_path, "output/eda")
+        map_file_path = os.path.join(path_to_eda_output, "sample_to_patient_map.csv")
+        clinical_file_path = os.path.join(path_to_eda_output, "melanoma_patients_with_sequencing.csv")
         
         # Check if needed files exist
         for file_path in [map_file_path, clinical_file_path]:
@@ -295,9 +292,6 @@ def _clean_expression_df(df: pd.DataFrame) -> pd.DataFrame:
     df = df[~df.index.duplicated(keep="first")]          # drop duplicate symbols
     df = df.apply(pd.to_numeric, errors="coerce").fillna(0.0)
 
-    # write an intermediate file for debugging
-    df.to_csv("cleaned_expression_matrix.csv")
-
     return df
 
 
@@ -320,7 +314,7 @@ def run_xcell_analysis(expr_df: pd.DataFrame,
     """
     try:
         if output_dir is None:
-            output_dir = os.path.join(base_path, "output", "xcell")
+            output_dir = os.path.join(base_path, "output", "microenv")
         os.makedirs(output_dir, exist_ok=True)
 
         # ---------- 1 : tidy the matrix so xCell will recognise the genes -----
@@ -427,6 +421,8 @@ def main():
     base_path = "/project/orien/data/aws/24PRJ217UVA_IORIG/Understanding_How_Sex_Impacts_Recovery_From_Tumors"
     # Use the output file from data_loading.py as the input clinical data
     processed_clinical_file = os.path.join(base_path, "output/eda", "melanoma_patients_with_sequencing.csv")
+    
+    process_melanoma_immune_data(base_path)
 
     if not os.path.exists(processed_clinical_file):
         logger.error(f"Input clinical file not found: {processed_clinical_file}. Run data_loading.py first.")
@@ -441,8 +437,6 @@ def main():
         return
 
     # Run the analysis (which now includes R execution and file writing)
-    expr_matrix.to_csv("expression_matrix.csv", index = True)
-    clinical_data_processed.to_csv("clinical_data_processed.csv", index = True)
     success = run_xcell_analysis(expr_matrix, clinical_data_processed, base_path)
 
     if success:
