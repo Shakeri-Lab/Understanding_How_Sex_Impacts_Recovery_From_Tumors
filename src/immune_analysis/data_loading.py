@@ -501,7 +501,7 @@ def identify_melanoma_samples(base_path, clinical_data):
         melanoma_qc = qc_df[qc_df['PATIENT_ID'].isin(melanoma_patient_ids)]
         
         # Get SLIDs from QC data
-        melanoma_slids_from_qc = melanoma_qc['SLID'].unique().tolist()
+        melanoma_slids_from_qc = qc_first_slid['SLID_QC'].tolist()
         logger.info(f"Found {len(melanoma_slids_from_qc)} total RNA-seq SLIDs for melanoma patients.")
         
         # If we have biopsy information, prioritize samples with confirmed melanoma
@@ -616,7 +616,7 @@ if __name__ == "__main__":
     # Check if dataframes are valid and not empty before saving
     if expr_matrix is not None and not expr_matrix.empty and clinical_data is not None and not clinical_data.empty:
         logger.info("Saving filtered expression matrix and clinical data.")
-        expr_matrix.to_csv(os.path.join(output_dir, "melanoma_expression_matrix.csv"))
-        clinical_data.to_csv(os.path.join(output_dir, "melanoma_clinical_data.csv"))
+        expr_matrix.to_csv(os.path.join(output_dir, "melanoma_expression_matrix.csv"), index_label = "Ensembl ID")
+        clinical_data.to_csv(os.path.join(output_dir, "melanoma_clinical_data.csv"), index = False)
     else:
          logger.warning("Failed to generate or save output files due to errors in data loading or processing.")
