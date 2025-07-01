@@ -49,8 +49,114 @@ def load_clinical_data(base_path):
         # Log the number of melanoma patients found
         logger.info(f"Found {len(melanoma_diag)} melanoma patients with prefixes {melanoma_prefixes}")
         
-        # Merge with patient data        
-        clinical_data = melanoma_diag.merge(patient_df, on='PATIENT_ID', how='left')
+        # Merge with patient data
+        clinical_data = melanoma_diag.merge(
+            patient_df, on="PATIENT_ID", how="left"
+        )
+
+        # ────────────────────────────────────────────────────────────────
+        # ➊  IMMUNE-CHECKPOINT BLOCKADE (ICB) METADATA  ─────────────────
+        # ────────────────────────────────────────────────────────────────
+        #
+        # * source file:  24PRJ217UVA_20241112_Medications_V4.csv
+        # * goal:        per-patient HAS_ICB · ICB_START_AGE · STAGE_AT_ICB
+        #
+        med_file = os.path.join(
+            norm_files_dir, "24PRJ217UVA_20241112_Medications_V4.csv"
+        )
+        if os.path.exists(med_file):
+            med_df = pd.read_csv(med_file)
+
+            # --- 1. identify checkpoint-inhibitor rows -------------------
+            icb_agents = {
+                # PD-1
+                "Pembrolizumab",
+                "Nivolumab",
+                "Cemiplimab",
+                "Toripalimab",
+                "Sintilimab",
+                "Camrelizumab",
+                # PD-L1
+                "Atezolizumab",
+                "Durvalumab",
+                "Avelumab",
+                # CTLA-4
+                "Ipilimumab",
+                "Tremelimumab",
+                # combinations (key word match is fine)
+                "nivolumab + ipilimumab",
+            }
+
+            med_df["is_icb"] = med_df["Medication"].str.lower().isin(
+                {x.lower() for x in icb_agents}
+            )
+            icb_rows = med_df[med_df["is_icb"]].copy()
+
+            if not icb_rows.empty:
+                # safe numeric conversion of AgeAtMedStart
+                icb_rows["AgeAtMedStart_num"] = pd.to_numeric(
+                    icb_rows["AgeAtMedStart"], errors="coerce"
+                )
+
+
+                # ────────────────────────────────────────────────────────
+                #  1. ICB summary per patient  (HAS_ICB, ICB_START_AGE)
+                # ────────────────────────────────────────────────────────
+                icb_summary = (
+                    icb_rows.groupby("AvatarKey")
+                    .agg(
+                        HAS_ICB=("is_icb", "any"),
+                        ICB_START_AGE=("AgeAtMedStart_num", "min"),
+                    )
+                    .reset_index()
+                    .rename(columns={"AvatarKey": "PATIENT_ID"})
+                )
+
+                # ────────────────────────────────────────────────────────
+                #  2. Stage-at-ICB  — compare to Diagnosis rows
+                # ────────────────────────────────────────────────────────
+                stage_cols_diag = [
+                    c
+                    for c in ["PathGroupStage", "ClinGroupStage"]
+                    if c in diag_df.columns
+                ]
+                if "DiagnosisAge" in diag_df.columns and stage_cols_diag:
+                    diag_stage = (
+                        diag_df[["PATIENT_ID", "DiagnosisAge"] + stage_cols_diag]
+                        .dropna(subset=stage_cols_diag, how="all")
+                    )
+
+                    def _stage_at_icb(row):
+                        pid = row["PATIENT_ID"]
+                        icb_age = row["ICB_START_AGE"]
+                        if pd.isna(icb_age):
+                            return pd.NA
+                        cand = diag_stage[diag_stage["PATIENT_ID"] == pid]
+                        if cand.empty:
+                            return pd.NA
+                        cand = cand.assign(diff=(cand["DiagnosisAge"] - icb_age).abs())
+                        best = cand.sort_values("diff").iloc[0]
+                        # preference order: pathologic → clinical
+                        for c in ["PathGroupStage", "ClinGroupStage"]:
+                            if c in best and pd.notna(best[c]):
+                                return best[c]
+                        return pd.NA
+
+                    icb_summary["STAGE_AT_ICB"] = icb_summary.apply(
+                        _stage_at_icb, axis=1
+                    )
+                else:
+                    # no usable staging info available
+                    icb_summary["STAGE_AT_ICB"] = pd.NA
+
+
+                clinical_data = clinical_data.merge(
+                    icb_summary, on="PATIENT_ID", how="left"
+                )
+            else:
+                logger.info("No ICB medications found in Medications_V4.csv")
+        else:
+            logger.warning("Medications file not found at %s", med_file)
 
         # ────────────────────────────────────────────────────────────────
         # Enrich / guarantee columns needed downstream
@@ -83,6 +189,7 @@ def load_clinical_data(base_path):
         for col, default in icb_defaults.items():
             if col not in clinical_data.columns:
                 clinical_data[col] = default
+            clinical_data[col] = clinical_data[col].fillna(default)
 
         # Log for peace of mind
         logger.info(
@@ -95,6 +202,7 @@ def load_clinical_data(base_path):
     except Exception as e:
         logger.error(f"Error loading clinical data: {e}")
         return None
+    
 def load_rnaseq_data(base_path):
     try:
         rnaseq_path = os.path.join(base_path, "../RNAseq", "gene_and_transcript_expression_results")
