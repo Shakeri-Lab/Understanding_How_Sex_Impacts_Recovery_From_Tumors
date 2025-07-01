@@ -53,7 +53,7 @@ class ImmuneAnalysis:
         BASE_PATH = "/project/orien/data/aws/24PRJ217UVA_IORIG/Understanding_How_Sex_Impacts_Recovery_From_Tumors"
         # Set correct data path to the output of microenv.py
         if data_path is None:
-            data_path = os.path.join(BASE_PATH, "output/melanoma_analysis", "melanoma_sample_immune_clinical.csv") # Corrected path
+            data_path = os.path.join(BASE_PATH, "output/microenv", "melanoma_sample_immune_clinical.csv") # Corrected path
         
         # Load the data
         try:

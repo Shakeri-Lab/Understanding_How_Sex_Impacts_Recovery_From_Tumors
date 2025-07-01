@@ -10,6 +10,9 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 def load_clinical_data(base_path):
+    '''
+    This function is used by function `load_melanoma_data`.
+    '''
     try:
         # Define file paths
         norm_files_dir = os.path.join(base_path, "../Clinical_Data/24PRJ217UVA_NormalizedFiles")
@@ -17,16 +20,17 @@ def load_clinical_data(base_path):
         patient_file = os.path.join(norm_files_dir, "24PRJ217UVA_20241112_PatientMaster_V4.csv")
         
         # Load diagnosis and patient data
-        diag_df = pd.read_csv(diag_file).rename(columns={'AvatarKey': 'PATIENT_ID'})
-        
-        # ------------------------------------------------------------------
-        # ➊ Create a zero-based row index to serve as a synthetic DiagnosisID
-        # ------------------------------------------------------------------
         diag_df = pd.read_csv(diag_file)
-        diag_df.reset_index(drop=False, inplace=True)          # 0,1,2,…
-        diag_df.rename(columns={'index': 'DiagnosisID',
-                                'AvatarKey': 'PATIENT_ID'},    # keep the old rename
-                      inplace=True)
+        
+        # Create a zero-based row index to serve as a synthetic DiagnosisID
+        diag_df.reset_index(drop = False, inplace = True)
+        diag_df.rename(
+            columns = {
+                'index': 'DiagnosisID',
+                'AvatarKey': 'PATIENT_ID'
+            },
+            inplace = True
+        )
         
         if "AgeAtDiagnosis" in diag_df.columns:
             age_map = {
@@ -34,8 +38,6 @@ def load_clinical_data(base_path):
                 "Age Unknown/Not Recorded": np.nan
             }
             diag_df["AgeAtDiagnosis"] = diag_df["AgeAtDiagnosis"].replace(age_map).pipe(pd.to_numeric, errors = "raise")
-        
-        patient_df = pd.read_csv(patient_file).rename(columns={'AvatarKey': 'PATIENT_ID'})
         
         # Log total records
         logger.info(f"Total records in diagnosis dataframe: {len(diag_df)}")
@@ -47,6 +49,8 @@ def load_clinical_data(base_path):
         unique_codes = diag_df['HistologyCode'].unique()
         logger.info(f"Unique histology codes: {unique_codes}")
         
+        patient_df = pd.read_csv(patient_file).rename(columns = {'AvatarKey': 'PATIENT_ID'})
+        
         # Define melanoma histology code prefixes (based on log output)
         melanoma_prefixes = ['8720/', '8721/', '8742/', '8743/', '8744/', '8730/', '8745/', '8723/', '8740/', '8746/', '8771/', '8772/']
         
@@ -57,24 +61,16 @@ def load_clinical_data(base_path):
         logger.info(f"Found {len(melanoma_diag)} melanoma patients with prefixes {melanoma_prefixes}")
         
         # Merge with patient data
-        clinical_data = melanoma_diag.merge(
-            patient_df, on="PATIENT_ID", how="left"
-        )
+        clinical_data = melanoma_diag.merge(patient_df, on = "PATIENT_ID", how = "left")
 
-        # ────────────────────────────────────────────────────────────────
-        # ➊  IMMUNE-CHECKPOINT BLOCKADE (ICB) METADATA  ─────────────────
-        # ────────────────────────────────────────────────────────────────
-        #
-        # * source file:  24PRJ217UVA_20241112_Medications_V4.csv
-        # * goal:        per-patient HAS_ICB · ICB_START_AGE · STAGE_AT_ICB
-        #
+        # * goal:        per-patient HAS_ICB · ICB_START_AGE · STAGE_AT_ICB        
         med_file = os.path.join(
             norm_files_dir, "24PRJ217UVA_20241112_Medications_V4.csv"
         )
         if os.path.exists(med_file):
             med_df = pd.read_csv(med_file)
 
-            # --- 1. identify checkpoint-inhibitor rows -------------------
+            # 1. identify checkpoint-inhibitor rows
             icb_agents = {
                 # PD-1
                 "Pembrolizumab",
@@ -90,7 +86,7 @@ def load_clinical_data(base_path):
                 # CTLA-4
                 "Ipilimumab",
                 "Tremelimumab",
-                # combinations (key word match is fine)
+                # combinations
                 "nivolumab + ipilimumab",
             }
 
@@ -101,14 +97,12 @@ def load_clinical_data(base_path):
             logger.info(
                 "Medications rows flagged as ICB: %d (of %d total rows)",
                 len(icb_rows),
-                len(med_df),
+                len(med_df)
             )
 
             if not icb_rows.empty:
                 # safe numeric conversion of AgeAtMedStart
-                icb_rows["AgeAtMedStart_num"] = pd.to_numeric(
-                    icb_rows["AgeAtMedStart"], errors="coerce"
-                )
+                icb_rows["AgeAtMedStart_num"] = pd.to_numeric(icb_rows["AgeAtMedStart"], errors = "coerce")
 
 
                 # ────────────────────────────────────────────────────────
@@ -117,15 +111,15 @@ def load_clinical_data(base_path):
                 icb_summary = (
                     icb_rows.groupby("AvatarKey")
                     .agg(
-                        HAS_ICB=("is_icb", "any"),
-                        ICB_START_AGE=("AgeAtMedStart_num", "min"),
+                        HAS_ICB = ("is_icb", "any"),
+                        ICB_START_AGE = ("AgeAtMedStart_num", "min")
                     )
                     .reset_index()
-                    .rename(columns={"AvatarKey": "PATIENT_ID"})
+                    .rename(columns = {"AvatarKey": "PATIENT_ID"})
                 )
 
                 # ────────────────────────────────────────────────────────
-                #  2. Stage-at-ICB  — compare to Diagnosis rows
+                #  2. Stage-at-ICB — compare to Diagnosis rows
                 # ────────────────────────────────────────────────────────
                 stage_cols_diag = [
                     c
@@ -146,7 +140,7 @@ def load_clinical_data(base_path):
                         cand = diag_stage[diag_stage["PATIENT_ID"] == pid]
                         if cand.empty:
                             return pd.NA
-                        cand = cand.assign(diff=(cand["AgeAtDiagnosis"] - icb_age).abs())
+                        cand = cand.assign(diff = (cand["AgeAtDiagnosis"] - icb_age).abs())
                         best = cand.sort_values("diff").iloc[0]
                         # preference order: pathologic → clinical
                         for c in ["PathGroupStage", "ClinGroupStage"]:
@@ -154,17 +148,12 @@ def load_clinical_data(base_path):
                                 return best[c]
                         return pd.NA
 
-                    icb_summary["STAGE_AT_ICB"] = icb_summary.apply(
-                        _stage_at_icb, axis=1
-                    )
+                    icb_summary["STAGE_AT_ICB"] = icb_summary.apply(_stage_at_icb, axis = 1)
                 else:
                     # no usable staging info available
                     icb_summary["STAGE_AT_ICB"] = pd.NA
 
-
-                clinical_data = clinical_data.merge(
-                    icb_summary, on="PATIENT_ID", how="left"
-                )
+                clinical_data = clinical_data.merge(icb_summary, on = "PATIENT_ID", how = "left")
                 for col in ["HAS_ICB", "ICB_START_AGE", "STAGE_AT_ICB"]:
                     filled = clinical_data[col].notna().sum()
                     logger.info("%s non-null in clinical_data: %d", col, filled)
@@ -211,7 +200,7 @@ def load_clinical_data(base_path):
         icb_defaults = {
             "HAS_ICB": False,
             "ICB_START_AGE": np.nan,
-            "STAGE_AT_ICB": pd.NA,
+            "STAGE_AT_ICB": pd.NA
         }
         for col, default in icb_defaults.items():
             if col not in clinical_data.columns:
@@ -229,8 +218,12 @@ def load_clinical_data(base_path):
     except Exception as e:
         logger.error(f"Error loading clinical data: {e}")
         return None
-    
+
+
 def load_rnaseq_data(base_path):
+    '''
+    This function is used by function `load_melanoma_data`.
+    '''
     try:
         rnaseq_path = os.path.join(base_path, "../RNAseq", "gene_and_transcript_expression_results")
         expr_files = glob.glob(os.path.join(rnaseq_path, "*.genes.results"))
@@ -255,8 +248,12 @@ def load_rnaseq_data(base_path):
         print(f"Error loading RNA-Seq data: {e}")
         return None
 
+    
 def load_sample_to_patient_map(map_file_path):
-    """Loads the mapping from sample ID (SLID) to patient ID (PATIENT_ID)."""
+    '''
+    This function loads the mapping from sample ID (SLID) to patient ID (PATIENT_ID).
+    This function is used by function `load_melanoma_data`.
+    '''
     try:
         if not os.path.exists(map_file_path):
             logger.error(f"Sample-to-patient mapping file not found at: {map_file_path}")
@@ -291,10 +288,12 @@ def load_sample_to_patient_map(map_file_path):
         logger.error(f"Unexpected error loading sample-to-patient map: {e}")
         return {}
 
+
 def identify_melanoma_samples(base_path, clinical_data):
     """
     Identify melanoma tumor sample IDs (SLIDs) using clinical and QC data.
     Enhanced to use SURGERYBIOPSY_V4 data to clarify biopsy origins and filter samples.
+    This function is used by function `load_melanoma_data`.
     
     Parameters:
     -----------
@@ -328,8 +327,8 @@ def identify_melanoma_samples(base_path, clinical_data):
             return [], {}
         
         # Load dataframes
-        qc_df = pd.read_csv(qc_file).rename(columns={'ORIENAvatarKey': 'PATIENT_ID'})
-        biopsy_df = pd.read_csv(biopsy_file).rename(columns={'AvatarKey': 'PATIENT_ID'})
+        qc_df = pd.read_csv(qc_file).rename(columns = {'ORIENAvatarKey': 'PATIENT_ID'})
+        biopsy_df = pd.read_csv(biopsy_file).rename(columns = {'AvatarKey': 'PATIENT_ID'})
         
         # Log dataframe columns for debugging
         logger.info(f"QC dataframe columns: {qc_df.columns.tolist()}")
@@ -366,16 +365,16 @@ def identify_melanoma_samples(base_path, clinical_data):
                 Return the *first* Method-column header that contains “Yes” in
                 this row, or None if none of them do.
                 """
-                for col in method_cols:                      # csv-column order
+                for col in method_cols: # csv-column order
                     val = row[col]
                     if isinstance(val, str) and val.strip().lower() == "yes":
                         return col
                 return None
 
-            biopsy_df["ProcedureType"] = biopsy_df.apply(_first_yes_header, axis=1)
+            biopsy_df["ProcedureType"] = biopsy_df.apply(_first_yes_header, axis = 1)
 
         # Keep only melanoma-patient biopsies and give SpecimenSite a shorter
-        # name.  ProcedureType now comes along for free.
+        # name. ProcedureType now comes along for free.
         melanoma_biopsies = (
             biopsy_df[biopsy_df["PATIENT_ID"].isin(melanoma_patient_ids)]
             .copy()
@@ -390,11 +389,7 @@ def identify_melanoma_samples(base_path, clinical_data):
         
         # TODO: Evaluate keeping only first row in `24PRJ217UVA_20250130_RNASeq_QCMetrics.csv` per patient.
         
-        qc_first_slid = (qc_df
-                         .sort_values(['PATIENT_ID', 'SLID'])      # deterministic
-                         .drop_duplicates(subset='PATIENT_ID', keep='first')
-                         [['PATIENT_ID', 'SLID']]
-                         .rename(columns={'SLID': 'SLID_QC'}))
+        qc_first_slid = qc_df.sort_values(['PATIENT_ID', 'SLID']).drop_duplicates(subset='PATIENT_ID', keep='first')[['PATIENT_ID', 'SLID']].rename(columns={'SLID': 'SLID_QC'})
 
         # Merge onto the biopsy table
         melanoma_biopsies = melanoma_biopsies.merge(
@@ -552,7 +547,11 @@ def identify_melanoma_samples(base_path, clinical_data):
         logger.error(f"Error identifying melanoma samples: {e}", exc_info=True)
         return [], {}
 
+
 def load_melanoma_data(base_path, map_file_path):
+    '''
+    This function is used by the main block.
+    '''
     clinical_data = load_clinical_data(base_path)
     if clinical_data is None:
         return None, None
@@ -601,11 +600,11 @@ def load_melanoma_data(base_path, map_file_path):
     
     return expr_matrix_filtered, clinical_data_filtered
 
+
 if __name__ == "__main__":
-    base_path = "/project/orien/data/aws/24PRJ217UVA_IORIG"
-    # Ensure the map_file_path is correct
-    map_file_path = os.path.join(base_path, "codes/output/sample_to_patient_map.csv") 
-    output_dir = os.path.join(base_path, "codes/output")
+    base_path = "/project/orien/data/aws/24PRJ217UVA_IORIG/Understanding_How_Sex_Impacts_Recovery_From_Tumors"
+    map_file_path = os.path.join(base_path, "output/eda/sample_to_patient_map.csv") 
+    output_dir = os.path.join(base_path, "output/data_loading")
     
     # Create output directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
