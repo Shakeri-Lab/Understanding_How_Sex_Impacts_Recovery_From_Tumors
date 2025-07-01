@@ -162,7 +162,7 @@ def identify_melanoma_samples(base_path, clinical_data):
         sample_details = {}
         
         # First get all biopsies for melanoma patients from SURGERYBIOPSY_V4
-        melanoma_biopsies = biopsy_df[biopsy_df['PATIENT_ID'].isin(melanoma_patient_ids)].copy()
+        melanoma_biopsies = biopsy_df[biopsy_df['PATIENT_ID'].isin(melanoma_patient_ids)].copy().rename(columns = {"SurgeryBiopsyLocation": "SpecimenSite"})
         logger.info(f"Found {len(melanoma_biopsies)} total biopsies for melanoma patients.")
         
         # -------------------------------------------------------------------------
