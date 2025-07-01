@@ -28,6 +28,13 @@ def load_clinical_data(base_path):
                                 'AvatarKey': 'PATIENT_ID'},    # keep the old rename
                       inplace=True)
         
+        if "AgeAtDiagnosis" in diag_df.columns:
+            age_map = {
+                "Age 90 or older": 90.0,
+                "Age Unknown/Not Recorded": np.nan
+            }
+            diag_df["AgeAtDiagnosis"] = diag_df["AgeAtDiagnosis"].replace(age_map).pipe(pd.to_numeric, errors = "raise")
+        
         patient_df = pd.read_csv(patient_file).rename(columns={'AvatarKey': 'PATIENT_ID'})
         
         # Log total records
@@ -91,6 +98,11 @@ def load_clinical_data(base_path):
                 {x.lower() for x in icb_agents}
             )
             icb_rows = med_df[med_df["is_icb"]].copy()
+            logger.info(
+                "Medications rows flagged as ICB: %d (of %d total rows)",
+                len(icb_rows),
+                len(med_df),
+            )
 
             if not icb_rows.empty:
                 # safe numeric conversion of AgeAtMedStart
@@ -120,9 +132,9 @@ def load_clinical_data(base_path):
                     for c in ["PathGroupStage", "ClinGroupStage"]
                     if c in diag_df.columns
                 ]
-                if "DiagnosisAge" in diag_df.columns and stage_cols_diag:
+                if "AgeAtDiagnosis" in diag_df.columns and stage_cols_diag:
                     diag_stage = (
-                        diag_df[["PATIENT_ID", "DiagnosisAge"] + stage_cols_diag]
+                        diag_df[["PATIENT_ID", "AgeAtDiagnosis"] + stage_cols_diag]
                         .dropna(subset=stage_cols_diag, how="all")
                     )
 
@@ -134,7 +146,7 @@ def load_clinical_data(base_path):
                         cand = diag_stage[diag_stage["PATIENT_ID"] == pid]
                         if cand.empty:
                             return pd.NA
-                        cand = cand.assign(diff=(cand["DiagnosisAge"] - icb_age).abs())
+                        cand = cand.assign(diff=(cand["AgeAtDiagnosis"] - icb_age).abs())
                         best = cand.sort_values("diff").iloc[0]
                         # preference order: pathologic → clinical
                         for c in ["PathGroupStage", "ClinGroupStage"]:
@@ -153,6 +165,15 @@ def load_clinical_data(base_path):
                 clinical_data = clinical_data.merge(
                     icb_summary, on="PATIENT_ID", how="left"
                 )
+                for col in ["HAS_ICB", "ICB_START_AGE", "STAGE_AT_ICB"]:
+                    filled = clinical_data[col].notna().sum()
+                    logger.info("%s non-null in clinical_data: %d", col, filled)
+
+                # Quick peek at unusual blanks
+                blank_stage = clinical_data[clinical_data["HAS_ICB"] & clinical_data["STAGE_AT_ICB"].isna()]
+                if not blank_stage.empty:
+                    logger.debug("Patients with HAS_ICB=True but missing STAGE_AT_ICB:\n%s", 
+                                 blank_stage[["PATIENT_ID", "ICB_START_AGE"]].head())
             else:
                 logger.info("No ICB medications found in Medications_V4.csv")
         else:
@@ -163,17 +184,23 @@ def load_clinical_data(base_path):
         # ────────────────────────────────────────────────────────────────
 
         # 1)  Earliest age at melanoma diagnosis  ───────────────────────
-        if "DiagnosisAge" in melanoma_diag.columns:
+        if "AgeAtDiagnosis" in melanoma_diag.columns:
             earliest_age = (
-                melanoma_diag[["PATIENT_ID", "DiagnosisAge"]]
+                melanoma_diag[["PATIENT_ID", "AgeAtDiagnosis"]]
                 .dropna()
-                .groupby("PATIENT_ID", as_index=False)["DiagnosisAge"]
+                .groupby("PATIENT_ID", as_index=False)["AgeAtDiagnosis"]
                 .min()
-                .rename(columns={"DiagnosisAge": "EarliestMelanomaDiagnosisAge"})
+                .rename(columns={"AgeAtDiagnosis": "EarliestMelanomaDiagnosisAge"})
             )
             clinical_data = clinical_data.merge(earliest_age, on="PATIENT_ID", how="left")
         else:
             clinical_data["EarliestMelanomaDiagnosisAge"] = np.nan
+            
+        non_null_age = clinical_data["EarliestMelanomaDiagnosisAge"].notna().sum()
+        logger.info(
+            "EarliestMelanomaDiagnosisAge populated for "
+            f"{non_null_age}/{clinical_data['PATIENT_ID'].nunique()} patients"
+        )
 
         # 2)  ICB-related placeholders  ─────────────────────────────────
         #
@@ -440,7 +467,7 @@ def identify_melanoma_samples(base_path, clinical_data):
                         diagnosis_map[row['DiagnosisID']] = {
                             'HistologyCode': row.get('HistologyCode', ''),
                             'PrimaryDiagnosisSite': row.get('PrimaryDiagnosisSite', ''),
-                            'DiagnosisAge': row.get('DiagnosisAge', None)
+                            'AgeAtDiagnosis': row.get('AgeAtDiagnosis', None)
                         }
             
             # Match diagnosis information to biopsies

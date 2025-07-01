@@ -200,6 +200,34 @@ def process_melanoma_immune_data(base_path, output_dir=None):
         logger.info(f"Metastatic samples: {(immune_clinical['IsMetastatic'] == True).sum()}")
         logger.info(f"Primary samples: {(immune_clinical['IsMetastatic'] == False).sum()}")
         
+        age_non_null   = immune_clinical["EarliestMelanomaDiagnosisAge"].notna().sum()
+        stage_non_null = immune_clinical["STAGE_AT_ICB"].notna().sum()
+
+        logger.info(
+            "EarliestMelanomaDiagnosisAge populated for %d/%d samples "
+            " (unique patients: %d)",
+            age_non_null,
+            len(immune_clinical),
+            immune_clinical["PATIENT_ID"].nunique(),
+        )
+        logger.info(
+            "STAGE_AT_ICB populated for %d/%d samples", stage_non_null, len(immune_clinical)
+        )
+
+        # Dump the first few problematic rows when expected data are missing
+        if stage_non_null == 0:
+            logger.debug(
+                "First 5 rows lacking STAGE_AT_ICB:\n%s",
+                immune_clinical[["PATIENT_ID", "ICB_START_AGE"]].head(),
+            )
+            
+        logger.debug(
+            "Column completeness just before write:\n%s",
+            immune_clinical[
+                ["EarliestMelanomaDiagnosisAge", "STAGE_AT_ICB"]
+            ].isna().mean().rename(lambda x: f"{x}_null_fraction"),
+        )
+        
         # Save processed data
         output_file = os.path.join(output_dir, "melanoma_sample_immune_clinical.csv")
         immune_clinical.to_csv(output_file)
