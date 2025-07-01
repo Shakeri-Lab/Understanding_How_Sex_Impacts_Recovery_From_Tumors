@@ -16,6 +16,16 @@ def load_clinical_data(base_path):
         
         # Load diagnosis and patient data
         diag_df = pd.read_csv(diag_file).rename(columns={'AvatarKey': 'PATIENT_ID'})
+        
+        # ------------------------------------------------------------------
+        # ➊ Create a zero-based row index to serve as a synthetic DiagnosisID
+        # ------------------------------------------------------------------
+        diag_df = pd.read_csv(diag_file)
+        diag_df.reset_index(drop=False, inplace=True)          # 0,1,2,…
+        diag_df.rename(columns={'index': 'DiagnosisID',
+                                'AvatarKey': 'PATIENT_ID'},    # keep the old rename
+                      inplace=True)
+        
         patient_df = pd.read_csv(patient_file).rename(columns={'AvatarKey': 'PATIENT_ID'})
         
         # Log total records
@@ -195,6 +205,35 @@ def identify_melanoma_samples(base_path, clinical_data):
         else:
             melanoma_biopsies.rename(columns={'SLID_QC': 'SLID'}, inplace=True)
 
+        # ------------------------------------------------------------------
+        # Attach DiagnosisID (row index) to every biopsy for the same patient
+        # ------------------------------------------------------------------
+        
+        # TODO: Evaluate keeping only first row in `24PRJ217UVA_20241112_Diagnosis_V4.csv` per patient.
+        
+        diag_file_path = os.path.join(
+            base_path,
+            "../Clinical_Data/24PRJ217UVA_NormalizedFiles",
+            "24PRJ217UVA_20241112_Diagnosis_V4.csv",
+        )
+
+        if os.path.exists(diag_file_path):
+            diag_idx_df = (pd.read_csv(diag_file_path)
+                             .reset_index(drop=False)                # make 0-based idx
+                             .rename(columns={'index': 'DiagnosisID',
+                                              'AvatarKey': 'PATIENT_ID'})
+                             .drop_duplicates(subset='PATIENT_ID', keep='first')  # one per patient
+                             [['PATIENT_ID', 'DiagnosisID']])
+
+            melanoma_biopsies = melanoma_biopsies.merge(
+                diag_idx_df,
+                on='PATIENT_ID',
+                how='left',
+                validate='m:1'          # many biopsies ↔︎ one diagnosis row
+            )
+        else:
+            logger.warning(f"Diagnosis file not found at: {diag_file_path}")
+            melanoma_biopsies['DiagnosisID'] = None   # keep column for downstream code
         
         # Check if relevant columns exist in the biopsy data
         relevant_cols = ['PATIENT_ID', 'SLID', 'SpecimenSite', 'DiagnosisID', 'ProcedureType']
