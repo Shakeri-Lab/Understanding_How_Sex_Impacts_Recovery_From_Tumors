@@ -171,8 +171,37 @@ def identify_melanoma_samples(base_path, clinical_data):
         # Initialize dictionary to store detailed sample information
         sample_details = {}
         
-        # First get all biopsies for melanoma patients from SURGERYBIOPSY_V4
-        melanoma_biopsies = biopsy_df[biopsy_df['PATIENT_ID'].isin(melanoma_patient_ids)].copy().rename(columns = {"SurgeryBiopsyLocation": "SpecimenSite"})
+        # ──────────────────────────────────────────────────────────────────
+        # NEW ► Derive the procedure used for each biopsy
+        # ──────────────────────────────────────────────────────────────────
+        # Any column whose header starts with “Method” describes a possible
+        # procedure (e.g. MethodExcisional = “Yes”, MethodPunch = “Yes”, …)
+        method_cols = [c for c in biopsy_df.columns if c.startswith("Method")]
+
+        if not method_cols:
+            logger.warning("No columns beginning with 'Method' were found in the biopsy file.")
+            biopsy_df["ProcedureType"] = None
+        else:
+            def _first_yes_header(row):
+                """
+                Return the *first* Method-column header that contains “Yes” in
+                this row, or None if none of them do.
+                """
+                for col in method_cols:                      # csv-column order
+                    val = row[col]
+                    if isinstance(val, str) and val.strip().lower() == "yes":
+                        return col
+                return None
+
+            biopsy_df["ProcedureType"] = biopsy_df.apply(_first_yes_header, axis=1)
+
+        # Keep only melanoma-patient biopsies and give SpecimenSite a shorter
+        # name.  ProcedureType now comes along for free.
+        melanoma_biopsies = (
+            biopsy_df[biopsy_df["PATIENT_ID"].isin(melanoma_patient_ids)]
+            .copy()
+            .rename(columns={"SurgeryBiopsyLocation": "SpecimenSite"})
+        )
         logger.info(f"Found {len(melanoma_biopsies)} total biopsies for melanoma patients.")
         
         # -------------------------------------------------------------------------
