@@ -165,6 +165,37 @@ def identify_melanoma_samples(base_path, clinical_data):
         melanoma_biopsies = biopsy_df[biopsy_df['PATIENT_ID'].isin(melanoma_patient_ids)].copy()
         logger.info(f"Found {len(melanoma_biopsies)} total biopsies for melanoma patients.")
         
+        # -------------------------------------------------------------------------
+        # Attach exactly one SLID per patient from the QC metrics file
+        # -------------------------------------------------------------------------
+        # Keep only the first QC row per patient (arbitrary; sorted for stability)
+        
+        # TODO: Evaluate keeping only first row in `24PRJ217UVA_20250130_RNASeq_QCMetrics.csv` per patient.
+        
+        qc_first_slid = (qc_df
+                         .sort_values(['PATIENT_ID', 'SLID'])      # deterministic
+                         .drop_duplicates(subset='PATIENT_ID', keep='first')
+                         [['PATIENT_ID', 'SLID']]
+                         .rename(columns={'SLID': 'SLID_QC'}))
+
+        # Merge onto the biopsy table
+        melanoma_biopsies = melanoma_biopsies.merge(
+            qc_first_slid,
+            on='PATIENT_ID',
+            how='left',
+            validate='m:1'   # many biopsies ↔︎ one QC-row
+        )
+
+        # If the biopsy already had an SLID, keep it; otherwise fill from QC
+        if 'SLID' in melanoma_biopsies.columns:
+            melanoma_biopsies['SLID'] = melanoma_biopsies['SLID'].fillna(
+                melanoma_biopsies['SLID_QC']
+            )
+            melanoma_biopsies.drop(columns=['SLID_QC'], inplace=True)
+        else:
+            melanoma_biopsies.rename(columns={'SLID_QC': 'SLID'}, inplace=True)
+
+        
         # Check if relevant columns exist in the biopsy data
         relevant_cols = ['PATIENT_ID', 'SLID', 'SpecimenSite', 'DiagnosisID', 'ProcedureType']
         missing_cols = [col for col in relevant_cols if col not in melanoma_biopsies.columns]
