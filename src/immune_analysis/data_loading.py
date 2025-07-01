@@ -1,7 +1,9 @@
+import glob  # Added to resolve NameError
+import logging
+import numpy as np
 import os
 import pandas as pd
-import logging
-import glob  # Added to resolve NameError
+
 
 # Configure logging to help debug
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -47,8 +49,47 @@ def load_clinical_data(base_path):
         # Log the number of melanoma patients found
         logger.info(f"Found {len(melanoma_diag)} melanoma patients with prefixes {melanoma_prefixes}")
         
-        # Merge with patient data
+        # Merge with patient data        
         clinical_data = melanoma_diag.merge(patient_df, on='PATIENT_ID', how='left')
+
+        # ────────────────────────────────────────────────────────────────
+        # Enrich / guarantee columns needed downstream
+        # ────────────────────────────────────────────────────────────────
+
+        # 1)  Earliest age at melanoma diagnosis  ───────────────────────
+        if "DiagnosisAge" in melanoma_diag.columns:
+            earliest_age = (
+                melanoma_diag[["PATIENT_ID", "DiagnosisAge"]]
+                .dropna()
+                .groupby("PATIENT_ID", as_index=False)["DiagnosisAge"]
+                .min()
+                .rename(columns={"DiagnosisAge": "EarliestMelanomaDiagnosisAge"})
+            )
+            clinical_data = clinical_data.merge(earliest_age, on="PATIENT_ID", how="left")
+        else:
+            clinical_data["EarliestMelanomaDiagnosisAge"] = np.nan
+
+        # 2)  ICB-related placeholders  ─────────────────────────────────
+        #
+        #     • HAS_ICB      :   Boolean – any record of ICB?  (default False)
+        #     • ICB_START_AGE:   Age at first ICB dose         (default NaN)
+        #     • STAGE_AT_ICB :   Stage when ICB started        (default <NA>)
+        #
+        icb_defaults = {
+            "HAS_ICB": False,
+            "ICB_START_AGE": np.nan,
+            "STAGE_AT_ICB": pd.NA,
+        }
+        for col, default in icb_defaults.items():
+            if col not in clinical_data.columns:
+                clinical_data[col] = default
+
+        # Log for peace of mind
+        logger.info(
+            "Final clinical_data columns: %s",
+            ", ".join(sorted(clinical_data.columns.tolist())),
+        )
+        
         logger.info(f"Loaded clinical data with {len(clinical_data)} melanoma patients.")
         return clinical_data
     except Exception as e:
@@ -182,6 +223,9 @@ def identify_melanoma_samples(base_path, clinical_data):
             logger.warning("No columns beginning with 'Method' were found in the biopsy file.")
             biopsy_df["ProcedureType"] = None
         else:
+            
+            # TODO: Evaluate keeping only first header in `24PRJ217UVA_20241112_SurgeryBiopsy_V4.csv` per row.
+            
             def _first_yes_header(row):
                 """
                 Return the *first* Method-column header that contains “Yes” in

@@ -172,8 +172,6 @@ def process_melanoma_immune_data(base_path, output_dir=None):
         logger.info("Per-sample data-frame shape: %s", immune_clinical.shape)
         
         # Merge clinical info with immune data
-        clinical_cols = ['PATIENT_ID', 'Sex', 'Race', 'AgeAtClinicalRecordCreation', 
-                        'EarliestMelanomaDiagnosisAge', 'HAS_ICB', 'ICB_START_AGE', 'STAGE_AT_ICB']
         available_cols = [col for col in clinical_cols if col in clinical_data.columns]
         if len(available_cols) < len(clinical_cols):
             missing_cols = set(clinical_cols) - set(available_cols)
