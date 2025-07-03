@@ -17,6 +17,9 @@ def assert_that_are_equal_images(path_1: str, path_2: str) -> None:
         assert difference.getbbox() is None, "Images differ."
 
 
+# src/data_processing/utils.py doesn't have any outputs.
+
+
 def test_that_outputs_of_EDA_are_equal() -> bool:
     data_frame_of_melanoma_patient_and_sequencing_data = pd.read_csv("output/eda/melanoma_patients_with_sequencing.csv")
     data_frame_of_melanoma_patient_and_sequencing_data_for_comparison = pd.read_csv("output/eda/melanoma_patients_with_sequencing_for_comparison.csv")

@@ -4,469 +4,430 @@ conda activate ici_sex
 ./miniconda3/envs/ici_sex/bin/python -m src.immune_analysis.microenv
 '''
 
-import pandas as pd
-import numpy as np
-import os
-import glob
-import logging
+from rpy2.rinterface import NULLType
+from pathlib import Path
 from datetime import datetime
-import rpy2.robjects as ro
-from rpy2.robjects import numpy2ri, pandas2ri
+import glob
 from rpy2.robjects.packages import importr
 from rpy2.robjects.conversion import localconverter
+import logging
+import numpy as np
+from rpy2.robjects import numpy2ri, pandas2ri
+import os
+import pandas as pd
+import rpy2.robjects as ro
+from rpy2.robjects.vectors import StrVector
 import traceback
 
-# Import necessary function from data_loading
-from src.immune_analysis.data_loading import load_rnaseq_data, identify_melanoma_samples, load_melanoma_data
+from src.immune_analysis.data_loading import identify_melanoma_samples, load_melanoma_data, load_rnaseq_data
 
-# Setup logging
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Activate converters for rpy2
+
+# Activate converters for rpy2.
 numpy2ri.activate()
 pandas2ri.activate()
 
-# Define the standard xCell cell types/scores in their typical output order
-# Corrected 67 items list including Keratinocytes and Hepatocytes (kept for reference)
-XCELL_CELL_TYPES_ORDERED = [
-     'Adipocytes', 'Astrocytes', 'B-cells', 'Basophils', 'CD4+ memory T-cells',
-     'CD4+ naive T-cells', 'CD4+ T-cells', 'CD4+ Tcm', 'CD4+ Tem', 'CD8+ naive T-cells',
-     'CD8+ T-cells', 'CD8+ Tcm', 'CD8+ Tem', 'Chondrocytes', 'Class-switched memory B-cells',
-     'CLP', 'CMP', 'cDC', 'DC', 'Endothelial cells', 'Eosinophils', 'Epithelial cells',
-     'Erythrocytes', 'Fibroblasts', 'GMP', 'HSC', 'iDC', 'Keratinocytes',  # Added
-     'ly Endothelial cells', 'Macrophages', 'Macrophages M1', 'Macrophages M2', 
-     'Mast cells', 'Megakaryocytes', 'Memory B-cells', 'MEP', 'Mesangial cells', 
-     'Monocytes', 'MPP', 'mv Endothelial cells', 'naive B-cells', 'Neutrophils', 
-     'NK cells', 'NKT', 'Osteoblast', 'pDC', 'Pericytes', 'Plasma cells', 'Platelets', 
-     'Preadipocytes', 'pro B-cells', 'Sebocytes', 'Skeletal muscle', 'Smooth muscle', 
-     'Tgd cells', 'Th1 cells', 'Th2 cells', 'Tregs', 'aDC', 'Neurons', 'Hepatocytes',  # Added
-     'MSC', 'common myeloid progenitor', 'melanocyte', 'ImmuneScore', 'StromaScore', 
-     'MicroenvironmentScore'
-]  # Now 67 items
 
-# Define the Focused Panel for ICB Response Analysis (14 items)
+PATH_OF_ROOT = Path("/project/orien/data/aws/24PRJ217UVA_IORIG/Understanding_How_Sex_Impacts_Recovery_From_Tumors")
+PATH_OF_OUTPUTS = PATH_OF_ROOT / "output/microenv"
+
+FILENAME_OF_MAP_FROM_SAMPLE_TO_PATIENT = PATH_OF_ROOT / "output/eda/sample_to_patient_map.csv"
+FILENAME_OF_DATA_FRAME_OF_MELANOMA_PATIENT_AND_SEQUENCING_DATA = PATH_OF_ROOT / "output/eda/melanoma_patients_with_sequencing.csv"
+FILENAME_OF_MELANOMA_SAMPLE_IMMUNE_CLINICAL_DATA = PATH_OF_OUTPUTS / "melanoma_sample_immune_clinical.csv"
+FILENAME_OF_MAP_OF_BIOPSY_LOCATIONS_TO_COUNTS = PATH_OF_OUTPUTS / "specimen_site_summary.csv"
+FILENAME_OF_MAP_OF_PROCEDURE_TYPES_TO_COUNTS = PATH_OF_OUTPUTS / "procedure_type_summary.csv"
+FILENAME_OF_MAP_OF_INDICATORS_OF_WHETHER_SPECIMENS_ARE_PART_OF_METASTATIC_DISEASE_TO_COUNTS = PATH_OF_OUTPUTS / "metastatic_status_summary.csv"
+FILENAME_OF_DATA_FRAME_OF_SCORES_BY_SAMPLE_AND_CELL_TYPE = PATH_OF_OUTPUTS / "xcell_scores_raw.csv"
+FILENAME_OF_FOCUSED_DATA_FRAME_OF_SCORES_BY_SAMPLE_AND_CELL_TYPE = PATH_OF_OUTPUTS / "xcell_scores_focused_panel.csv"
+
+# Define a list of standard xCell cell types in their typical output order.
+XCELL_CELL_TYPES_ORDERED = [
+    'Adipocytes', 'Astrocytes', 'B-cells', 'Basophils', 'CD4+ memory T-cells',
+    'CD4+ naive T-cells', 'CD4+ T-cells', 'CD4+ Tcm', 'CD4+ Tem', 'CD8+ naive T-cells',
+    'CD8+ T-cells', 'CD8+ Tcm', 'CD8+ Tem', 'Chondrocytes', 'Class-switched memory B-cells',
+    'CLP', 'CMP', 'cDC', 'DC', 'Endothelial cells',
+    'Eosinophils', 'Epithelial cells', 'Erythrocytes', 'Fibroblasts', 'GMP',
+    'HSC', 'iDC', 'Keratinocytes', 'ly Endothelial cells', 'Macrophages',
+    'Macrophages M1', 'Macrophages M2', 'Mast cells', 'Megakaryocytes', 'Memory B-cells',
+    'MEP', 'Mesangial cells', 'Monocytes', 'MPP', 'mv Endothelial cells',
+    'naive B-cells', 'Neutrophils', 'NK cells', 'NKT', 'Osteoblast',
+    'pDC', 'Pericytes', 'Plasma cells', 'Platelets', 'Preadipocytes',
+    'pro B-cells', 'Sebocytes', 'Skeletal muscle', 'Smooth muscle', 'Tgd cells',
+    'Th1 cells', 'Th2 cells', 'Tregs', 'aDC', 'Neurons',
+    'Hepatocytes', 'MSC', 'common myeloid progenitor', 'melanocyte', 'ImmuneScore',
+    'StromaScore', 'MicroenvironmentScore'
+]
+
+# Define a list of columns for a focused panel for ICB response analysis.
 FOCUSED_XCELL_PANEL = [
     'CD8+ T-cells',
-    'CD4+ memory T-cells', # Assuming this covers general helper/memory
-    'Tgd cells', 
+    'CD4+ memory T-cells',
+    'Tgd cells',
     'Macrophages M2',
     'Tregs',
     'cDC',
     'pDC',
     'Memory B-cells',
     'Plasma cells',
-    'Endothelial cells', # For covariate analysis
-    'Fibroblasts', # For covariate analysis
+    'Endothelial cells',
+    'Fibroblasts',
     'ImmuneScore',
-    'StromaScore', # For covariate analysis
+    'StromaScore',
     'MicroenvironmentScore'
 ]
 
-def process_melanoma_immune_data(base_path, output_dir=None):
+def process_melanoma_immune_data():
     """
-    Process melanoma RNA-seq data to extract immune microenvironment information.
-    Enhanced to utilize SURGERYBIOPSY_V4 table to determine biopsy origins.
-    
-    Parameters:
-    -----------
-    base_path : str
-        Base path to the project directory
-    output_dir : str, optional
-        Directory to save the output files, default is to create a directory in base_path
+    Process melanoma RNA sequencing data to extract immune Micro-Environment information.
+    TODO: What is immune Micro-Environment information?
         
     Returns:
     --------
-    pd.DataFrame
-        Dataframe with melanoma samples and immune features
+    immune_clinical: pd.DataFrame -- data frame with melanoma samples and immune features
+    TODO: Describe the data frame with melanoma samples and immune features.
     """
-    try:
-        # Set default output directory
-        if output_dir is None:
-            output_dir = os.path.join(base_path, "output/microenv")
-            
-        # Create output directory if it doesn't exist
-        os.makedirs(output_dir, exist_ok=True)
-        
-        # Load clinical data and ID mapping
-        path_to_eda_output = os.path.join(base_path, "output/eda")
-        map_file_path = os.path.join(path_to_eda_output, "sample_to_patient_map.csv")
-        clinical_file_path = os.path.join(path_to_eda_output, "melanoma_patients_with_sequencing.csv")
-        
-        # Check if needed files exist
-        for file_path in [map_file_path, clinical_file_path]:
-            if not os.path.exists(file_path):
-                logger.error(f"Required file not found: {file_path}")
-                return None
-        
-        # Load RNA-seq data for melanoma samples using the enhanced identify_melanoma_samples function
-        # which now returns sample details alongside the list of SLIDs
-        immune_df, clinical_data = load_melanoma_data()
-        if immune_df is None or clinical_data is None:
-            logger.error("Failed to load immune or clinical data.")
+
+    os.makedirs(PATH_OF_OUTPUTS, exist_ok = True)
+    
+    for file_path in [FILENAME_OF_MAP_FROM_SAMPLE_TO_PATIENT, FILENAME_OF_DATA_FRAME_OF_MELANOMA_PATIENT_AND_SEQUENCING_DATA]:
+        if not os.path.exists(file_path):
+            logger.error(f"Required file not found: {file_path}")
             return None
+
+    immune_df, clinical_data = load_melanoma_data()
+    
+    if immune_df is None or clinical_data is None:
+        logger.error("Failed to load immune or clinical data.")
+        return None
+
+    logger.info("Sample details will be collected.")
+    
+    melanoma_slids, sample_details = identify_melanoma_samples(clinical_data)
+    
+    logger.info(f"Sample details for {len(sample_details)} samples were retrieved.")
+
+    logger.info(f"The shape of the immune dataframe is {immune_df.shape}.")
+    logger.info(f"A sublist of the list of columns of the immune dataframe is [{immune_df.columns[:5]}...].")
+
+    # Add patient IDs and clinical information to immune data.
+    sample_to_patient = {}
+    for slid, details in sample_details.items():
+        if "patient_id" in details:
+            sample_to_patient[slid] = details["patient_id"]
+
+    if not sample_to_patient:
         
-        # Get the sample details that were returned by identify_melanoma_samples
-        try:
-            logger.info("Attempting to access enhanced sample details")
-            melanoma_slids, sample_details = identify_melanoma_samples(clinical_data)
-            logger.info(f"Successfully retrieved enhanced sample details for {len(sample_details)} samples")
-        except Exception as e:
-            logger.error(f"Failed to retrieve enhanced sample details: {e}")
-            sample_details = {}
-            
-        # Get the columns in the immune dataframe
-        logger.info(f"Immune dataframe shape: {immune_df.shape}")
-        logger.info(f"Immune dataframe columns: {immune_df.columns[:5]}...")
+        logger.warning("No sample details found with patient mappings. Using backup approach.")
         
-        # Add patient IDs and clinical information to immune data
-        sample_to_patient = {}
-        for slid, details in sample_details.items():
-            if 'patient_id' in details:
-                sample_to_patient[slid] = details['patient_id']
-        
-        # If the sample_details dictionary is empty or doesn't have patient_id mappings,
-        # use the old approach to get the mappings
-        if not sample_to_patient:
-            logger.warning("No sample details found with patient mappings. Using backup approach.")
-            try:
-                map_df = pd.read_csv(map_file_path)
-                for _, row in map_df.iterrows():
-                    sample_to_patient[row['SampleID']] = row['PatientID']
-            except Exception as e:
-                logger.error(f"Error loading map file: {e}")
-                return None
-        
-        # ---------------------------------------------------------------------------
-        # Build a tidy "one row per tumour sample" data-frame from sample_details
-        # ---------------------------------------------------------------------------
-        sample_rows = (
-            pd.DataFrame.from_dict(sample_details, orient="index")
-              .rename_axis("SLID")        # make SLID an index label
-              .reset_index()              # turn it into an ordinary column
-              .rename(columns = {"patient_id": "PATIENT_ID"})
-        )
-        
-        sample_rows = sample_rows.rename(columns={
+        map_df = pd.read_csv(map_file_path)
+        for _, row in map_df.iterrows():
+            sample_to_patient[row["SampleID"]] = row["PatientID"]
+
+    # Build a tidy "one row per tumour sample" data-frame from `sample_details`.
+    sample_rows = (pd.DataFrame.from_dict(sample_details, orient = "index")
+        .rename_axis("SLID") # make SLID an index label
+        .reset_index() # turn SLID into an ordinary column
+        .rename(columns = {"patient_id": "PATIENT_ID"})
+    )
+
+    sample_rows = sample_rows.rename(
+        columns = {
             "specimen_site": "SpecimenSite",
             "procedure_type": "ProcedureType",
             "is_confirmed_melanoma": "IsConfirmedMelanoma",
             "histology_code": "HistologyCode",
-            "diagnosis_id": "DiagnosisID",
-        })
+            "diagnosis_id": "DiagnosisID"
+        }
+    )
 
-        # Bring in any extra fields you want from clinical_data
-        clinical_cols = [
-            "PATIENT_ID", "Sex", "Race", "AgeAtClinicalRecordCreation",
-            "EarliestMelanomaDiagnosisAge", "HAS_ICB", "ICB_START_AGE",
-            "STAGE_AT_ICB"
-        ]
-        available = [c for c in clinical_cols if c in clinical_data.columns]
+    clinical_cols = ["PATIENT_ID", "Sex", "Race", "AgeAtClinicalRecordCreation", "EarliestMelanomaDiagnosisAge", "HAS_ICB", "ICB_START_AGE", "STAGE_AT_ICB"]
+    available = [c for c in clinical_cols if c in clinical_data.columns]
 
-        immune_clinical = (
-            sample_rows
-                .merge(clinical_data[available], on="PATIENT_ID", how="left")
-                .set_index("SLID")
-        )
-        logger.info("Per-sample data-frame shape: %s", immune_clinical.shape)
-        
-        # Merge clinical info with immune data
-        available_cols = [col for col in clinical_cols if col in clinical_data.columns]
-        if len(available_cols) < len(clinical_cols):
-            missing_cols = set(clinical_cols) - set(available_cols)
-            logger.warning(f"Missing clinical columns: {missing_cols}")
-        
-        # Add metastatic status based on specimen site information
-        # Define keywords that might indicate metastatic sites
-        metastatic_keywords = ['metast', 'lymph node', 'brain', 'lung', 'liver', 'distant']
-        
-        def determine_metastatic_status(site):
-            """Determine if a specimen site indicates metastatic disease."""
-            if pd.isna(site) or site is None:
-                return None
-            site_lower = str(site).lower()
-            if any(keyword in site_lower for keyword in metastatic_keywords):
-                return True
-            # List of common primary melanoma sites
-            primary_sites = ['skin', 'cutaneous', 'dermal', 'epidermis', 'primary']
-            if any(keyword in site_lower for keyword in primary_sites):
-                return False
-            return None  # Unknown/uncertain
-        
-        # Add metastatic status column
-        immune_clinical['IsMetastatic'] = immune_clinical['SpecimenSite'].apply(determine_metastatic_status)
-        logger.info(f"Metastatic status determined for {immune_clinical['IsMetastatic'].count()} samples")
-        logger.info(f"Metastatic samples: {(immune_clinical['IsMetastatic'] == True).sum()}")
-        logger.info(f"Primary samples: {(immune_clinical['IsMetastatic'] == False).sum()}")
-        
-        age_non_null   = immune_clinical["EarliestMelanomaDiagnosisAge"].notna().sum()
-        stage_non_null = immune_clinical["STAGE_AT_ICB"].notna().sum()
-
-        logger.info(
-            "EarliestMelanomaDiagnosisAge populated for %d/%d samples "
-            " (unique patients: %d)",
-            age_non_null,
-            len(immune_clinical),
-            immune_clinical["PATIENT_ID"].nunique(),
-        )
-        logger.info(
-            "STAGE_AT_ICB populated for %d/%d samples", stage_non_null, len(immune_clinical)
-        )
-
-        # Dump the first few problematic rows when expected data are missing
-        if stage_non_null == 0:
-            logger.debug(
-                "First 5 rows lacking STAGE_AT_ICB:\n%s",
-                immune_clinical[["PATIENT_ID", "ICB_START_AGE"]].head(),
-            )
-            
-        logger.debug(
-            "Column completeness just before write:\n%s",
-            immune_clinical[
-                ["EarliestMelanomaDiagnosisAge", "STAGE_AT_ICB"]
-            ].isna().mean().rename(lambda x: f"{x}_null_fraction"),
-        )
-        
-        # Save processed data
-        output_file = os.path.join(output_dir, "melanoma_sample_immune_clinical.csv")
-        immune_clinical.to_csv(output_file)
-        logger.info(f"Saved processed data to {output_file}")
-        
-        # Create a summary of biopsy origins
-        site_summary = immune_clinical['SpecimenSite'].value_counts().reset_index()
-        site_summary.columns = ['SpecimenSite', 'Count']
-        site_summary_file = os.path.join(output_dir, "specimen_site_summary.csv")
-        site_summary.to_csv(site_summary_file, index=False)
-        logger.info(f"Saved specimen site summary to {site_summary_file}")
-        
-        # Create a summary of procedure types
-        proc_summary = immune_clinical['ProcedureType'].dropna().str.split('|').explode().str.strip().value_counts().reset_index(name = "Count").rename(columns = {"index": "ProcedureType"})
-        proc_summary_file = os.path.join(output_dir, "procedure_type_summary.csv")
-        proc_summary.to_csv(proc_summary_file, index = False)
-        logger.info(f"Saved procedure type summary to {proc_summary_file}")
-        
-        # Create a summary of metastatic status
-        meta_summary = immune_clinical['IsMetastatic'].value_counts().reset_index()
-        meta_summary.columns = ['IsMetastatic', 'Count']
-        meta_summary_file = os.path.join(output_dir, "metastatic_status_summary.csv")
-        meta_summary.to_csv(meta_summary_file, index=False)
-        logger.info(f"Saved metastatic status summary to {meta_summary_file}")
-        
-        return immune_clinical
-        
-    except Exception as e:
-        logger.error(f"Error processing melanoma immune data: {e}", exc_info=True)
-        return None
-
+    immune_clinical = sample_rows.merge(clinical_data[available], on = "PATIENT_ID", how = "left").set_index("SLID")
     
-from rpy2.robjects.vectors import StrVector
+    logger.info("Per-sample data-frame shape: %s", immune_clinical.shape)
 
-# --------------------------------------------------------------------------
+    # Merge clinical info with immune data
+    available_cols = [col for col in clinical_cols if col in clinical_data.columns]
+    if len(available_cols) < len(clinical_cols):
+        missing_cols = set(clinical_cols) - set(available_cols)
+        
+        logger.warning(f"Missing clinical columns: {missing_cols}")
+
+    # Add metastatic status based on specimen site information.
+    # Define keywords that might indicate metastatic sites.
+    metastatic_keywords = ['metast', 'lymph node', 'brain', 'lung', 'liver', 'distant']
+
+    def determine_metastatic_status(site):
+        '''
+        Determine if a specimen site is part of metastatic disease.
+        '''
+        if pd.isna(site) or site is None:
+            return None
+        site_lower = str(site).lower()
+        if any(keyword in site_lower for keyword in metastatic_keywords):
+            return True
+        primary_sites = ['skin', 'cutaneous', 'dermal', 'epidermis', 'primary'] # `primary_sites` is a list of common primary melanoma sites.
+        if any(keyword in site_lower for keyword in primary_sites):
+            return False
+        return None # It is unknown / uncertain that the site is part of metastatic disease.
+
+    # Add a column of indicators that corresponding specimen sites are part of metastatic disease.
+    immune_clinical['IsMetastatic'] = immune_clinical['SpecimenSite'].apply(determine_metastatic_status)
+    
+    logger.info(f"Metastatic status was determined for {immune_clinical['IsMetastatic'].count()} samples.")
+    logger.info(f"There are {(immune_clinical['IsMetastatic'] == True).sum()} samples that are part of metastatic disease.")
+    logger.info(f"There are {(immune_clinical['IsMetastatic'] == False).sum()} primary samples.")
+
+    age_non_null = immune_clinical["EarliestMelanomaDiagnosisAge"].notna().sum()
+    stage_non_null = immune_clinical["STAGE_AT_ICB"].notna().sum()
+
+    logger.info(
+        "Column `EarliestMelanomaDiagnosisAge` in data frame `immune_clinical` was populated for %d / %d samples corresponding to %d unique patients.",
+        age_non_null,
+        len(immune_clinical),
+        immune_clinical["PATIENT_ID"].nunique()
+    )
+    logger.info(
+        "Column `STAGE_AT_ICB` in data frame `immune_clinical` was populated for %d / %d samples.",
+        stage_non_null,
+        len(immune_clinical)
+    )
+    if stage_non_null == 0:
+        logger.info(
+            "The first 3 rows in data frame `immune_clinical` lacking STAGE_AT_ICB are the following.\n%s",
+            immune_clinical[["PATIENT_ID", "ICB_START_AGE"]].head(n = 3)
+        )
+
+    logger.info(
+        "Column completeness just before write:\n%s",
+        immune_clinical[
+            ["EarliestMelanomaDiagnosisAge", "STAGE_AT_ICB"]
+        ].isna().mean().rename(lambda x: f"{x}_null_fraction"),
+    )
+
+    immune_clinical.to_csv(FILENAME_OF_MELANOMA_SAMPLE_IMMUNE_CLINICAL_DATA)
+    
+    logger.info(f"Saved data frame `immune_clinical` to {FILENAME_OF_MELANOMA_SAMPLE_IMMUNE_CLINICAL_DATA}.")
+
+    # Create a summary of biopsy locations.
+    site_summary = immune_clinical["SpecimenSite"].value_counts().reset_index()
+    site_summary.columns = ["SpecimenSite", "Count"]
+    site_summary.to_csv(FILENAME_OF_MAP_OF_BIOPSY_LOCATIONS_TO_COUNTS, index = False)
+    
+    logger.info(f"Map of biopsy locations to counts was saved to {FILENAME_OF_MAP_OF_BIOPSY_LOCATIONS_TO_COUNTS}.")
+
+    # Create a summary of procedure types.
+    proc_summary = immune_clinical["ProcedureType"].dropna().str.split('|').explode().str.strip().value_counts().reset_index(name = "Count").rename(columns = {"index": "ProcedureType"})
+    proc_summary.to_csv(FILENAME_OF_MAP_OF_PROCEDURE_TYPES_TO_COUNTS, index = False)
+    
+    logger.info(f"Map of procedure type to counts was saved to {FILENAME_OF_MAP_OF_PROCEDURE_TYPES_TO_COUNTS}.")
+
+    # Create a summary of metastatic status.
+    meta_summary = immune_clinical['IsMetastatic'].value_counts().reset_index()
+    meta_summary.columns = ['IsMetastatic', 'Count']
+    meta_summary.to_csv(FILENAME_OF_MAP_OF_INDICATORS_OF_WHETHER_SPECIMENS_ARE_PART_OF_METASTATIC_DISEASE_TO_COUNTS, index = False)
+    
+    logger.info(f"Map of indicators that specimens are part of metastatic disease to counts was saved to {FILENAME_OF_MAP_OF_INDICATORS_OF_WHETHER_SPECIMENS_ARE_PART_OF_METASTATIC_DISEASE_TO_COUNTS}.")
+
+    return immune_clinical
+
+
 def _clean_expression_df(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    • make 'gene_id' the index (if still a column)
-    • strip Ensembl version (.15  →  ENSG00000000003)
-    • map Ensembl IDs → HGNC symbols     (via AnnotationDbi::mapIds)
-    • drop duplicates / unmapped rows, coerce to numeric
-    Returns a tidy gene-by-sample matrix ready for xCell.
-    """
-    # ensure index is str
+    '''
+    - 1. Strip versions (e.g., ".15") from Ensembl IDs, resulting in Ensembl IDs like ENSG00000000003.
+    - 2. Convert Ensembl IDs to HGNC symbols.
+    - 3. Keep rows with HGNC symbols and make the index the HGNC symbols.
+    - 4. Drop duplicates / unmapped rows and convert to numeric.
+    
+    This function returns a tidy gene by sample matrix ready to be analyzed by xCell.
+    '''
+
     df.index = df.index.astype(str)
 
-    # ── 1. strip version suffix ─────────────────────────────────────────────
-    df.index = df.index.str.replace(r"\.\d+$", "", regex=True)
+    # 1. Strip versions from Ensembl IDs.
+    df.index = df.index.str.replace(r"\.\d+$", "", regex = True)
 
-    # ── 2. Ensembl → HGNC mapping via org.Hs.eg.db / AnnotationDbi ----------    
-    try:
-        ro.r('suppressPackageStartupMessages(library(org.Hs.eg.db))')
-        orgdb = ro.r('org.Hs.eg.db')                     # actual OrgDb env
-        annotation_dbi = importr("AnnotationDbi")
+    # 2. Convert Ensembl IDs to HGNC symbols.
+    #ro.r("library(org.Hs.eg.db)")
+    ro.r("suppressPackageStartupMessages(library(org.Hs.eg.db))")
+    org_Hs_eg_db = ro.r("org.Hs.eg.db")
+    annotation_dbi = importr("AnnotationDbi")
 
-        # unique keys only — speeds things up
-        keys = df.index.unique().to_list()
+    keys = df.index.unique().to_list()
 
-        
-        with localconverter(ro.default_converter + pandas2ri.converter):
-            res_r = annotation_dbi.select(
-                orgdb,
-                keys = StrVector(keys),
-                columns = StrVector(["SYMBOL"]),
-                keytype = "ENSEMBL"
-            )
-            res_df: pd.DataFrame = ro.conversion.rpy2py(res_r)
+    with localconverter(ro.default_converter + pandas2ri.converter):
+        res_r = annotation_dbi.select(
+            org_Hs_eg_db,
+            keys = StrVector(keys),
+            columns = StrVector(["SYMBOL"]),
+            keytype = "ENSEMBL"
+        )
+        res_df: pd.DataFrame = ro.conversion.rpy2py(res_r)
 
-        logger.info("First row of multiple rows per Ensembl ID will be selected.")
-            
-        # keep first symbol per Ensembl, drop NAs / blanks
-        res_df = (res_df[["ENSEMBL", "SYMBOL"]]
-                  .dropna()
-                  .query("SYMBOL != ''")
-                  .drop_duplicates("ENSEMBL"))
-        ens2sym = dict(zip(res_df["ENSEMBL"], res_df["SYMBOL"]))
+    # TODO: Evaluate selecting first row of multiple rows per Ensembl ID.
+    
+    logger.info("First row of multiple rows per Ensembl ID will be selected.")
 
-    except Exception as e:
-        logger.error("Failed during Ensembl→HGNC mapping: %s", e, exc_info=True)
-        raise
+    res_df = (res_df[["ENSEMBL", "SYMBOL"]]
+        .dropna()
+        .query("SYMBOL != ''")
+        .drop_duplicates("ENSEMBL")
+    )
+    ens2sym = dict(
+        zip(
+            res_df["ENSEMBL"],
+            res_df["SYMBOL"])
+    )
 
-    # ── 3. keep mapped genes, rename index to symbols -----------------------
+    # 3. Keep rows with HGNC symbols and make the index the HGNC symbols.
     df = df.loc[df.index.isin(ens2sym)].copy()
     df.index = df.index.map(ens2sym.get)
 
-    # ── 4. housekeeping -----------------------------------------------------
-    df = df[~df.index.duplicated(keep="first")]          # drop duplicate symbols
-    df = df.apply(pd.to_numeric, errors="coerce").fillna(0.0)
+    # 4. Drop duplicates / unmapped rows and convert to numeric.
+    df = df[~df.index.duplicated(keep = "first")]          # drop duplicate symbols
+    
+    # TODO: Don't coerce.
+    
+    df = df.apply(pd.to_numeric, errors = "coerce").fillna(0.0)
 
     return df
 
 
-from rpy2.rinterface import NULLType
-
-# ---------------------------------------------------------------- helpers
 def _safe_r_names(r_call_result) -> list[str]:
-    """Return row/col names or an empty list when the R value is NULL."""
+    '''
+    Return row/col names or an empty list when the R value is NULL.
+    '''
     return [] if isinstance(r_call_result, NULLType) else list(map(str, r_call_result))
 
 
-# ------------------------------------------------------------------ main function
-def run_xcell_analysis(expr_df: pd.DataFrame,
-                       clinical_df: pd.DataFrame,
-                       base_path: str,
-                       output_dir: str | None = None) -> bool:
-    """
-    Run xCell on a gene-by-sample matrix and write
-    `xcell_scores_raw.csv` and `xcell_scores_focused_panel.csv`.
-    """
-    try:
-        if output_dir is None:
-            output_dir = os.path.join(base_path, "output", "microenv")
-        os.makedirs(output_dir, exist_ok=True)
+def run_xcell_analysis(expr_df: pd.DataFrame, clinical_df: pd.DataFrame) -> bool:
+    '''
+    Run xCell on a gene-by-sample matrix and write `xcell_scores_raw.csv` and `xcell_scores_focused_panel.csv`.
+    '''
 
-        # ---------- 1 : tidy the matrix so xCell will recognise the genes -----
-        expr_df = _clean_expression_df(expr_df)
-        if expr_df.empty:
-            logger.error("Expression matrix is empty after cleaning — aborting.")
-            return False
-        logger.info("Matrix after cleaning: %s genes × %s samples",
-                    expr_df.shape[0], expr_df.shape[1])
+    # 1. Tidy the matrix so xCell will recognise the genes.
+    expr_df = _clean_expression_df(expr_df)
+    if expr_df.empty:
+        raise Exception("Expression matrix is empty after cleaning — aborting.")
+    
+    logger.info(
+        "The matrix of gene and sample information after cleaning has %s genes and %s samples.",
+        expr_df.shape[0],
+        expr_df.shape[1]
+    )
 
-        # ---------- 2 : Python → R conversion ---------------------------------
-        logger.info("Converting expression matrix to R and launching xCell …")
-        with localconverter(ro.default_converter + pandas2ri.converter):
-            expr_r = ro.conversion.py2rpy(expr_df)
+    # 2. Convert matrix of gene and sample information to R.
+    
+    # TODO: What is the type of `expr_r`?
+    
+    logger.info("The matrix of gene and sample information will be converted to R.")
 
-        # ---------- 3 : run xCell ---------------------------------------------
-        xcell  = importr("xCell")
-        scores_r = xcell.xCellAnalysis(expr_r, rnaseq=True)
-        logger.info("HGNC symbols that are elements of the index of the expression matrix were matched with gene sets.")
+    with localconverter(ro.default_converter + pandas2ri.converter):
+        expr_r = ro.conversion.py2rpy(expr_df)
 
-        # ---------- 4 : R → Python back ---------------------------------------
-        #
-        #  • `scores_r` is an R matrix:   rows = cell-types,  cols = samples
-        #  • We pull the numeric data *and* the true row/col names explicitly
-        #    so nothing is lost in translation.
-        #
-        with localconverter(ro.default_converter + pandas2ri.converter):
-            scores_np = ro.conversion.rpy2py(scores_r)           # numpy array
+    # 3. Run xCell.
+    xcell  = importr("xCell")
+    scores_r = xcell.xCellAnalysis(expr_r, rnaseq = True) # scores_r is a matrix of cell type and sample information.
+    
+    logger.info("HGNC symbols that are elements of the index of the matrix of gene and sample information were matched with gene sets.")
 
+    # Convert `scores_r` to `scores_np`.
+    with localconverter(ro.default_converter + pandas2ri.converter):
+        scores_np = ro.conversion.rpy2py(scores_r)
+    r_samp_ids = _safe_r_names(ro.r("colnames")(scores_r))
 
-        r_samp_ids = _safe_r_names(ro.r("colnames")(scores_r))
+    # Retrieve cell-type names (i.e., labels of rows of the R matrix).
+    cell_types = _safe_r_names(ro.r("rownames")(scores_r))
+
+    if not cell_types: # Our first search for cell-types names failed.
+        tmp_df_r   = ro.r("as.data.frame")(scores_r)
+        cell_types = _safe_r_names(ro.r("rownames")(tmp_df_r))
+
+    if cell_types and all(ct.strip().isdigit() for ct in cell_types): # Assume xCell lost cell-type names.
         
-        # -----------------------------------------------------------------
-        # Retrieve cell-type names (rows of the R matrix)
-        # -----------------------------------------------------------------
-        cell_types = _safe_r_names(ro.r("rownames")(scores_r))
-
-        if not cell_types:                       # probe #1 failed → try data.frame
-            tmp_df_r   = ro.r("as.data.frame")(scores_r)
-            cell_types = _safe_r_names(ro.r("rownames")(tmp_df_r))
-
-        # If we still only have digits ("1","2",…) assume xCell dropped names
-        if cell_types and all(ct.strip().isdigit() for ct in cell_types):
-            logger.warning("xCell returned numeric row-names; "
-                           "substituting canonical xCell cell-type list.")
-            cell_types = XCELL_CELL_TYPES_ORDERED.copy()
-
-        if len(cell_types) != scores_np.shape[0]:
-            raise RuntimeError(
-                f"Expected {scores_np.shape[0]} cell-type names but got "
-                f"{len(cell_types)}"
-            )
+        logger.warning("xCell returned numeric row-names; the canonical xCell cell-type list will be used.")
         
-        # ---------------------------------------------------------------------
-        # Align sample IDs:  prefer the order coming from xCell;  if sizes
-        # mismatch fall back to the cleaned expression matrix (xCell may drop
-        # duplicate / empty columns).
-        # ---------------------------------------------------------------------
-        if r_samp_ids and len(r_samp_ids) == scores_np.shape[1]:
-            sample_ids = r_samp_ids
-        else:
-            sample_ids = list(expr_df.columns.astype(str))[: scores_np.shape[1]]
-            logger.warning("Recovered %d sample IDs from expression matrix "
-                           "because xCell returned %d columns.",
-                           len(sample_ids), scores_np.shape[1])
+        cell_types = XCELL_CELL_TYPES_ORDERED.copy()
 
-        # Build the DataFrame *with correct labels on both axes*
-        scores_df = pd.DataFrame(scores_np,
-                                 index=pd.Index(cell_types,   name="CellType"),
-                                 columns=pd.Index(sample_ids, name="SampleID"))
-        # House-keeping
-        scores_df.index   = scores_df.index.str.strip()
-        scores_df.columns = scores_df.columns.str.strip()
+    if len(cell_types) != scores_np.shape[0]:
+        raise Exception(f"We expected {scores_np.shape[0]} cell-type names but got {len(cell_types)}.")
 
-        # transpose → rows = SampleID, cols = cell-types
-        scores_df = scores_df.T
-        scores_df.index.name = "SampleID"
+    '''
+    Align sample IDs.
+    Prefer the order coming from xCell;
+    If sizes mismatch, fall back to the cleaned expression matrix (xCell may drop duplicate / empty columns).
+    '''
+    if r_samp_ids and len(r_samp_ids) == scores_np.shape[1]:
+        sample_ids = r_samp_ids
+    else:
+        sample_ids = list(expr_df.columns.astype(str))[: scores_np.shape[1]]
+        logger.warning(
+            "Recovered %d sample IDs from expression matrix because xCell returned %d columns.",
+            len(sample_ids),
+            scores_np.shape[1]
+        )
 
-        # ---------- 5 : write results -----------------------------------------
-        full_out = os.path.join(output_dir, "xcell_scores_raw.csv")
-        scores_df.to_csv(full_out, index_label="SampleID")
-        logger.info("Full xCell score matrix written to %s", full_out)
+    # Build the DataFrame with correct labels on both axes.
+    scores_df = pd.DataFrame(
+        scores_np,
+        index = pd.Index(cell_types, name = "CellType"),
+        columns = pd.Index(sample_ids, name="SampleID")
+    )
+    # Clean.
+    scores_df.index = scores_df.index.str.strip()
+    scores_df.columns = scores_df.columns.str.strip()
 
-        panel_cols = [c for c in FOCUSED_XCELL_PANEL if c in scores_df.columns]
-        missing    = sorted(set(FOCUSED_XCELL_PANEL) - set(panel_cols))
-        if missing:
-            logger.warning("Focused panel — missing columns: %s",
-                           ", ".join(sorted(missing)))
+    # Transpose to a data frame of sample and cell type information.
+    scores_df = scores_df.T
+    scores_df.index.name = "SampleID"
 
-        focused_df = scores_df[panel_cols]
-        focused_out = os.path.join(output_dir, "xcell_scores_focused_panel.csv")
-        focused_df.to_csv(focused_out)
-        logger.info("Focused panel written to %s", focused_out)
+    # 5 : Write results.
+    scores_df.to_csv(FILENAME_OF_DATA_FRAME_OF_SCORES_BY_SAMPLE_AND_CELL_TYPE, index_label = "SampleID")
+    
+    logger.info("Full xCell score matrix was written to %s.", FILENAME_OF_DATA_FRAME_OF_SCORES_BY_SAMPLE_AND_CELL_TYPE)
 
-        return True
+    panel_cols = [c for c in FOCUSED_XCELL_PANEL if c in scores_df.columns]
+    missing = sorted(set(FOCUSED_XCELL_PANEL) - set(panel_cols))
+    if missing:
+        logger.warning(
+            "Focused panel is missing columns in the following list. [%s]",
+            ", ".join(sorted(missing))
+        )
 
-    except Exception as exc:
-        logger.error("run_xcell_analysis failed: %s", exc, exc_info=True)
-        return False
+    focused_df = scores_df[panel_cols]
+    focused_df.to_csv(FILENAME_OF_FOCUSED_DATA_FRAME_OF_SCORES_BY_SAMPLE_AND_CELL_TYPE)
+    
+    logger.info("Focused panel was written to %s", FILENAME_OF_FOCUSED_DATA_FRAME_OF_SCORES_BY_SAMPLE_AND_CELL_TYPE)
+
+    return True
     
     
 def main():
-    """Main execution function"""
-    base_path = "/project/orien/data/aws/24PRJ217UVA_IORIG/Understanding_How_Sex_Impacts_Recovery_From_Tumors"
-    # Use the output file from data_loading.py as the input clinical data
-    processed_clinical_file = os.path.join(base_path, "output/eda", "melanoma_patients_with_sequencing.csv")
     
-    process_melanoma_immune_data(base_path)
+    process_melanoma_immune_data()
 
-    if not os.path.exists(processed_clinical_file):
-        logger.error(f"Input clinical file not found: {processed_clinical_file}. Run data_loading.py first.")
-        return
+    if not os.path.exists(FILENAME_OF_DATA_FRAME_OF_MELANOMA_PATIENT_AND_SEQUENCING_DATA):
+        raise Exception(f"File of data frame of melanoma patient and and sequencing data {FILENAME_OF_DATA_FRAME_OF_MELANOMA_PATIENT_AND_SEQUENCING_DATA} was not found.")
 
-    clinical_data_processed = pd.read_csv(processed_clinical_file)
-    logger.info(f"Loaded clinical data for {clinical_data_processed['PATIENT_ID'].nunique()} unique melanoma patients from {processed_clinical_file}.") # Log unique patients
+    clinical_data_processed = pd.read_csv(FILENAME_OF_DATA_FRAME_OF_MELANOMA_PATIENT_AND_SEQUENCING_DATA)
+    
+    logger.info(f"Clinical data for {clinical_data_processed['PATIENT_ID'].nunique()} unique melanoma patients was loaded from {FILENAME_OF_DATA_FRAME_OF_MELANOMA_PATIENT_AND_SEQUENCING_DATA}.")
 
     expr_matrix = load_rnaseq_data()
     if expr_matrix is None:
-        logger.error("Failed to load RNA-seq data.")
-        return
+        raise Exception("Load RNA sequencing data failed.")
 
-    # Run the analysis (which now includes R execution and file writing)
-    success = run_xcell_analysis(expr_matrix, clinical_data_processed, base_path)
+    success = run_xcell_analysis(expr_matrix, clinical_data_processed)
 
     if success:
-        logger.info("microenv.py script completed successfully (R finished execution).")
+        logger.info("xCell analysis succeeded.")
     else:
-        logger.error("microenv.py script failed during processing.")
+        logger.error("xCell analysis failed.")
+
 
 if __name__ == "__main__":
     main()
