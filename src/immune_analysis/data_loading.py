@@ -1,4 +1,9 @@
-import glob  # Added to resolve NameError
+'''
+Usage:
+./miniconda3/envs/ici_sex/bin/python src/immune_analysis/data_loading.py
+'''
+
+import glob
 import logging
 import numpy as np
 import os
@@ -48,6 +53,19 @@ SET_OF_NAMES_OF_ICB_RELATED_COLUMNS_AND_DEFAULT_VALUES = {
 
 logging.basicConfig(level = logging.INFO, format = "%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
+
+        
+def add_earliest_melanoma_diagnosis_age(clinical_data: pd.DataFrame, melanoma_diag: pd.DataFrame) -> pd.DataFrame:
+    if "AgeAtDiagnosis" not in melanoma_diag.columns:
+        return clinical_data.assign(EarliestMelanomaDiagnosisAge = np.nan)
+    earliest_age = (
+        melanoma_diag[["PATIENT_ID", "AgeAtDiagnosis"]]
+        .dropna()
+        .groupby("PATIENT_ID", as_index=False)["AgeAtDiagnosis"]
+        .min()
+        .rename(columns={"AgeAtDiagnosis": "EarliestMelanomaDiagnosisAge"})
+    )
+    return clinical_data.merge(earliest_age, on = "PATIENT_ID", how = "left")
 
 
 def add_icb_info(clinical_data: pd.DataFrame, diag_df: pd.DataFrame) -> pd.DataFrame:
@@ -115,133 +133,6 @@ def add_icb_info(clinical_data: pd.DataFrame, diag_df: pd.DataFrame) -> pd.DataF
         logger.info("Patients with HAS_ICB=True but missing STAGE_AT_ICB:\n%s", blank_stage[["PATIENT_ID", "ICB_START_AGE"]].head())
     
     return clinical_data
-
-        
-def add_earliest_melanoma_diagnosis_age(clinical_data: pd.DataFrame, melanoma_diag: pd.DataFrame) -> pd.DataFrame:
-    if "AgeAtDiagnosis" not in melanoma_diag.columns:
-        return clinical_data.assign(EarliestMelanomaDiagnosisAge = np.nan)
-    earliest_age = (
-        melanoma_diag[["PATIENT_ID", "AgeAtDiagnosis"]]
-        .dropna()
-        .groupby("PATIENT_ID", as_index=False)["AgeAtDiagnosis"]
-        .min()
-        .rename(columns={"AgeAtDiagnosis": "EarliestMelanomaDiagnosisAge"})
-    )
-    return clinical_data.merge(earliest_age, on = "PATIENT_ID", how = "left")
-
-
-def load_clinical_data():
-    
-    try:
-        diag_df = pd.read_csv(FILENAME_OF_DIAGNOSIS_DATA)        
-        # Create a zero-based row index to serve as a synthetic DiagnosisID.
-        diag_df.reset_index(drop = False, inplace = True)
-        diag_df.rename(
-            columns = {
-                "index": "DiagnosisID",
-                "AvatarKey": "PATIENT_ID"
-            },
-            inplace = True
-        )
-        
-        if "AgeAtDiagnosis" in diag_df.columns:
-            diag_df["AgeAtDiagnosis"] = diag_df["AgeAtDiagnosis"].replace(MAP_OF_STRINGS_REPRESENTING_AGES_TO_AGES).pipe(pd.to_numeric, errors = "raise")
-        
-        diag_df["HistologyCode"] = diag_df["HistologyCode"].astype(str)
-        
-        patient_df = pd.read_csv(FILENAME_OF_PATIENT_DATA).rename(columns = {"AvatarKey": "PATIENT_ID"})
-        
-        # Filter for melanoma patients.
-        melanoma_diag = diag_df[diag_df["HistologyCode"].apply(lambda x: any(x.startswith(prefix) for prefix in LIST_OF_MELANOMA_HISTOLOGY_PREFIXES))]
-        
-        logger.info(f"The number of records in data frame of diagnosis data is {len(diag_df)}.")
-        logger.info("The following list is a list of unique histology codes. %s", diag_df["HistologyCode"].unique())
-        logger.info(f"{len(melanoma_diag)} melanoma patients were found.")
-        
-        clinical_data = melanoma_diag.merge(patient_df, on = "PATIENT_ID", how = "left")
-
-        if os.path.exists(FILENAME_OF_MEDICATIONS_DATA):
-            clinical_data = add_icb_info(clinical_data, diag_df)
-        else:
-            logger.warning("File of medications data was not found at %s.", med_file)
-
-        clinical_data = add_earliest_melanoma_diagnosis_age(clinical_data, melanoma_diag)
-        
-            
-        non_null_age = clinical_data["EarliestMelanomaDiagnosisAge"].notna().sum()
-        logger.info(
-            "EarliestMelanomaDiagnosisAge populated for "
-            f"{non_null_age}/{clinical_data['PATIENT_ID'].nunique()} patients"
-        )
-
-        '''
-        Fill ICB-related columns of data frame of clinical data with values or placeholders.
-        Column HAS_ICB contains boolean indicators of whether there are records of ICB for patients and defaults to False.
-        Column ICB_START_AGE contains age at first ICB dose and defaults to NaN.
-        Column STAGE_AT_ICB contains stage when ICB started and defaults to NA.
-        '''
-        for col, default in SET_OF_NAMES_OF_ICB_RELATED_COLUMNS_AND_DEFAULT_VALUES.items():
-            clinical_data[col] = clinical_data.get(col, default).fillna(default)
-
-        logger.info("Data frame of clinical data has columns [%s].", ", ".join(sorted(clinical_data.columns.tolist())))
-        logger.info(f"Clinical data for {len(clinical_data)} melanoma patients was loaded.")
-        
-        return clinical_data
-    
-    except Exception as e:
-        logger.error(f"The following error loading clinical data occurred. {e}")
-        return None
-
-
-def load_rnaseq_data():
-    
-    try:
-        expr_files = glob.glob(os.path.join(PATH_OF_GENE_AND_TRANSCRIPT_EXPRESSION_RESULTS, "*.genes.results"))
-        if not expr_files:
-            logger.error(f"No .genes.results files were found in {PATH_OF_GENE_AND_TRANSCRIPT_EXPRESSION_RESULTS}.")
-            return None
-        
-        # Initialize a dictionary to store expression data
-        expr_data = {
-            os.path.basename(f).removesuffix(".genes.results"): pd.read_csv(f, sep = "\t").set_index("gene_id")["TPM"]
-            for f in expr_files
-        }
-        
-        # Combine into a single DataFrame
-        expr_matrix = pd.DataFrame(expr_data)
-        print(f"Expression matrix with {expr_matrix.shape} (genes x samples) was loaded.")
-        return expr_matrix
-    
-    except Exception as e:
-        print(f"The following error loading RNA sequencing data occurred. {e}")
-        return None
-
-    
-def load_sample_to_patient_map() -> dict[str, str]:
-    '''
-    This function loads the mapping from sample ID (SLID) to patient ID (PATIENT_ID).
-    '''
-
-    if not os.path.exists(FILENAME_OF_MAP_FROM_SAMPLE_TO_PATIENT):
-        logger.error(f"Sample-to-patient mapping file was not found at {FILENAME_OF_MAP_FROM_SAMPLE_TO_PATIENT}.")
-        return {}
-
-    map_df = pd.read_csv(FILENAME_OF_MAP_FROM_SAMPLE_TO_PATIENT)
-
-    logger.info(f"Columns found in mapping file ({FILENAME_OF_MAP_FROM_SAMPLE_TO_PATIENT}): {map_df.columns.tolist()}")
-    
-    if "SampleID" not in map_df.columns:
-        logger.error(f"Required column \"{slid_col}\" was not found in mapping file.")
-        return {}
-    
-    if "PatientID" not in map_df.columns:
-         logger.error(f"Required column \"{patient_col}\" was not found in mapping file.")
-         return {}
-
-    # Create the dictionary using the identified column names
-    sample_to_patient = dict(zip(map_df["SampleID"], map_df["PatientID"]))
-    logger.info(f"Sample-to-patient mapping with {len(sample_to_patient)} entries was loaded.")
-    return sample_to_patient
 
 
 def identify_melanoma_samples(clinical_data):
@@ -472,6 +363,69 @@ def identify_melanoma_samples(clinical_data):
         return [], {}
 
 
+def load_clinical_data():
+    
+    try:
+        diag_df = pd.read_csv(FILENAME_OF_DIAGNOSIS_DATA)        
+        # Create a zero-based row index to serve as a synthetic DiagnosisID.
+        diag_df.reset_index(drop = False, inplace = True)
+        diag_df.rename(
+            columns = {
+                "index": "DiagnosisID",
+                "AvatarKey": "PATIENT_ID"
+            },
+            inplace = True
+        )
+        
+        if "AgeAtDiagnosis" in diag_df.columns:
+            diag_df["AgeAtDiagnosis"] = diag_df["AgeAtDiagnosis"].replace(MAP_OF_STRINGS_REPRESENTING_AGES_TO_AGES).pipe(pd.to_numeric, errors = "raise")
+        
+        diag_df["HistologyCode"] = diag_df["HistologyCode"].astype(str)
+        
+        patient_df = pd.read_csv(FILENAME_OF_PATIENT_DATA).rename(columns = {"AvatarKey": "PATIENT_ID"})
+        
+        # Filter for melanoma patients.
+        melanoma_diag = diag_df[diag_df["HistologyCode"].apply(lambda x: any(x.startswith(prefix) for prefix in LIST_OF_MELANOMA_HISTOLOGY_PREFIXES))]
+        
+        logger.info(f"The number of records in data frame of diagnosis data is {len(diag_df)}.")
+        logger.info("The following list is a list of unique histology codes. %s", diag_df["HistologyCode"].unique())
+        logger.info(f"{len(melanoma_diag)} melanoma patients were found.")
+        
+        clinical_data = melanoma_diag.merge(patient_df, on = "PATIENT_ID", how = "left")
+
+        if os.path.exists(FILENAME_OF_MEDICATIONS_DATA):
+            clinical_data = add_icb_info(clinical_data, diag_df)
+        else:
+            logger.warning("File of medications data was not found at %s.", med_file)
+
+        clinical_data = add_earliest_melanoma_diagnosis_age(clinical_data, melanoma_diag)
+        
+            
+        non_null_age = clinical_data["EarliestMelanomaDiagnosisAge"].notna().sum()
+        logger.info(
+            "EarliestMelanomaDiagnosisAge populated for "
+            f"{non_null_age}/{clinical_data['PATIENT_ID'].nunique()} patients"
+        )
+
+        '''
+        Fill ICB-related columns of data frame of clinical data with values or placeholders.
+        Column HAS_ICB contains boolean indicators of whether there are records of ICB for patients and defaults to False.
+        Column ICB_START_AGE contains age at first ICB dose and defaults to NaN.
+        Column STAGE_AT_ICB contains stage when ICB started and defaults to NA.
+        '''
+        for col, default in SET_OF_NAMES_OF_ICB_RELATED_COLUMNS_AND_DEFAULT_VALUES.items():
+            clinical_data[col] = clinical_data.get(col, default).fillna(default)
+
+        logger.info("Data frame of clinical data has columns [%s].", ", ".join(sorted(clinical_data.columns.tolist())))
+        logger.info(f"Clinical data for {len(clinical_data)} melanoma patients was loaded.")
+        
+        return clinical_data
+    
+    except Exception as e:
+        logger.error(f"The following error loading clinical data occurred. {e}")
+        return None
+
+    
 def load_melanoma_data():
 
     clinical_data = load_clinical_data()
@@ -519,11 +473,61 @@ def load_melanoma_data():
     logger.info(f"Clinical data was filtered to {len(clinical_data_filtered)} patients with valid sequencing data mapping.")
     
     return expr_matrix_filtered, clinical_data_filtered
+    
+
+def load_rnaseq_data():
+    
+    try:
+        expr_files = glob.glob(os.path.join(PATH_OF_GENE_AND_TRANSCRIPT_EXPRESSION_RESULTS, "*.genes.results"))
+        if not expr_files:
+            logger.error(f"No .genes.results files were found in {PATH_OF_GENE_AND_TRANSCRIPT_EXPRESSION_RESULTS}.")
+            return None
+        
+        # Initialize a dictionary to store expression data
+        expr_data = {
+            os.path.basename(f).removesuffix(".genes.results"): pd.read_csv(f, sep = "\t").set_index("gene_id")["TPM"]
+            for f in expr_files
+        }
+        
+        # Combine into a single DataFrame
+        expr_matrix = pd.DataFrame(expr_data)
+        print(f"Expression matrix with {expr_matrix.shape} (genes x samples) was loaded.")
+        return expr_matrix
+    
+    except Exception as e:
+        print(f"The following error loading RNA sequencing data occurred. {e}")
+        return None
+
+    
+def load_sample_to_patient_map() -> dict[str, str]:
+    '''
+    This function loads the mapping from sample ID (SLID) to patient ID (PATIENT_ID).
+    '''
+
+    if not os.path.exists(FILENAME_OF_MAP_FROM_SAMPLE_TO_PATIENT):
+        logger.error(f"Sample-to-patient mapping file was not found at {FILENAME_OF_MAP_FROM_SAMPLE_TO_PATIENT}.")
+        return {}
+
+    map_df = pd.read_csv(FILENAME_OF_MAP_FROM_SAMPLE_TO_PATIENT)
+
+    logger.info(f"Columns found in mapping file ({FILENAME_OF_MAP_FROM_SAMPLE_TO_PATIENT}): {map_df.columns.tolist()}")
+    
+    if "SampleID" not in map_df.columns:
+        logger.error(f"Required column \"{slid_col}\" was not found in mapping file.")
+        return {}
+    
+    if "PatientID" not in map_df.columns:
+         logger.error(f"Required column \"{patient_col}\" was not found in mapping file.")
+         return {}
+
+    # Create the dictionary using the identified column names
+    sample_to_patient = dict(zip(map_df["SampleID"], map_df["PatientID"]))
+    logger.info(f"Sample-to-patient mapping with {len(sample_to_patient)} entries was loaded.")
+    return sample_to_patient
 
 
 if __name__ == "__main__": 
-    
-    # Create output directory if it doesn't exist
+
     os.makedirs(PATH_OF_OUTPUTS, exist_ok = True)
     
     logger.info(f"Sample map will be loaded from {FILENAME_OF_MAP_FROM_SAMPLE_TO_PATIENT}.")
