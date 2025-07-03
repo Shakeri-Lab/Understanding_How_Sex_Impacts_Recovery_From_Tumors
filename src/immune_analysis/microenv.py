@@ -101,7 +101,7 @@ def process_melanoma_immune_data(base_path, output_dir=None):
         
         # Load RNA-seq data for melanoma samples using the enhanced identify_melanoma_samples function
         # which now returns sample details alongside the list of SLIDs
-        immune_df, clinical_data = load_melanoma_data(base_path, map_file_path)
+        immune_df, clinical_data = load_melanoma_data()
         if immune_df is None or clinical_data is None:
             logger.error("Failed to load immune or clinical data.")
             return None
@@ -109,8 +109,7 @@ def process_melanoma_immune_data(base_path, output_dir=None):
         # Get the sample details that were returned by identify_melanoma_samples
         try:
             logger.info("Attempting to access enhanced sample details")
-            from src.immune_analysis.data_loading import identify_melanoma_samples
-            melanoma_slids, sample_details = identify_melanoma_samples(base_path, clinical_data)
+            melanoma_slids, sample_details = identify_melanoma_samples(clinical_data)
             logger.info(f"Successfully retrieved enhanced sample details for {len(sample_details)} samples")
         except Exception as e:
             logger.error(f"Failed to retrieve enhanced sample details: {e}")
@@ -457,7 +456,7 @@ def main():
     clinical_data_processed = pd.read_csv(processed_clinical_file)
     logger.info(f"Loaded clinical data for {clinical_data_processed['PATIENT_ID'].nunique()} unique melanoma patients from {processed_clinical_file}.") # Log unique patients
 
-    expr_matrix = load_rnaseq_data(base_path)
+    expr_matrix = load_rnaseq_data()
     if expr_matrix is None:
         logger.error("Failed to load RNA-seq data.")
         return
