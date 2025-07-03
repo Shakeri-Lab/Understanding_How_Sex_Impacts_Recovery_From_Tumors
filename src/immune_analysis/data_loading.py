@@ -3,6 +3,7 @@ Usage:
 ./miniconda3/envs/ici_sex/bin/python src/immune_analysis/data_loading.py
 '''
 
+from pathlib import Path
 import glob
 import logging
 import numpy as np
@@ -10,20 +11,20 @@ import os
 import pandas as pd
 
 
-PATH_OF_ROOT = "/project/orien/data/aws/24PRJ217UVA_IORIG/Understanding_How_Sex_Impacts_Recovery_From_Tumors/"
-PATH_OF_NORMALIZED_CLINICAL_DATA = PATH_OF_ROOT + "../Clinical_Data/24PRJ217UVA_NormalizedFiles/"
-PATH_OF_MANIFEST_AND_QC_FILES = PATH_OF_ROOT + "../Manifest_and_QC_Files/"
-PATH_OF_GENE_AND_TRANSCRIPT_EXPRESSION_RESULTS = PATH_OF_ROOT + "../RNAseq/gene_and_transcript_expression_results"
-PATH_OF_OUTPUTS = PATH_OF_ROOT + "output/data_loading/"
+PATH_OF_ROOT = Path("/project/orien/data/aws/24PRJ217UVA_IORIG/Understanding_How_Sex_Impacts_Recovery_From_Tumors")
+PATH_OF_NORMALIZED_CLINICAL_DATA = PATH_OF_ROOT / "../Clinical_Data/24PRJ217UVA_NormalizedFiles"
+PATH_OF_MANIFEST_AND_QC_FILES = PATH_OF_ROOT / "../Manifest_and_QC_Files"
+PATH_OF_GENE_AND_TRANSCRIPT_EXPRESSION_RESULTS = PATH_OF_ROOT / "../RNAseq/gene_and_transcript_expression_results"
+PATH_OF_OUTPUTS = PATH_OF_ROOT / "output/data_loading"
 
-FILENAME_OF_DIAGNOSIS_DATA = PATH_OF_NORMALIZED_CLINICAL_DATA + "24PRJ217UVA_20241112_Diagnosis_V4.csv" # Used 1 time
-FILENAME_OF_PATIENT_DATA = PATH_OF_NORMALIZED_CLINICAL_DATA + "24PRJ217UVA_20241112_PatientMaster_V4.csv" # Used 1 time
-FILENAME_OF_MEDICATIONS_DATA = PATH_OF_NORMALIZED_CLINICAL_DATA + "24PRJ217UVA_20241112_Medications_V4.csv" # Used 1 time
-FILENAME_OF_SURGERY_BIOPSY_DATA = PATH_OF_NORMALIZED_CLINICAL_DATA + "24PRJ217UVA_20241112_SurgeryBiopsy_V4.csv"
-FILENAME_OF_QC_DATA = PATH_OF_MANIFEST_AND_QC_FILES + "24PRJ217UVA_20250130_RNASeq_QCMetrics.csv"
-FILENAME_OF_MAP_FROM_SAMPLE_TO_PATIENT = PATH_OF_ROOT + "output/eda/sample_to_patient_map.csv" # Used 1 time
-FILENAME_OF_MELANOMA_EXPRESSION_MATRIX = PATH_OF_OUTPUTS + "melanoma_expression_matrix.csv"
-FILENAME_OF_MELANOMA_CLINICAL_DATA = PATH_OF_OUTPUTS + "melanoma_clinical_data.csv"
+FILENAME_OF_DIAGNOSIS_DATA = PATH_OF_NORMALIZED_CLINICAL_DATA / "24PRJ217UVA_20241112_Diagnosis_V4.csv" # Used 1 time
+FILENAME_OF_PATIENT_DATA = PATH_OF_NORMALIZED_CLINICAL_DATA / "24PRJ217UVA_20241112_PatientMaster_V4.csv" # Used 1 time
+FILENAME_OF_MEDICATIONS_DATA = PATH_OF_NORMALIZED_CLINICAL_DATA / "24PRJ217UVA_20241112_Medications_V4.csv" # Used 1 time
+FILENAME_OF_SURGERY_BIOPSY_DATA = PATH_OF_NORMALIZED_CLINICAL_DATA / "24PRJ217UVA_20241112_SurgeryBiopsy_V4.csv"
+FILENAME_OF_QC_DATA = PATH_OF_MANIFEST_AND_QC_FILES / "24PRJ217UVA_20250130_RNASeq_QCMetrics.csv"
+FILENAME_OF_MAP_FROM_SAMPLE_TO_PATIENT = PATH_OF_ROOT / "output/eda/sample_to_patient_map.csv" # Used 1 time
+FILENAME_OF_MELANOMA_EXPRESSION_MATRIX = PATH_OF_OUTPUTS / "melanoma_expression_matrix.csv"
+FILENAME_OF_MELANOMA_CLINICAL_DATA = PATH_OF_OUTPUTS / "melanoma_clinical_data.csv"
 
 LIST_OF_MELANOMA_HISTOLOGY_PREFIXES = ["8720/", "8721/", "8742/", "8743/", "8744/", "8730/", "8745/", "8723/", "8740/", "8746/", "8771/", "8772/"]
 
@@ -460,7 +461,7 @@ def load_melanoma_data():
 
 def load_rnaseq_data():
     
-    expr_files = glob.glob(os.path.join(PATH_OF_GENE_AND_TRANSCRIPT_EXPRESSION_RESULTS, "*.genes.results"))
+    expr_files = list(PATH_OF_GENE_AND_TRANSCRIPT_EXPRESSION_RESULTS.glob("*.genes.results"))
     if not expr_files:
         logger.error(f"No .genes.results files were found in {PATH_OF_GENE_AND_TRANSCRIPT_EXPRESSION_RESULTS}.")
         return None
