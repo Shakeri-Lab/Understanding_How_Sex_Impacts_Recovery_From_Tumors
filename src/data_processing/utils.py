@@ -1,15 +1,14 @@
-import pandas as pd
-import os
-import logging
+'''
+Usage:
+./miniconda3/envs/ici_sex/bin/python src/data_processing/utils.py ../Manifest_and_QC_Files/24PRJ217UVA_20250130_RNASeq_QCMetrics.csv
+'''
 
-# Configure logging only if this is the main module
-if __name__ == '__main__':
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
-    
-logger = logging.getLogger('data_processing.utils')
+
+import argparse
+import logging
+import os
+import pandas as pd
+
 
 def create_map_from_qc(qc_file_path, sample_col=None, patient_col=None, clean_ids=True):
     """
@@ -141,23 +140,24 @@ def create_map_from_qc(qc_file_path, sample_col=None, patient_col=None, clean_id
         
     except Exception as e:
         logger.error(f"Error creating ID mapping: {e}")
-        import traceback
         logger.error(traceback.format_exc())
         return {}
 
+
 # This allows the module to be run directly for testing
 if __name__ == "__main__":
-    # Configure logging for direct execution
+    
+    # Configure logging for direct execution.
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
+    logger = logging.getLogger('data_processing.utils')
     
-    import argparse
-    parser = argparse.ArgumentParser(description="Test QC file mapping functionality")
-    parser.add_argument("qc_file", help="Path to QC metrics file")
-    parser.add_argument("--sample-col", help="Column name for sample IDs")
-    parser.add_argument("--patient-col", help="Column name for patient IDs")
+    parser = argparse.ArgumentParser(description = "Test QC file mapping functionality.")
+    parser.add_argument("qc_file", help = "Path to QC metrics file")
+    parser.add_argument("--sample-col", help = "Column name for sample IDs")
+    parser.add_argument("--patient-col", help = "Column name for patient IDs")
     args = parser.parse_args()
     
     # Test the mapping function
