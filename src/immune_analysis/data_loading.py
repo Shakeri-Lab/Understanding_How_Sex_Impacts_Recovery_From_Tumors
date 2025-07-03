@@ -384,12 +384,16 @@ def load_clinical_data():
     if os.path.exists(FILENAME_OF_MEDICATIONS_DATA):
         clinical_data = add_icb_info(clinical_data, diag_df)
     else:
-        logger.warning("File of medications data was not found at %s.", med_file)
+        logger.warning("File of medications data was not found at %s.", FILENAME_OF_MEDICATIONS_DATA)
 
     clinical_data = add_earliest_melanoma_diagnosis_age(clinical_data, melanoma_diag)
 
-
-    non_null_age = clinical_data["EarliestMelanomaDiagnosisAge"].notna().sum()
+    non_null_age = (
+        clinical_data.loc[
+            clinical_data["EarliestMelanomaDiagnosisAge"].notna(),
+            "PATIENT_ID",
+        ].nunique()
+    )
     logger.info(
         "EarliestMelanomaDiagnosisAge populated for "
         f"{non_null_age}/{clinical_data['PATIENT_ID'].nunique()} patients"
