@@ -154,9 +154,6 @@ def main():
     
     process_melanoma_immune_data()
 
-    if not os.path.exists(paths.data_frame_of_melanoma_patient_and_sequencing_data):
-        raise Exception(f"File of data frame of melanoma patient and and sequencing data {paths.data_frame_of_melanoma_patient_and_sequencing_data} was not found.")
-
     clinical_data_processed = pd.read_csv(paths.data_frame_of_melanoma_patient_and_sequencing_data)
     
     logger.info(f"Clinical data for {clinical_data_processed['PATIENT_ID'].nunique()} unique melanoma patients was loaded from {paths.data_frame_of_melanoma_patient_and_sequencing_data}.")
@@ -183,11 +180,6 @@ def process_melanoma_immune_data():
     immune_clinical: pd.DataFrame -- data frame with melanoma samples and immune features
     TODO: Describe the data frame with melanoma samples and immune features.
     """
-    
-    for file_path in [paths.map_from_sample_to_patient, paths.data_frame_of_melanoma_patient_and_sequencing_data]:
-        if not os.path.exists(file_path):
-            logger.error(f"Required file not found: {file_path}")
-            return None
 
     immune_df, clinical_data = load_melanoma_data()
     
