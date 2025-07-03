@@ -58,14 +58,8 @@ logger = logging.getLogger(__name__)
 def add_earliest_melanoma_diagnosis_age(clinical_data: pd.DataFrame, melanoma_diag: pd.DataFrame) -> pd.DataFrame:
     if "AgeAtDiagnosis" not in melanoma_diag.columns:
         return clinical_data.assign(EarliestMelanomaDiagnosisAge = np.nan)
-    earliest_age = (
-        melanoma_diag[["PATIENT_ID", "AgeAtDiagnosis"]]
-        .dropna()
-        .groupby("PATIENT_ID", as_index=False)["AgeAtDiagnosis"]
-        .min()
-        .rename(columns={"AgeAtDiagnosis": "EarliestMelanomaDiagnosisAge"})
-    )
-    return clinical_data.merge(earliest_age, on = "PATIENT_ID", how = "left")
+    clinical_data["EarliestMelanomaDiagnosisAge"] = clinical_data.groupby("PATIENT_ID")["AgeAtDiagnosis"].transform("min")
+    return clinical_data
 
 
 def add_icb_info(clinical_data: pd.DataFrame, diag_df: pd.DataFrame) -> pd.DataFrame:
