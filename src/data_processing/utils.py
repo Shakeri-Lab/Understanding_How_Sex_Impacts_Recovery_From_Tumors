@@ -10,6 +10,9 @@ import os
 import pandas as pd
 
 
+logger = logging.getLogger('data_processing.utils')
+
+
 def create_map_from_qc(qc_file_path, sample_col=None, patient_col=None, clean_ids=True):
     """
     Create a mapping between sample IDs and patient IDs from a QC metrics file.
@@ -152,7 +155,6 @@ if __name__ == "__main__":
         level=logging.INFO,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
-    logger = logging.getLogger('data_processing.utils')
     
     parser = argparse.ArgumentParser(description = "Test QC file mapping functionality.")
     parser.add_argument("qc_file", help = "Path to QC metrics file")

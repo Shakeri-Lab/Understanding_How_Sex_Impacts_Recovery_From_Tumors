@@ -7,24 +7,23 @@ python src/data_processing/eda.py
 
 from __future__ import annotations
 
+from pathlib import Path
 import argparse
 from collections import defaultdict
 import logging
 import numpy as np
 import os
 import pandas as pd
-from pathlib import Path
 import re
 from typing import Dict, Iterable
-
-from utils import create_map_from_qc
 
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import seaborn as sns
-
 plt.style.use("seaborn-v0_8-whitegrid")
+
+from utils import create_map_from_qc
 
 
 OUTPUT_DIR = Path("output/eda")
