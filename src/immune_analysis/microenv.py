@@ -240,10 +240,9 @@ def process_melanoma_immune_data(base_path, output_dir=None):
         logger.info(f"Saved specimen site summary to {site_summary_file}")
         
         # Create a summary of procedure types
-        proc_summary = immune_clinical['ProcedureType'].value_counts().reset_index()
-        proc_summary.columns = ['ProcedureType', 'Count']
+        proc_summary = immune_clinical['ProcedureType'].dropna().str.split('|').explode().str.strip().value_counts().reset_index(name = "Count").rename(columns = {"index": "ProcedureType"})
         proc_summary_file = os.path.join(output_dir, "procedure_type_summary.csv")
-        proc_summary.to_csv(proc_summary_file, index=False)
+        proc_summary.to_csv(proc_summary_file, index = False)
         logger.info(f"Saved procedure type summary to {proc_summary_file}")
         
         # Create a summary of metastatic status

@@ -182,15 +182,15 @@ def identify_melanoma_samples(clinical_data):
     if not method_cols:
         logger.warning("No columns beginning with \"Method\" were found in the biopsy file.")
         biopsy_df["ProcedureType"] = None
-
     else:
-
-        # TODO: Evaluate keeping only first header in `24PRJ217UVA_20241112_SurgeryBiopsy_V4.csv` per row.
-
-        biopsy_df["ProcedureType"] = biopsy_df.apply(
-            lambda row: next((col for col in method_cols if str(row[col]).strip().lower() == "yes"), None),
-            axis = 1
-        )
+        def concatenate_procedures(row) -> str:
+            list_of_procedures = [
+                col.removeprefix("Method")
+                for col in method_cols
+                if str(row[col]).strip().lower() == "yes"
+            ]
+            return '|'.join(list_of_procedures) if list_of_procedures else pd.NA
+        biopsy_df["ProcedureType"] = biopsy_df.apply(concatenate_procedures, axis = 1)
 
     # Keep only melanoma-patient biopsies and give SpecimenSite a shorter name. ProcedureType now comes along for free.
     melanoma_biopsies = (
