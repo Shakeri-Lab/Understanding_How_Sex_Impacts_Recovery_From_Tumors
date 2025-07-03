@@ -234,30 +234,53 @@ def identify_melanoma_samples(clinical_data):
     else:
         melanoma_biopsies.rename(columns = {"SLID_QC": "SLID"}, inplace = True)
 
-    # TODO: Evaluate keeping only first row in `24PRJ217UVA_20241112_Diagnosis_V4.csv` per patient.
-
-    # Attach DiagnosisID (row index) to every biopsy for the same patient
+    '''
+    Attach one DiagnosisID per patient, chosen as:
+    - row whose value of `AgeAtDiagnosis` is closest to that patient's value of `ICB_START_AGE` if the patient ever received ICB, or
+    - the earliest value of `AgeAtDiagnosis` otherwise.
+    '''
     if os.path.exists(FILENAME_OF_DIAGNOSIS_DATA):
-        diag_idx_df = (
+        diag_df_full = (
             pd.read_csv(FILENAME_OF_DIAGNOSIS_DATA)
-            .reset_index() # make 0-based idx
-            .rename(
-                columns = {
-                    "index": 'DiagnosisID',
-                    "AvatarKey": "PATIENT_ID"
-                }
-            )
-            .drop_duplicates("PATIENT_ID", keep = 'first')[["PATIENT_ID", "DiagnosisID"]]
+              .reset_index() # create synthetic DiagnosisID = row index
+              .rename(columns = {"index": "DiagnosisID", "AvatarKey": "PATIENT_ID"})
         )
+
+        # Harmonise ages
+        if "AgeAtDiagnosis" in diag_df_full.columns:
+            diag_df_full["AgeAtDiagnosis"] = (
+                diag_df_full["AgeAtDiagnosis"]
+                .replace(MAP_OF_STRINGS_REPRESENTING_AGES_TO_AGES)
+                .pipe(pd.to_numeric, errors="coerce")
+            )
+
+        # Build a quick lookup: PATIENT_ID → ICB_START_AGE
+        icb_map = (
+            clinical_data.set_index("PATIENT_ID")["ICB_START_AGE"]
+            .to_dict()
+        )
+
+        # Pick the most relevant diagnosis row per patient
+        chosen_rows = []
+        for pid, grp in diag_df_full.groupby("PATIENT_ID"):
+            icb_age = icb_map.get(pid, np.nan)
+            if pd.notna(icb_age):
+                grp = grp.assign(age_diff=(grp["AgeAtDiagnosis"] - icb_age).abs())
+                chosen_rows.append(grp.sort_values(["age_diff", "AgeAtDiagnosis"]).iloc[0])
+            else:
+                chosen_rows.append(grp.sort_values("AgeAtDiagnosis").iloc[0])
+
+        diag_idx_df = pd.DataFrame(chosen_rows)[["PATIENT_ID", "DiagnosisID"]]
+
         melanoma_biopsies = melanoma_biopsies.merge(
             diag_idx_df,
-            on = "PATIENT_ID",
-            how = "left",
-            validate = "m:1" # many biopsies ↔︎ one diagnosis row
+            on="PATIENT_ID",
+            how="left",
+            validate="m:1"          # many biopsies ↔︎ one chosen diagnosis row
         )
     else:
-        logger.warning(f"Diagnosis file was not found at {diag_file_path}.")
-        melanoma_biopsies["DiagnosisID"] = None # keep column for downstream code
+        logger.warning("Diagnosis file was not found at %s.", FILENAME_OF_DIAGNOSIS_DATA)
+        melanoma_biopsies["DiagnosisID"] = None  # keep column for downstream code
 
     # Check if relevant columns exist in the biopsy data
     relevant_cols = ['PATIENT_ID', 'SLID', 'SpecimenSite', 'DiagnosisID', 'ProcedureType']
