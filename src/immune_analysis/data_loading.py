@@ -204,7 +204,20 @@ def identify_melanoma_samples(clinical_data):
     # TODO: Evaluate keeping only first row in `24PRJ217UVA_20250130_RNASeq_QCMetrics.csv` per patient.
 
     # Attach exactly one SLID per patient from the QC metrics file.
-    qc_first_slid = qc_df.sort_values(['PATIENT_ID', 'SLID']).drop_duplicates("PATIENT_ID")[['PATIENT_ID', 'SLID']].rename(columns = {"SLID": "SLID_QC"})
+    qc_ranked = (
+        qc_df.assign(
+            PassFlag = qc_df["QCCheck"].str.casefold().eq("pass"),
+            PctUnique = qc_df["MappedUniqueReads"] / qc_df["TotalReads"],
+        )
+        # Sort: (1) Pass before Flag
+        #       (2) higher %-unique first
+        .sort_values(
+            ["PATIENT_ID", "PassFlag", "PctUnique"],
+            ascending=[True, False, False]
+        )
+        .drop_duplicates("PATIENT_ID", keep="first")
+    )
+    qc_first_slid = qc_ranked[["PATIENT_ID", "SLID"]].rename(columns={"SLID": "SLID_QC"})
 
     # Merge onto the biopsy table
     melanoma_biopsies = melanoma_biopsies.merge(
