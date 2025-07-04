@@ -1,6 +1,6 @@
 '''
 Usage:
-./miniconda3/envs/ici_sex/bin/python src/immune_analysis/data_loading.py
+./miniconda3/envs/ici_sex/bin/python -m src.immune_analysis.data_loading
 '''
 
 from pathlib import Path
@@ -10,21 +10,8 @@ import numpy as np
 import os
 import pandas as pd
 
+from src.config import paths
 
-PATH_OF_ROOT = Path("/project/orien/data/aws/24PRJ217UVA_IORIG/Understanding_How_Sex_Impacts_Recovery_From_Tumors")
-PATH_OF_NORMALIZED_CLINICAL_DATA = PATH_OF_ROOT / "../Clinical_Data/24PRJ217UVA_NormalizedFiles"
-PATH_OF_MANIFEST_AND_QC_FILES = PATH_OF_ROOT / "../Manifest_and_QC_Files"
-PATH_OF_GENE_AND_TRANSCRIPT_EXPRESSION_RESULTS = PATH_OF_ROOT / "../RNAseq/gene_and_transcript_expression_results"
-PATH_OF_OUTPUTS = PATH_OF_ROOT / "output/data_loading"
-
-FILENAME_OF_DIAGNOSIS_DATA = PATH_OF_NORMALIZED_CLINICAL_DATA / "24PRJ217UVA_20241112_Diagnosis_V4.csv"
-FILENAME_OF_PATIENT_DATA = PATH_OF_NORMALIZED_CLINICAL_DATA / "24PRJ217UVA_20241112_PatientMaster_V4.csv"
-FILENAME_OF_MEDICATIONS_DATA = PATH_OF_NORMALIZED_CLINICAL_DATA / "24PRJ217UVA_20241112_Medications_V4.csv"
-FILENAME_OF_SURGERY_BIOPSY_DATA = PATH_OF_NORMALIZED_CLINICAL_DATA / "24PRJ217UVA_20241112_SurgeryBiopsy_V4.csv"
-FILENAME_OF_QC_DATA = PATH_OF_MANIFEST_AND_QC_FILES / "24PRJ217UVA_20250130_RNASeq_QCMetrics.csv"
-FILENAME_OF_MAP_FROM_SAMPLE_TO_PATIENT = PATH_OF_ROOT / "output/eda/sample_to_patient_map.csv"
-FILENAME_OF_MELANOMA_EXPRESSION_MATRIX = PATH_OF_OUTPUTS / "melanoma_expression_matrix.csv"
-FILENAME_OF_MELANOMA_CLINICAL_DATA = PATH_OF_OUTPUTS / "melanoma_clinical_data.csv"
 
 LIST_OF_MELANOMA_HISTOLOGY_PREFIXES = ["8720/", "8721/", "8742/", "8743/", "8744/", "8730/", "8745/", "8723/", "8740/", "8746/", "8771/", "8772/"]
 
@@ -64,7 +51,7 @@ def add_earliest_melanoma_diagnosis_age(clinical_data: pd.DataFrame, melanoma_di
 
 
 def add_icb_info(clinical_data: pd.DataFrame, diag_df: pd.DataFrame) -> pd.DataFrame:
-    med_df = pd.read_csv(FILENAME_OF_MEDICATIONS_DATA)
+    med_df = pd.read_csv(paths.medications_data)
     med_df["is_icb"] = med_df["Medication"].str.lower().isin({x.lower() for x in ICB_AGENTS})
     
     icb_rows = med_df[med_df["is_icb"]].copy()
@@ -141,21 +128,12 @@ def identify_melanoma_samples(clinical_data):
     This function returns a tuple of a list of unique SLIDs corresponding to melanoma tumor samples and a dictionary with additional sample information including site, procedure, and diagnosis.
     '''
 
-    logger.info(f"Filename of QC data is {FILENAME_OF_QC_DATA}.")
-    logger.info(f"Filename of surgery biopsy data is {FILENAME_OF_SURGERY_BIOPSY_DATA}.")
-
-    # Check if files exist
-    if not os.path.exists(FILENAME_OF_QC_DATA):
-        logger.error(f"File of QC data was not found at {FILENAME_OF_QC_DATA}.")
-        return [], {}
-
-    if not os.path.exists(FILENAME_OF_SURGERY_BIOPSY_DATA):
-        logger.error(f"File of surgery biopsy was not found at {FILENAME_OF_SURGERY_BIOPSY_DATA}.")
-        return [], {}
+    logger.info(f"Path of QC data is {paths.QC_data}.")
+    logger.info(f"Path of surgery biopsy data is {paths.surgery_biopsy_data}.")
 
     # Load dataframes
-    qc_df = pd.read_csv(FILENAME_OF_QC_DATA).rename(columns = {"ORIENAvatarKey": "PATIENT_ID"})
-    biopsy_df = pd.read_csv(FILENAME_OF_SURGERY_BIOPSY_DATA).rename(columns = {"AvatarKey": "PATIENT_ID"})
+    qc_df = pd.read_csv(paths.QC_data).rename(columns = {"ORIENAvatarKey": "PATIENT_ID"})
+    biopsy_df = pd.read_csv(paths.surgery_biopsy_data).rename(columns = {"AvatarKey": "PATIENT_ID"})
 
     logger.info(f"Columns of data frame of QC data are {qc_df.columns.tolist()}.")
     logger.info(f"Columns of data frame of surgery biopsy data are {biopsy_df.columns.tolist()}.")
@@ -239,48 +217,44 @@ def identify_melanoma_samples(clinical_data):
     - row whose value of `AgeAtDiagnosis` is closest to that patient's value of `ICB_START_AGE` if the patient ever received ICB, or
     - the earliest value of `AgeAtDiagnosis` otherwise.
     '''
-    if os.path.exists(FILENAME_OF_DIAGNOSIS_DATA):
-        diag_df_full = (
-            pd.read_csv(FILENAME_OF_DIAGNOSIS_DATA)
-              .reset_index() # create synthetic DiagnosisID = row index
-              .rename(columns = {"index": "DiagnosisID", "AvatarKey": "PATIENT_ID"})
+    diag_df_full = (
+        pd.read_csv(paths.diagnosis_data)
+          .reset_index() # create synthetic DiagnosisID = row index
+          .rename(columns = {"index": "DiagnosisID", "AvatarKey": "PATIENT_ID"})
+    )
+
+    # Harmonise ages
+    if "AgeAtDiagnosis" in diag_df_full.columns:
+        diag_df_full["AgeAtDiagnosis"] = (
+            diag_df_full["AgeAtDiagnosis"]
+            .replace(MAP_OF_STRINGS_REPRESENTING_AGES_TO_AGES)
+            .pipe(pd.to_numeric, errors="coerce")
         )
 
-        # Harmonise ages
-        if "AgeAtDiagnosis" in diag_df_full.columns:
-            diag_df_full["AgeAtDiagnosis"] = (
-                diag_df_full["AgeAtDiagnosis"]
-                .replace(MAP_OF_STRINGS_REPRESENTING_AGES_TO_AGES)
-                .pipe(pd.to_numeric, errors="coerce")
-            )
+    # Build a quick lookup: PATIENT_ID → ICB_START_AGE
+    icb_map = (
+        clinical_data.set_index("PATIENT_ID")["ICB_START_AGE"]
+        .to_dict()
+    )
 
-        # Build a quick lookup: PATIENT_ID → ICB_START_AGE
-        icb_map = (
-            clinical_data.set_index("PATIENT_ID")["ICB_START_AGE"]
-            .to_dict()
-        )
+    # Pick the most relevant diagnosis row per patient
+    chosen_rows = []
+    for pid, grp in diag_df_full.groupby("PATIENT_ID"):
+        icb_age = icb_map.get(pid, np.nan)
+        if pd.notna(icb_age):
+            grp = grp.assign(age_diff=(grp["AgeAtDiagnosis"] - icb_age).abs())
+            chosen_rows.append(grp.sort_values(["age_diff", "AgeAtDiagnosis"]).iloc[0])
+        else:
+            chosen_rows.append(grp.sort_values("AgeAtDiagnosis").iloc[0])
 
-        # Pick the most relevant diagnosis row per patient
-        chosen_rows = []
-        for pid, grp in diag_df_full.groupby("PATIENT_ID"):
-            icb_age = icb_map.get(pid, np.nan)
-            if pd.notna(icb_age):
-                grp = grp.assign(age_diff=(grp["AgeAtDiagnosis"] - icb_age).abs())
-                chosen_rows.append(grp.sort_values(["age_diff", "AgeAtDiagnosis"]).iloc[0])
-            else:
-                chosen_rows.append(grp.sort_values("AgeAtDiagnosis").iloc[0])
+    diag_idx_df = pd.DataFrame(chosen_rows)[["PATIENT_ID", "DiagnosisID"]]
 
-        diag_idx_df = pd.DataFrame(chosen_rows)[["PATIENT_ID", "DiagnosisID"]]
-
-        melanoma_biopsies = melanoma_biopsies.merge(
-            diag_idx_df,
-            on="PATIENT_ID",
-            how="left",
-            validate="m:1"          # many biopsies ↔︎ one chosen diagnosis row
-        )
-    else:
-        logger.warning("Diagnosis file was not found at %s.", FILENAME_OF_DIAGNOSIS_DATA)
-        melanoma_biopsies["DiagnosisID"] = None  # keep column for downstream code
+    melanoma_biopsies = melanoma_biopsies.merge(
+        diag_idx_df,
+        on="PATIENT_ID",
+        how="left",
+        validate="m:1"          # many biopsies ↔︎ one chosen diagnosis row
+    )
 
     # Check if relevant columns exist in the biopsy data
     relevant_cols = ['PATIENT_ID', 'SLID', 'SpecimenSite', 'DiagnosisID', 'ProcedureType']
@@ -390,7 +364,7 @@ def identify_melanoma_samples(clinical_data):
 
 def load_clinical_data():
     
-    diag_df = pd.read_csv(FILENAME_OF_DIAGNOSIS_DATA)        
+    diag_df = pd.read_csv(paths.diagnosis_data)        
     # Create a zero-based row index to serve as a synthetic DiagnosisID.
     diag_df.reset_index(drop = False, inplace = True)
     diag_df.rename(
@@ -406,7 +380,7 @@ def load_clinical_data():
 
     diag_df["HistologyCode"] = diag_df["HistologyCode"].astype(str)
 
-    patient_df = pd.read_csv(FILENAME_OF_PATIENT_DATA).rename(columns = {"AvatarKey": "PATIENT_ID"})
+    patient_df = pd.read_csv(paths.patient_data).rename(columns = {"AvatarKey": "PATIENT_ID"})
 
     # Filter for melanoma patients.
     melanoma_diag = diag_df[diag_df["HistologyCode"].apply(lambda x: any(x.startswith(prefix) for prefix in LIST_OF_MELANOMA_HISTOLOGY_PREFIXES))]
@@ -416,12 +390,7 @@ def load_clinical_data():
     logger.info(f"{len(melanoma_diag)} melanoma patients were found.")
 
     clinical_data = melanoma_diag.merge(patient_df, on = "PATIENT_ID", how = "left")
-
-    if os.path.exists(FILENAME_OF_MEDICATIONS_DATA):
-        clinical_data = add_icb_info(clinical_data, diag_df)
-    else:
-        logger.warning("File of medications data was not found at %s.", FILENAME_OF_MEDICATIONS_DATA)
-
+    clinical_data = add_icb_info(clinical_data, diag_df)
     clinical_data = add_earliest_melanoma_diagnosis_age(clinical_data, melanoma_diag)
 
     non_null_age = (
@@ -504,9 +473,9 @@ def load_melanoma_data():
 
 def load_rnaseq_data():
     
-    expr_files = list(PATH_OF_GENE_AND_TRANSCRIPT_EXPRESSION_RESULTS.glob("*.genes.results"))
+    expr_files = list(paths.gene_and_transcript_expression_results.glob("*.genes.results"))
     if not expr_files:
-        logger.error(f"No .genes.results files were found in {PATH_OF_GENE_AND_TRANSCRIPT_EXPRESSION_RESULTS}.")
+        logger.error(f"No .genes.results files were found in {paths.gene_and_transcript_expression_results}.")
         return None
 
     # Initialize a dictionary to store expression data
@@ -525,14 +494,9 @@ def load_sample_to_patient_map() -> dict[str, str]:
     '''
     This function loads the mapping from sample ID (SLID) to patient ID (PATIENT_ID).
     '''
+    map_df = pd.read_csv(paths.map_from_sample_to_patient)
 
-    if not os.path.exists(FILENAME_OF_MAP_FROM_SAMPLE_TO_PATIENT):
-        logger.error(f"Sample-to-patient mapping file was not found at {FILENAME_OF_MAP_FROM_SAMPLE_TO_PATIENT}.")
-        return {}
-
-    map_df = pd.read_csv(FILENAME_OF_MAP_FROM_SAMPLE_TO_PATIENT)
-
-    logger.info(f"Columns found in mapping file ({FILENAME_OF_MAP_FROM_SAMPLE_TO_PATIENT}): {map_df.columns.tolist()}")
+    logger.info(f"Columns found in mapping file ({paths.map_from_sample_to_patient}): {map_df.columns.tolist()}")
     
     if "SampleID" not in map_df.columns:
         logger.error(f"Required column \"{slid_col}\" was not found in mapping file.")
@@ -549,16 +513,16 @@ def load_sample_to_patient_map() -> dict[str, str]:
 
 
 if __name__ == "__main__": 
-
-    os.makedirs(PATH_OF_OUTPUTS, exist_ok = True)
     
-    logger.info(f"Sample map will be loaded from {FILENAME_OF_MAP_FROM_SAMPLE_TO_PATIENT}.")
+    paths.ensure_dependencies_for_data_loading_exist()
+    
+    logger.info(f"Sample map will be loaded from {paths.map_from_sample_to_patient}.")
     
     expr_matrix, clinical_data = load_melanoma_data()
     
     if expr_matrix is not None and not expr_matrix.empty and clinical_data is not None and not clinical_data.empty:
         logger.info("Saving filtered expression matrix and clinical data.")
-        expr_matrix.to_csv(FILENAME_OF_MELANOMA_EXPRESSION_MATRIX, index_label = "Ensembl ID")
-        clinical_data.to_csv(FILENAME_OF_MELANOMA_CLINICAL_DATA, index = False)
+        expr_matrix.to_csv(paths.melanoma_expression_matrix, index_label = "Ensembl ID")
+        clinical_data.to_csv(paths.melanoma_clinical_data, index = False)
     else:
          logger.warning("Generating or saving output files failed due to errors in data loading or processing.")
