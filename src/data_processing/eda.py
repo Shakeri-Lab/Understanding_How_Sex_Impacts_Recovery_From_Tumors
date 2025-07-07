@@ -2,7 +2,7 @@
 `eda.py` is a module that generates various CSV files and a plot.
 
 Usage:
-python src/data_processing/eda.py
+./miniconda3/envs/ici_sex/bin/python -m src.data_processing.eda
 '''
 
 from __future__ import annotations
@@ -23,18 +23,15 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 plt.style.use("seaborn-v0_8-whitegrid")
 
-from utils import create_map_from_qc
+from src.data_processing.utils import create_map_from_qc
+from src.config import paths
 
 
 OUTPUT_DIR = Path("output/eda")
 OUTPUT_DIR.mkdir(parents = True, exist_ok = True)
 
 
-logging.basicConfig(
-    filename = OUTPUT_DIR / "processing_log.txt",
-    level = logging.INFO,
-    format = "%(levelname)s: %(message)s"
-)
+logging.basicConfig(level = logging.INFO, format = "%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 
@@ -59,7 +56,7 @@ STAGE_MAP = {
     "IVA": "Stage IVA", "IVB": "Stage IVB", "IVC": "Stage IVC"
 }
 
-STRICT_MEL_CODES = {"8720","8721","8730","8740","8742","8761","8771","8772"}
+STRICT_MEL_CODES = {"8720", "8721", "8730", "8740", "8742", "8761", "8771", "8772"}
 
 
 def classify_icb(med):
@@ -136,10 +133,18 @@ def is_melanoma_hist(code) -> bool:
     return (base in STRICT_MEL_CODES) and (beh == "3")
 
 
-def load_csvs(directory: Path, patterns: Dict[str, Iterable[str]]):
+def load_csvs():
+    patterns = {
+        "patients": ["PatientMaster"],
+        "diagnoses": ["Diagnosis"],
+        "treatments": ["Medications"],
+        "clinical_mol_linkage": ["ClinicalMolLinkage"],
+        "outcomes": ["Outcomes"],
+        "vital_status": ["VitalStatus"],
+    }
     out: Dict[str, pd.DataFrame] = {}
     for key, pats in patterns.items():
-        file = next((f for f in directory.glob("*.csv") if any(p.lower() in f.name.lower() for p in pats)), None)
+        file = next((f for f in paths.normalized_clinical_data.glob("*.csv") if any(p.lower() in f.name.lower() for p in pats)), None)
         if file is None:
             logger.warning("No file for %s", key)
             continue
@@ -290,17 +295,9 @@ def process_clinical(dfs):
     return patients
 
 
-def main(base: Path, out_dir: Path):
+def main():
     
-    patterns = {
-        "patients": ["PatientMaster"],
-        "diagnoses": ["Diagnosis"],
-        "treatments": ["Medications"],
-        "clinical_mol_linkage": ["ClinicalMolLinkage"],
-        "outcomes": ["Outcomes"],
-        "vital_status": ["VitalStatus"],
-    }
-    dfs = load_csvs(base / "Clinical_Data" / "24PRJ217UVA_NormalizedFiles", patterns)
+    dfs = load_csvs()
     print("The following CSVs were loaded.")
     print([type_of_data for type_of_data in dfs.keys()])
     
@@ -316,49 +313,26 @@ def main(base: Path, out_dir: Path):
                 lambda x: str(x) if isinstance(x, list) else str([] if pd.isna(x) else x)
             )
 
-    qc_dir  = base / "Manifest_and_QC_Files"
-    qc_file = qc_dir / "24PRJ217UVA_20241112_RNASeq_QCMetrics.csv"
-
-    if not qc_file.exists():
-        cand = next(
-            (f for f in qc_dir.glob("*.csv") if "rna" in f.name.lower() and "qc" in f.name.lower()),
-            None
-        )
-        qc_file = cand if cand else None
-
-    if create_map_from_qc is None:
-        logger.warning("create_map_from_qc not available – cannot write sample_to_patient_map.csv")
-    elif qc_file is None or not qc_file.exists():
-        logger.warning("No RNA-Seq QC file found under %s – skipping sample_to_patient_map.csv", qc_dir)
+    id_map = create_map_from_qc(paths.QC_data, sample_col = None, patient_col = None)
+    if id_map:
+        map_df = pd.DataFrame(id_map.items(), columns = ["SampleID", "PatientID"])
+        map_df.to_csv(paths.map_from_sample_to_patient, index = False)
+        logger.info("Saved %d mappings → %s", len(map_df), paths.map_from_sample_to_patient)
     else:
-        id_map = create_map_from_qc(qc_file, sample_col = None, patient_col = None)
-        if id_map:
-            map_df = pd.DataFrame(id_map.items(), columns = ["SampleID", "PatientID"])
-            map_file = out_dir / "sample_to_patient_map.csv"
-            map_df.to_csv(map_file, index = False)
-            logger.info("Saved %d mappings → %s", len(map_df), map_file)
-        else:
-            logger.warning("QC file parsed but returned an empty mapping – no sample_to_patient_map.csv written")
+        logger.warning("QC file parsed but returned an empty mapping – no sample_to_patient_map.csv written")
     
-    out_dir.mkdir(parents = True, exist_ok = True)
-    (out_dir / "plots").mkdir(parents = True, exist_ok = True)
-    (out_dir / "reports").mkdir(parents = True, exist_ok = True)
-    
-    csv = out_dir / "melanoma_patients_with_sequencing.csv"
-    print(f"Data frame will be saved to {csv}.")
-    df.to_csv(csv, index = False)
-    logger.info("Saved %d patients → %s", len(df), csv)
+    print(f"Data frame will be saved to {paths.data_frame_of_melanoma_patient_and_sequencing_data}.")
+    df.to_csv(paths.data_frame_of_melanoma_patient_and_sequencing_data, index = False)
+    logger.info("Saved %d patients → %s", len(df), paths.data_frame_of_melanoma_patient_and_sequencing_data)
     
     summary_stats = df.describe(include = "all")
-    summary_file = out_dir / "reports" / "summary_statistics.csv"
-    summary_stats.to_csv(summary_file)
-    logger.info("Saved summary statistics → %s", summary_file)
+    summary_stats.to_csv(paths.eda_summary_statistics)
+    logger.info("Saved summary statistics → %s", paths.eda_summary_statistics)
 
     if "HAS_ICB" in df.columns:
         icb_dist = df["HAS_ICB"].value_counts().rename_axis("HAS_ICB").reset_index(name = "count").sort_values("HAS_ICB", ascending = False)
-        icb_file = out_dir / "reports" / "icb_distribution.csv"
-        icb_dist.to_csv(icb_file, index = False)
-        logger.info("Saved ICB distribution → %s", icb_file)
+        icb_dist.to_csv(paths.eda_icb_distribution, index = False)
+        logger.info("Saved ICB distribution → %s", paths.eda_icb_distribution)
     else:
         logger.warning("'HAS_ICB' column missing – icb_distribution.csv not generated.")
     
@@ -369,21 +343,12 @@ def main(base: Path, out_dir: Path):
         plt.xlabel("Sex")
         plt.ylabel("count")
         plt.tight_layout()
-        plot_file = out_dir / "plots" / "sex_distribution.png"
-        plt.savefig(plot_file)
+        plt.savefig(paths.eda_sex_distribution)
         plt.close()
-        logger.info("Saved sex distribution plot → %s", plot_file)
+        logger.info("Saved sex distribution plot → %s", paths.eda_sex_distribution)
     else:
         logger.warning("No 'Sex' column or all values are NaN - sex distribution.png not generated.")
-        
-
-def cli():
-    p = argparse.ArgumentParser()
-    p.add_argument("--base", default = Path("/project/orien/data/aws/24PRJ217UVA_IORIG"), type = Path)
-    p.add_argument("--out", default = OUTPUT_DIR, type = Path)
-    args = p.parse_args()
-    main(args.base, args.out)
 
 
 if __name__ == "__main__":
-    cli()
+    main()
