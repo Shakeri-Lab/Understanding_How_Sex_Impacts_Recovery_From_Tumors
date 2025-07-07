@@ -18,24 +18,36 @@ PATIENT_COL_CANDIDATES: list[str] = ["ORIENAvatarKey", "PATIENT_ID", "PatientID"
 SUFFIXES = ("-RNA", "-DNA", "-T", "-N", "-PRIMARY", "-METASTATIC")
 
 
-def first_match(cols: list[str], candidates: list[str]) -> str | None:
+def pick_column(
+    cols,
+    preferred: list[str],
+    heuristics: tuple[str, ...] = (),
+) -> str | None:
     '''
-    Return the first column in a provided list of columns that appears in another provided list of columns.
-    '''
-    return next((c for c in candidates if c in cols), None)
+    Return the first matching column name.
 
+    Priority:
+    1. Exact match against preferred (case-sensitive).
+    2. First column whose lowercase name contains any keyword in heuristics.
+    '''
+    cols = list(cols) # in case an Index object was passed
+    lower_map = {c.lower(): c for c in cols}
 
-def heuristic_col_match(cols, keywords) -> str | None:
-    '''
-    Pick the first column whose lowercase name contains one keyword in a provided list of keywords.
-    '''
-    lowered_cols = {col.lower(): col for col in cols}
-    for key in keywords:
-        for lcol, orig in lowered_cols.items():
-            if key in lcol:
-                return orig
+    # 1) exact match
+    for cand in preferred:
+        if cand in cols:
+            return cand
+
+    # 2) keyword heuristic
+    for kw in heuristics:
+        found = next(
+            (orig for low, orig in lower_map.items() if kw in low),
+            None,
+        )
+        if found:
+            return found
+
     return None
-
 
 
 def strip_suffixes(string: str) -> str:
@@ -54,7 +66,7 @@ def create_map_from_qc(
     clean_ids: bool = True
 ) -> dict[str, str]:
     '''
-    Create a mapping between sample IDs and patient IDs from a QC metrics file.
+    Create a mapping between sample IDs and patient IDs from a QC metrics CSV file.
     
     Parameters:
     -----------
@@ -78,8 +90,8 @@ def create_map_from_qc(
     # Auto-detect columns if not provided
     cols: list[str] = qc_data.columns.tolist()
     
-    sample_col = sample_col or first_match(cols, SAMPLE_COL_CANDIDATES) or heuristic_col_match(cols, ("sample", "lab", "slid", "id"))
-    patient_col = patient_col or first_match(cols, PATIENT_COL_CANDIDATES) or heuristic_col_match(cols, ("patient", "avatar", "orien", "key"))
+    sample_col = sample_col or pick_column(cols, SAMPLE_COL_CANDIDATES, ("sample", "lab", "slid", "id"))
+    patient_col = patient_col or pick_column(cols, PATIENT_COL_CANDIDATES, ("patient", "avatar", "orien", "key"))
     
     if sample_col is None or patient_col is None:
         logger.error(f"Sample and patient ID columns both not be both identified. Available columns are {cols}.")
@@ -116,7 +128,7 @@ if __name__ == "__main__":
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
     
-    parser = argparse.ArgumentParser(description = "Test QC file mapping functionality.")
+    parser = argparse.ArgumentParser(description = "Create sample to patient map from QC CSV file.")
     parser.add_argument("qc_file", help = "Path to QC metrics file")
     parser.add_argument("--sample-col", help = "Column name for sample IDs")
     parser.add_argument("--patient-col", help = "Column name for patient IDs")
