@@ -12,7 +12,6 @@ import argparse
 from collections import defaultdict
 import logging
 import numpy as np
-import os
 import pandas as pd
 import re
 from typing import Dict, Iterable
@@ -25,10 +24,6 @@ plt.style.use("seaborn-v0_8-whitegrid")
 
 from src.data_processing.utils import create_map_from_qc
 from src.config import paths
-
-
-OUTPUT_DIR = Path("output/eda")
-OUTPUT_DIR.mkdir(parents = True, exist_ok = True)
 
 
 logging.basicConfig(level = logging.INFO, format = "%(levelname)s: %(message)s")
