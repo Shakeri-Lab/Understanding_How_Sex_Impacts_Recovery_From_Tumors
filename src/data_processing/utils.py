@@ -15,13 +15,20 @@ logger = logging.getLogger('data_processing.utils')
 
 SAMPLE_COL_CANDIDATES: list[str] = ["SLID", "SampleID", "Sample_ID", "Sample", "LabID", "Lab_ID"]
 PATIENT_COL_CANDIDATES: list[str] = ["ORIENAvatarKey", "PATIENT_ID", "PatientID", "Patient_ID", "AvatarKey"]
+SUFFIXES = ("-RNA", "-DNA", "-T", "-N", "-PRIMARY", "-METASTATIC")
 
 
-def first_match(cols, candidates) -> str | None:
+def first_match(cols: list[str], candidates: list[str]) -> str | None:
+    '''
+    Return the first column in a provided list of columns that appears in another provided list of columns.
+    '''
     return next((c for c in candidates if c in cols), None)
 
 
 def heuristic_col_match(cols, keywords) -> str | None:
+    '''
+    Pick the first column whose lowercase name contains one keyword in a provided list of keywords.
+    '''
     lowered_cols = {col.lower(): col for col in cols}
     for key in keywords:
         for lcol, orig in lowered_cols.items():
@@ -30,8 +37,23 @@ def heuristic_col_match(cols, keywords) -> str | None:
     return None
 
 
-def create_map_from_qc(qc_file_path: str, sample_col: str | None, patient_col: str | None = None, clean_ids: bool = True) -> dict[str, str]:
-    """
+
+def strip_suffixes(string: str) -> str:
+    '''
+    Remove common suffixes and anything starting with the first period.
+    '''
+    for suffix in SUFFIXES:
+        string = string.removesuffix(suffix)
+    return string.split('.', 1)[0]
+
+
+def create_map_from_qc(
+    qc_file_path: str,
+    sample_col: str | None = None,
+    patient_col: str | None = None,
+    clean_ids: bool = True
+) -> dict[str, str]:
+    '''
     Create a mapping between sample IDs and patient IDs from a QC metrics file.
     
     Parameters:
@@ -47,9 +69,8 @@ def create_map_from_qc(qc_file_path: str, sample_col: str | None, patient_col: s
         
     Returns:
     --------
-    dict
-        Dictionary mapping sample IDs to patient IDs
-    """
+    dict[str, str] -- dictionary mapping sample IDs to patient IDs
+    '''
     qc_data = pd.read_csv(qc_file_path)
     
     logger.info(f"QC data with {qc_data.shape[0]} rows and the following columns were loaded.\n{qc_data.columns.tolist()}")
@@ -57,13 +78,8 @@ def create_map_from_qc(qc_file_path: str, sample_col: str | None, patient_col: s
     # Auto-detect columns if not provided
     cols: list[str] = qc_data.columns.tolist()
     
-    if sample_col is None:
-        sample_col = first_match(cols, SAMPLE_COL_CANDIDATES) or heuristic_col_match(cols, ("sample", "lab", "slid", "id"))
-        logger.info(f"Sample ID column {sample_col} was detected automatically.")
-        
-    if patient_col is None:
-        patient_col = first_match(cols, PATIENT_COL_CANDIDATES) or heuristic_col_match(cols, ("patient", "avatar", "orien", "key"))
-        logger.info(f"Patient ID column {patient_col} was detected automatically.")
+    sample_col = sample_col or first_match(cols, SAMPLE_COL_CANDIDATES) or heuristic_col_match(cols, ("sample", "lab", "slid", "id"))
+    patient_col = patient_col or first_match(cols, PATIENT_COL_CANDIDATES) or heuristic_col_match(cols, ("patient", "avatar", "orien", "key"))
     
     if sample_col is None or patient_col is None:
         logger.error(f"Sample and patient ID columns both not be both identified. Available columns are {cols}.")
@@ -71,53 +87,22 @@ def create_map_from_qc(qc_file_path: str, sample_col: str | None, patient_col: s
 
     logger.info(f"Using {sample_col} as sample ID and {patient_col} as patient ID.")
     
+    df = qc_data[[sample_col, patient_col]].dropna()
+    
     # Create basic mapping dictionary
-    id_map: dict[str, str] = dict(zip(qc_data[sample_col], qc_data[patient_col]))
+    id_map: dict[str, str] = dict(zip(qc_data[sample_col].astype(str), qc_data[patient_col].astype(str)))
 
     # If requested, clean and normalize sample IDs
     if clean_ids:
-        clean_map = {}
-        suffixes = ("-RNA", "-DNA", "-T", "-N", "-PRIMARY", "-METASTATIC")
+        cleaned = df[sample_col].astype(str).map(strip_suffixes)
+        id_map.update(dict(zip(cleaned, df[patient_col].astype(str))))
         
-        for lab_id, orien_id in id_map.items():
-            # Skip if either ID is NaN
-            if pd.isna(lab_id) or pd.isna(orien_id):
-                continue
-
-            # Convert IDs to strings
-            lab_id = str(lab_id)
-            orien_id = str(orien_id)
-
-            # Additional cleaning steps for lab IDs
-            # Remove any common prefixes/suffixes that might be in expression data
-            cleaned_lab_id = lab_id
-            for suffix in suffixes:
-                cleaned_lab_id = cleaned_lab_id.replace(suffix, '')
-
-            # Some IDs might have dots as separators
-            dot_cleaned_lab_id = cleaned_lab_id.split('.')[0]
-
-            # Add both original and cleaned versions to the mapping
-            variants: list[str] = []
-            for v in (lab_id, cleaned_lab_id, dot_cleaned_lab_id):
-                if v not in variants:
-                    variants.append(v)
-                    
-            for v in variants:
-                clean_map[v] = orien_id
-
-        id_map = clean_map
-
     logger.info(f"Created mapping for {len(id_map)} sample IDs to {len(set(id_map.values()))} patient IDs")
-
-    # Check if we have duplicated patient IDs
-    patient_counts = {}
-    for patient_id in id_map.values():
-        patient_counts[patient_id] = patient_counts.get(patient_id, 0) + 1
-
-    duplicated_patients = {k: v for k, v in patient_counts.items() if v > 1}
-    if duplicated_patients:
-        logger.info(f"Found {len(duplicated_patients)} patients with multiple samples")
+        
+    counts = pd.Series(id_map.values()).value_counts()
+    dups = counts[counts.gt(1)]
+    if not dups.empty:
+        logger.info(f"Found {len(dups)} patients with multiple samples")
 
     return id_map
 
@@ -144,9 +129,8 @@ if __name__ == "__main__":
         patient_col=args.patient_col
     )
     
-    print(f"Created mapping with {len(id_map)} entries")
-    print("First 5 mappings:")
+    print(f"Created mapping with {len(id_map)} entries. First five:")
     for i, (k, v) in enumerate(id_map.items()):
-        if i >= 5:
+        if i == 5:
             break
         print(f"  {k} -> {v}") 
