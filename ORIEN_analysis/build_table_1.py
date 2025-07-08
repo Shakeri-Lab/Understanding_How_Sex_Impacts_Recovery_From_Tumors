@@ -150,6 +150,14 @@ def main():
     tumor_data = tumor_data.drop_duplicates(subset = "ORIENAvatarKey", ignore_index = True)
     print(f"Number of rows in tumor data after dropping duplicates: {len(tumor_data)}")
     
+    tumor_data = tumor_data.merge(
+        output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors[["AvatarKey", "EKN Assigned Stage"]],
+        left_on = "ORIENAvatarKey",
+        right_on = "AvatarKey",
+        how = "left"
+    )
+    print(f"Number of rows in tumor data after merging column \"EKN Assigned Stage\" from output of pipeline for pairing clinical data and stages of tumors: {len(tumor_data)}")
+    
     number_of_tumors = len(tumor_data)
     number_of_tumors_of_males, number_of_tumors_of_females = tumor_data["Sex"].value_counts().astype(int)
     print(f"Number of tumors: {number_of_tumors}")
@@ -253,12 +261,30 @@ def main():
         }
     ]
     
+    list_of_rows_of_statistics_re_stages = [
+        dict(Characteristic = "Stage"),
+        *(
+            {
+                "Characteristic": stage,
+                **summarize(
+                    tumor_data["EKN Assigned Stage"] == stage,
+                    tumor_data,
+                    number_of_tumors_of_males,
+                    number_of_tumors_of_females,
+                    number_of_tumors
+                )
+            }
+            for stage in ["II", "III", "IV"]
+        )
+    ]
+    
     # TODO: Format all numeric values in table 1 to 1 decimal place.
     table_1 = pd.DataFrame(
         list_of_rows_of_statistics_re_sequencing_data +
         list_of_rows_of_statistics_re_specimen_collection_sites + 
         list_of_rows_of_statistics_re_melanoma_driver_mutations +
-        list_of_rows_of_statistics_re_age_categories
+        list_of_rows_of_statistics_re_age_categories +
+        list_of_rows_of_statistics_re_stages
     )
     table_1.columns = [
         "Characteristic",
