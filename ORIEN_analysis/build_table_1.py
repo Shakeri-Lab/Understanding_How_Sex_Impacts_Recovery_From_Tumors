@@ -93,7 +93,7 @@ def classify_specimen_site_of_collection(site: str) -> str | None:
         ("head" in lowercase_site and not "lymph node" in lowercase_site) or
         ("muscle" in lowercase_site) or
         ("thorax" in lowercase_site) or
-        ("upper limb, nos" in lowercase_site) or
+        ("upper limb, NOS".lower() in lowercase_site) or
         ("vulva" in lowercase_site)
     ):
         return "Skin and other soft tissues"
@@ -234,6 +234,10 @@ def main():
     print(f"The number of rows in tumor data after merging column \"Sex\" from patient data is {len(tumor_data)}.")
     
     # Add melanoma driver genes for each patient.
+    tumor_marker_data = tumor_marker_data[
+        (tumor_marker_data["TMarkerTest"].str.contains("BRAF") | tumor_marker_data["TMarkerTest"].str.contains("NRAS") | tumor_marker_data["TMarkerTest"].str.contains("PTEN")) &
+        tumor_marker_data["TMarkerResult"] == "Positive"
+    ]
     tumor_data = tumor_data.merge(
         tumor_marker_data[["AvatarKey", "TMarkerTest"]],
         left_on = "ORIENAvatarKey",
@@ -317,7 +321,8 @@ def main():
 
     # Print summary statistics.
     number_of_tumors = len(tumor_data)
-    number_of_tumors_of_males, number_of_tumors_of_females = tumor_data["Sex"].value_counts().astype(int)
+    number_of_tumors_of_males = tumor_data["Sex"].eq("Male").sum()
+    number_of_tumors_of_females = tumor_data["Sex"].eq("Female").sum()
     print(f"At this point, the number of tumors in our data is {number_of_tumors}.")
     print(f"The number of tumors of males in our data is {number_of_tumors_of_males}.")
     print(f"The number of tumors of females in our data is {number_of_tumors_of_females}.")
@@ -368,7 +373,7 @@ def main():
             {
                 "Characteristic": melanoma_driver_mutation,
                 **summarize(
-                    tumor_data["string_of_melanoma_driver_genes"].str.upper().str.contains(melanoma_driver_mutation),
+                    tumor_data["string_of_melanoma_driver_genes"].fillna("").str.upper().str.contains(melanoma_driver_mutation),
                     tumor_data
                 )
             }
