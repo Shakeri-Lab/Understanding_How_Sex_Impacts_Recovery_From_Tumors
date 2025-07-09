@@ -447,14 +447,6 @@ def main():
         list_of_rows_re_ICB_statuses
     )
 
-    # Rename columns of statistics according to cohort and numbers of patients in cohort.
-    table_1.columns = [
-        "Characteristic",
-        f"Male (N = {number_of_tumors_of_males})",
-        f"Female (N = {number_of_tumors_of_females})",
-        f"Total (N = {number_of_tumors})"
-    ]
-
     # Round numeric values to 0 decimal places.
     numeric_columns = table_1.columns.drop("Characteristic")
     table_1[numeric_columns] = table_1[numeric_columns].apply(
@@ -462,6 +454,14 @@ def main():
             lambda value: value if pd.notna(value) else ""
         )
     )
+
+    # Rename columns of statistics according to cohort and numbers of patients in cohort.
+    table_1.columns = [
+        "Characteristic, N (%)",
+        f"Male (N = {number_of_tumors_of_males})",
+        f"Female (N = {number_of_tumors_of_females})",
+        f"Total (N = {number_of_tumors})"
+    ]
     
     # Print Table 1.
     print("\nTable 1. Sequencing and clinicopathological characteristics of patient tumour specimens.\n")
