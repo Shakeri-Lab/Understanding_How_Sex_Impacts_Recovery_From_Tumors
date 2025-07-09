@@ -424,15 +424,15 @@ def main():
     list_of_rows_of_statistics_re_age_categories += [
         {
             "Characteristic": "Mean age",
-            "Male": array_of_ages_of_males.mean(),
-            "Female": array_of_ages_of_females.mean(),
-            "Total": array_of_all_ages.mean()
+            "Male": round(array_of_ages_of_males.mean(), 0),
+            "Female": round(array_of_ages_of_females.mean(), 0),
+            "Total": round(array_of_all_ages.mean(), 0)
         },
         {
             "Characteristic": "Median age",
-            "Male": np.median(array_of_ages_of_males),
-            "Female": np.median(array_of_ages_of_females),
-            "Total": np.median(array_of_all_ages)
+            "Male": round(np.median(array_of_ages_of_males), 0),
+            "Female": round(np.median(array_of_ages_of_females), 0),
+            "Total": round(np.median(array_of_all_ages), 0)
         }
     ]
     
