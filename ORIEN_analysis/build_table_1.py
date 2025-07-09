@@ -8,6 +8,64 @@ import numpy as np
 import pandas as pd
 
 
+def classify_ICB_medication(name: str) -> str | None:
+    lowercase_name = str(name).lower()
+    if any (keyword in lowercase_name for keyword in ["nivolumab", "nivolumab-relatlimab-rmbw", "pembrolizumab", "atezolizumab"]):
+        return "Anti-PD1"
+    if "ipilimumab" in lowercase_name:
+        return "Anti-CTLA4"
+    return None
+
+
+def create_rows_re_ICB_statuses(
+    tumor_data,
+    number_of_tumors_of_males: int,
+    number_of_tumors_of_females: int,
+    number_of_tumors: int
+):
+    yield {"Characteristic": "ICB Status"}
+    tuple_of_categories = (
+        ("Naive", tumor_data["ICB_status_category"] == "Naive"),
+        ("Experienced", tumor_data["ICB_status_category"] != "Naive"),
+        ("Anti-PD1 only", tumor_data["ICB_status_category"] == "Anti-PD1 only"),
+        ("Anti-CTLA4 only", tumor_data["ICB_status_category"] == "Anti-CTLA4 only"),
+        ("Anti-PD1 and anti-CTLA4", tumor_data["ICB_status_category"] == "Anti-PD1 and anti-CTLA4")
+    )
+    for label, mask in tuple_of_categories:
+        yield {
+            "Characteristic": label,
+            **summarize(
+                mask,
+                tumor_data,
+                number_of_tumors_of_males,
+                number_of_tumors_of_females,
+                number_of_tumors
+            )
+        }
+
+
+def determine_ICB_category(
+    patient_ID: str,
+    list_of_ages: list[float],
+    dictionary_of_patients_IDs_and_tuples_of_ages_at_medication_start_and_ICB_class
+):
+    minimum_age = min(list_of_ages) if list_of_ages else np.nan
+    medications_data = dictionary_of_patients_IDs_and_tuples_of_ages_at_medication_start_and_ICB_class.get(patient_ID, [])
+    if not medications_data or np.isnan(minimum_age):
+        return "Naive"
+    starts_before = [(age, clas) for age, clas in medications_data if not np.isnan(age) and age <= minimum_age + 0.005]
+    if not starts_before:
+        return "Naive"
+    classes = {clas for _, clas in starts_before}
+    if classes == {"Anti-PD1"}:
+        return "Anti-PD1 only"
+    if classes == {"Anti-CTLA4"}:
+        return "Anti-CTLA4 only"
+    if classes == {"Anti-PD1", "Anti-CTLA4"}:
+        return "Anti-PD1 and anti-CTLA4"
+    return "Experienced"
+
+
 def flatten(list_of_lists):
     return [item for sublist in list_of_lists if isinstance(sublist, list) for item in sublist]
 
@@ -17,7 +75,7 @@ def join_strings(series: pd.Series) -> str:
     return '|'.join(sorted(list_of_strings)) if list_of_strings else np.nan
 
 
-def map_site(site: str) -> str:
+def map_site(site: str) -> str | None:
     lowercase_site = str(site).lower()
     
     if (
@@ -29,7 +87,7 @@ def map_site(site: str) -> str:
         ("head" in lowercase_site and not "lymph node" in lowercase_site) or
         ("muscle" in lowercase_site) or
         ("thorax" in lowercase_site) or
-        ("upper limb, NOS" in lowercase_site) or
+        ("upper limb, nos" in lowercase_site) or
         ("vulva" in lowercase_site)
     ):
         return "Skin and other soft tissues"
@@ -76,6 +134,7 @@ def main():
     PATH_TO_PATIENT_DATA = PATH_TO_NORMALIZED_FILES / "24PRJ217UVA_20241112_PatientMaster_V4.csv"
     PATH_TO_TUMOR_MARKER_DATA = PATH_TO_NORMALIZED_FILES / "24PRJ217UVA_20241112_TumorMarker_V4.csv"
     PATH_TO_OUTPUT_OF_PIPELINE_FOR_PAIRING_CLINICAL_DATA_AND_STAGES_OF_TUMORS = "../pair_clinical_data_and_stages_of_tumors/output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors.csv"
+    PATH_TO_MEDICATIONS_DATA = PATH_TO_NORMALIZED_FILES / "24PRJ217UVA_20241112_Medications_V4.csv"
     
     clinical_molecular_linkage_data = pd.read_csv(PATH_TO_CLINICAL_MOLECULAR_LINKAGE_DATA, dtype = str)
     patient_data = pd.read_csv(PATH_TO_PATIENT_DATA, dtype = str)
@@ -165,7 +224,7 @@ def main():
     print(f"Number of tumors of females: {number_of_tumors_of_females}")
 
     list_of_rows_of_statistics_re_sequencing_data = [
-        dict(Characteristic = "Sequencing data"),
+        {"Characteristic": "Sequencing data"},
         *(
             {
                 "Characteristic": sequencing_data_category,
@@ -190,7 +249,7 @@ def main():
         "Bone"
     ]
     list_of_rows_of_statistics_re_specimen_collection_sites = [
-        dict(Characteristic = "Specimen collection site"),
+        {"Characteristic": "Specimen collection site"},
         *(
             {
                 "Characteristic": specimen_collection_site,
@@ -208,7 +267,7 @@ def main():
 
     list_of_melanoma_driver_mutations = ["BRAF", "NRAS", "PTEN"]
     list_of_rows_of_statistics_re_melanoma_driver_mutations = [
-        dict(Characteristic = "Melanoma driver mutations"),
+        {"Characteristic": "Melanoma driver mutations"},
         *(
             {
                 "Characteristic": melanoma_driver_mutation,
@@ -227,7 +286,7 @@ def main():
     tumor_data["list_of_ages"] = tumor_data["string_of_ages"].apply(parse_string_of_ages)
     list_of_values_of_edges_of_bins = [-np.inf, 20, 30, 40, 50, 60, 70, 80, 90, np.inf]
     list_of_labels_of_bins = ["< 20", "20-29", "30-39", "40-49", "50-59", "60-69", "70-79", "80-89", "90+"]
-    list_of_rows_of_statistics_re_age_categories = [dict(Characteristic = "Age (years)")]
+    list_of_rows_of_statistics_re_age_categories = [{"Characteristic": "Age (years)"}]
     for i, label in enumerate(list_of_labels_of_bins):
         lower_bound, upper_bound = list_of_values_of_edges_of_bins[i], list_of_values_of_edges_of_bins[i + 1]
         mask = tumor_data["list_of_ages"].apply(lambda list_of_ages, lower_bound = lower_bound, upper_bound = upper_bound: any(lower_bound <= age < upper_bound for age in list_of_ages))
@@ -262,7 +321,7 @@ def main():
     ]
     
     list_of_rows_of_statistics_re_stages = [
-        dict(Characteristic = "Stage"),
+        {"Characteristic": "Stage"},
         *(
             {
                 "Characteristic": stage,
@@ -278,13 +337,35 @@ def main():
         )
     ]
     
+    medications_data = pd.read_csv(PATH_TO_MEDICATIONS_DATA, dtype = str)
+    medications_data["ICB_class"] = medications_data["Medication"].map(classify_ICB_medication)
+    medications_data = medications_data[medications_data["ICB_class"].notna()]
+    medications_data["AgeAtMedStart"] = medications_data["AgeAtMedStart"].apply(numericize_age)
+    dictionary_of_patients_IDs_and_tuples_of_ages_at_medication_start_and_ICB_class = medications_data.dropna(subset = ["AgeAtMedStart"]).groupby("AvatarKey").apply(lambda df: list(zip(df["AgeAtMedStart"], df["ICB_class"]))).to_dict()
+    tumor_data["ICB_status_category"] = [
+        determine_ICB_category(
+            patient_ID,
+            list_of_ages,
+            dictionary_of_patients_IDs_and_tuples_of_ages_at_medication_start_and_ICB_class
+        )
+        for patient_ID, list_of_ages in zip(tumor_data["ORIENAvatarKey"], tumor_data["list_of_ages"])
+    ]
+    
     # TODO: Format all numeric values in table 1 to 1 decimal place.
     table_1 = pd.DataFrame(
         list_of_rows_of_statistics_re_sequencing_data +
         list_of_rows_of_statistics_re_specimen_collection_sites + 
         list_of_rows_of_statistics_re_melanoma_driver_mutations +
         list_of_rows_of_statistics_re_age_categories +
-        list_of_rows_of_statistics_re_stages
+        list_of_rows_of_statistics_re_stages +
+        list(
+            create_rows_re_ICB_statuses(
+                tumor_data,
+                number_of_tumors_of_males,
+                number_of_tumors_of_females,
+                number_of_tumors
+            )
+        )
     )
     table_1.columns = [
         "Characteristic",
@@ -296,15 +377,19 @@ def main():
     print("\nTable 1. Sequencing and clinicopathological characteristics of patient tumour specimens.\n")
     print(table_1.to_string(index = False))
 
+    
+def numericize_age(age: str):
+    if age == "Age 90 or older":
+        return 90.0
+    if age == "Age Unknown/Not Recorded":
+        return np.nan
+    return float(age)
+    
 
 def parse_string_of_ages(string_of_ages: str) -> list[float]:
-    list_of_string_representations_of_ages = string_of_ages.split('|')
     list_of_ages = []
-    for string_representation_of_age in list_of_string_representations_of_ages:
-        if string_representation_of_age == "Age 90 or older":
-            list_of_ages.append(90.0)
-        else:
-            list_of_ages.append(float(string_representation_of_age))
+    for string_representation_of_age in string_of_ages.split('|'):
+        list_of_ages.append(90.0 if string_representation_of_age == "Age 90 or older" else float(string_representation_of_age))
     return list_of_ages
 
 
