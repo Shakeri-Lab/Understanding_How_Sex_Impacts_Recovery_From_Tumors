@@ -237,11 +237,11 @@ def main():
     tumor_data["string_of_stages"] = tumor_data["ORIENAvatarKey"].map(series_of_patient_IDs_and_strings_of_stages)
 
     print(
-        "WE determined a string of stages for each patient and " +
+        "We determined a string of stages for each patient and " +
         "then broadcasted that string to every row belonging to that patient. " +
         "Here is a slice of tumor data with patient IDs and strings:"
     )
-    print(tumor_data[["ORIENAvatarKey", "string_of_stages"]])
+    print(tumor_data[["ORIENAvatarKey", "string_of_stages"]].head(n = 3))
 
     # Keep 1 row of denormalized tumor data per patient.
     tumor_data = tumor_data.drop_duplicates(subset = "ORIENAvatarKey", ignore_index = True)
@@ -268,6 +268,7 @@ def main():
         (tumor_marker_data["TMarkerTest"].str.contains("BRAF") | tumor_marker_data["TMarkerTest"].str.contains("NRAS") | tumor_marker_data["TMarkerTest"].str.contains("PTEN")) &
         tumor_marker_data["TMarkerResult"] == "Positive"
     ]
+
     tumor_data = tumor_data.merge(
         tumor_marker_data[["AvatarKey", "TMarkerTest"]],
         left_on = "ORIENAvatarKey",
@@ -275,8 +276,14 @@ def main():
         how = "left"
     )
 
-    print(f"The number of rows in tumor data after merging column \"TMarkerTest\" from tumor marker data is {len(tumor_data)}.")
+    print(
+        "We filter tumor marker data to have " +
+        "rows with values in column `TMarkerTest` containing \"BRAF\", \"NRAS\", or \"PTEN\" and " +
+        "corresponding values in column `TMarkerResult` containing \"Positive\"."
+    )
+    print(f"The number of rows in tumor data after merging column `TMarkerTest` from tumor marker data is {len(tumor_data)}.")
     
+    '''
     # Assign each patient a string of melanoma driver genes.
     series_of_patient_IDs_and_strings_of_melanoma_driver_genes = tumor_data.groupby("ORIENAvatarKey")["TMarkerTest"].apply(join_strings)
     tumor_data["string_of_melanoma_driver_genes"] = tumor_data["ORIENAvatarKey"].map(series_of_patient_IDs_and_strings_of_melanoma_driver_genes)
@@ -287,7 +294,7 @@ def main():
         "Here is a slice of tumor data with patient IDs and strings:"
     )
     print(tumor_data[["ORIENAvatarKey", "string_of_melanoma_driver_genes"]].head(n = 3))
-    
+
     # Keep 1 row of denormalized tumor data per patient.
     tumor_data = tumor_data.drop_duplicates(subset = "ORIENAvatarKey", ignore_index = True)
     
@@ -296,6 +303,7 @@ def main():
         "we drop duplicate rows in tumor data by patient ID. " +
         f"The number of rows of tumor data after dropping duplicates is {len(tumor_data)}."
     )
+    '''
     
     # Assign an ICB class (e.g., "Anti-PD1") to each medication and trim medications data to rows with ICB classes.
     medications_data["ICB_class"] = medications_data["Medication"].map(classify_ICB_medication)
@@ -340,6 +348,7 @@ def main():
     number_of_tumors = len(tumor_data)
     number_of_tumors_of_males = tumor_data["Sex"].eq("Male").sum()
     number_of_tumors_of_females = tumor_data["Sex"].eq("Female").sum()
+    
     print(f"At this point, the number of tumors in our data is {number_of_tumors}.")
     print(f"The number of tumors of males in our data is {number_of_tumors_of_males}.")
     print(f"The number of tumors of females in our data is {number_of_tumors_of_females}.")
@@ -390,7 +399,8 @@ def main():
             {
                 "Characteristic": melanoma_driver_mutation,
                 **summarize(
-                    tumor_data["string_of_melanoma_driver_genes"].fillna("").str.upper().str.contains(melanoma_driver_mutation),
+                    #tumor_data["string_of_melanoma_driver_genes"].fillna("").str.upper().str.contains(melanoma_driver_mutation),
+                    tumor_data["TMarkerTest"].str.contains(melanoma_driver_mutation),
                     tumor_data
                 )
             }
