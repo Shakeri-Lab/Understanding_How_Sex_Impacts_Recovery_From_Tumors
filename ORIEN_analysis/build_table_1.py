@@ -17,51 +17,28 @@ def classify_ICB_medication(name: str) -> str | None:
     return None
 
 
-def create_rows_re_ICB_statuses(
-    tumor_data,
-    number_of_tumors_of_males: int,
-    number_of_tumors_of_females: int,
-    number_of_tumors: int
-):
-    yield {"Characteristic": "ICB Status"}
-    tuple_of_categories = (
-        ("Naive", tumor_data["ICB_status_category"] == "Naive"),
-        ("Experienced", tumor_data["ICB_status_category"] != "Naive"),
-        ("Anti-PD1 only", tumor_data["ICB_status_category"] == "Anti-PD1 only"),
-        ("Anti-CTLA4 only", tumor_data["ICB_status_category"] == "Anti-CTLA4 only"),
-        ("Anti-PD1 and anti-CTLA4", tumor_data["ICB_status_category"] == "Anti-PD1 and anti-CTLA4")
-    )
-    for label, mask in tuple_of_categories:
-        yield {
-            "Characteristic": label,
-            **summarize(
-                mask,
-                tumor_data,
-                number_of_tumors_of_males,
-                number_of_tumors_of_females,
-                number_of_tumors
-            )
-        }
-
-
 def determine_ICB_category(
     patient_ID: str,
-    list_of_ages: list[float],
-    dictionary_of_patients_IDs_and_tuples_of_ages_at_medication_start_and_ICB_class
+    list_of_ages_at_specimen_collection: list[float],
+    dictionary_of_patients_IDs_and_lists_of_tuples_of_ages_at_medication_start_and_ICB_class
 ):
-    minimum_age = min(list_of_ages) if list_of_ages else np.nan
-    medications_data = dictionary_of_patients_IDs_and_tuples_of_ages_at_medication_start_and_ICB_class.get(patient_ID, [])
-    if not medications_data or np.isnan(minimum_age):
+    minimum_age_at_specimen_collection = min(list_of_ages_at_specimen_collection) if list_of_ages_at_specimen_collection else np.nan
+    list_of_tuples_of_ages_at_medication_start_and_ICB_class = dictionary_of_patients_IDs_and_lists_of_tuples_of_ages_at_medication_start_and_ICB_class.get(patient_ID, [])
+    if not list_of_tuples_of_ages_at_medication_start_and_ICB_class or np.isnan(minimum_age_at_specimen_collection):
         return "Naive"
-    starts_before = [(age, clas) for age, clas in medications_data if not np.isnan(age) and age <= minimum_age + 0.005]
-    if not starts_before:
+    list_of_tuples_of_ages_at_medication_start_less_than_or_equal_to_minimum_age_at_specimen_collection_fudged_and_ICB_class = [
+        (age, clas)
+        for age, clas in list_of_tuples_of_ages_at_medication_start_and_ICB_class
+        if not np.isnan(age) and age <= minimum_age_at_specimen_collection + 0.005
+    ]
+    if not list_of_tuples_of_ages_at_medication_start_less_than_or_equal_to_minimum_age_at_specimen_collection_fudged_and_ICB_class:
         return "Naive"
-    classes = {clas for _, clas in starts_before}
-    if classes == {"Anti-PD1"}:
+    set_of_classes = {clas for _, clas in list_of_tuples_of_ages_at_medication_start_less_than_or_equal_to_minimum_age_at_specimen_collection_fudged_and_ICB_class}
+    if set_of_classes == {"Anti-PD1"}:
         return "Anti-PD1 only"
-    if classes == {"Anti-CTLA4"}:
+    if set_of_classes == {"Anti-CTLA4"}:
         return "Anti-CTLA4 only"
-    if classes == {"Anti-PD1", "Anti-CTLA4"}:
+    if set_of_classes == {"Anti-PD1", "Anti-CTLA4"}:
         return "Anti-PD1 and anti-CTLA4"
     return "Experienced"
 
@@ -140,6 +117,7 @@ def main():
     patient_data = pd.read_csv(PATH_TO_PATIENT_DATA, dtype = str)
     tumor_marker_data = pd.read_csv(PATH_TO_TUMOR_MARKER_DATA, dtype = str)
     output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors = pd.read_csv(PATH_TO_OUTPUT_OF_PIPELINE_FOR_PAIRING_CLINICAL_DATA_AND_STAGES_OF_TUMORS, dtype = str)
+    medications_data = pd.read_csv(PATH_TO_MEDICATIONS_DATA, dtype = str)
 
     series_of_IDs_of_patients_with_cutaneous_tumors = output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors.loc[output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors["AssignedPrimarySite"].str.lower() == "cutaneous", "AvatarKey"]
     tumor_data = clinical_molecular_linkage_data.loc[
@@ -230,10 +208,7 @@ def main():
                 "Characteristic": sequencing_data_category,
                 **summarize(
                     tumor_data["sequencing_data_category"] == sequencing_data_category,
-                    tumor_data,
-                    number_of_tumors_of_males,
-                    number_of_tumors_of_females,
-                    number_of_tumors
+                    tumor_data
                 )
             }
             for sequencing_data_category in ["WES only", "RNAseq only", "WES and RNAseq"]
@@ -255,10 +230,7 @@ def main():
                 "Characteristic": specimen_collection_site,
                 **summarize(
                     tumor_data["specimen_site_of_collection"].str.contains(specimen_collection_site),
-                    tumor_data,
-                    number_of_tumors_of_males,
-                    number_of_tumors_of_females,
-                    number_of_tumors
+                    tumor_data
                 )
             }
             for specimen_collection_site in list_of_specimen_collection_sites
@@ -273,10 +245,7 @@ def main():
                 "Characteristic": melanoma_driver_mutation,
                 **summarize(
                     tumor_data["TMarkerTest"].str.upper().str.contains(melanoma_driver_mutation),
-                    tumor_data,
-                    number_of_tumors_of_males,
-                    number_of_tumors_of_females,
-                    number_of_tumors
+                    tumor_data
                 )
             }
             for melanoma_driver_mutation in list_of_melanoma_driver_mutations
@@ -295,10 +264,7 @@ def main():
                 "Characteristic": label,
                 **summarize(
                     mask,
-                    tumor_data,
-                    number_of_tumors_of_males,
-                    number_of_tumors_of_females,
-                    number_of_tumors
+                    tumor_data
                 )
             }
         )
@@ -327,26 +293,32 @@ def main():
                 "Characteristic": stage,
                 **summarize(
                     tumor_data["EKN Assigned Stage"] == stage,
-                    tumor_data,
-                    number_of_tumors_of_males,
-                    number_of_tumors_of_females,
-                    number_of_tumors
+                    tumor_data
                 )
             }
             for stage in ["II", "III", "IV"]
         )
     ]
     
-    medications_data = pd.read_csv(PATH_TO_MEDICATIONS_DATA, dtype = str)
     medications_data["ICB_class"] = medications_data["Medication"].map(classify_ICB_medication)
     medications_data = medications_data[medications_data["ICB_class"].notna()]
     medications_data["AgeAtMedStart"] = medications_data["AgeAtMedStart"].apply(numericize_age)
-    dictionary_of_patients_IDs_and_tuples_of_ages_at_medication_start_and_ICB_class = medications_data.dropna(subset = ["AgeAtMedStart"]).groupby("AvatarKey").apply(lambda df: list(zip(df["AgeAtMedStart"], df["ICB_class"]))).to_dict()
+    dictionary_of_patients_IDs_and_lists_of_tuples_of_ages_at_medication_start_and_ICB_class = (
+        medications_data
+        .dropna(subset = ["AgeAtMedStart"])
+        .groupby("AvatarKey")
+        .apply(
+            lambda df: list(
+                zip(df["AgeAtMedStart"], df["ICB_class"])
+            )
+        )
+        .to_dict()
+    )
     tumor_data["ICB_status_category"] = [
         determine_ICB_category(
             patient_ID,
             list_of_ages,
-            dictionary_of_patients_IDs_and_tuples_of_ages_at_medication_start_and_ICB_class
+            dictionary_of_patients_IDs_and_lists_of_tuples_of_ages_at_medication_start_and_ICB_class
         )
         for patient_ID, list_of_ages in zip(tumor_data["ORIENAvatarKey"], tumor_data["list_of_ages"])
     ]
@@ -358,14 +330,7 @@ def main():
         list_of_rows_of_statistics_re_melanoma_driver_mutations +
         list_of_rows_of_statistics_re_age_categories +
         list_of_rows_of_statistics_re_stages +
-        list(
-            create_rows_re_ICB_statuses(
-                tumor_data,
-                number_of_tumors_of_males,
-                number_of_tumors_of_females,
-                number_of_tumors
-            )
-        )
+        list(rows_re_ICB_statuses(tumor_data))
     )
     table_1.columns = [
         "Characteristic",
@@ -393,7 +358,26 @@ def parse_string_of_ages(string_of_ages: str) -> list[float]:
     return list_of_ages
 
 
-def summarize(mask, tumor_data, number_of_tumors_of_males, number_of_tumors_of_females, number_of_tumors):
+def rows_re_ICB_statuses(tumor_data):
+    yield {"Characteristic": "ICB Status"}
+    tuple_of_categories = (
+        ("Naive", tumor_data["ICB_status_category"] == "Naive"),
+        ("Experienced", tumor_data["ICB_status_category"] != "Naive"),
+        ("Anti-PD1 only", tumor_data["ICB_status_category"] == "Anti-PD1 only"),
+        ("Anti-CTLA4 only", tumor_data["ICB_status_category"] == "Anti-CTLA4 only"),
+        ("Anti-PD1 and anti-CTLA4", tumor_data["ICB_status_category"] == "Anti-PD1 and anti-CTLA4")
+    )
+    for label, mask in tuple_of_categories:
+        yield {
+            "Characteristic": label,
+            **summarize(
+                mask,
+                tumor_data
+            )
+        }
+
+
+def summarize(mask, tumor_data):
     return pd.Series(
         {
             "Male": (mask & (tumor_data["Sex"] == "Male")).sum(),
