@@ -459,7 +459,7 @@ def main():
     numeric_columns = table_1.columns.drop("Characteristic")
     table_1[numeric_columns] = table_1[numeric_columns].apply(
         lambda column: column.map(
-            lambda value: f"{value:.0f}" if pd.notna(value) else ""
+            lambda value: value if pd.notna(value) else ""
         )
     )
     
@@ -481,6 +481,10 @@ def parse_string_of_ages_at_specimen_collection(string_of_ages_at_specimen_colle
     for string_representation_of_age in string_of_ages_at_specimen_collection.split('|'):
         list_of_ages.append(90.0 if string_representation_of_age == "Age 90 or older" else float(string_representation_of_age))
     return list_of_ages
+
+
+def provide_number_and_percent(n, d):
+    return f"{n} ({100 * n / d:.1f})" if d else "0 (0.0)"
 
 
 def rows_re_ICB_statuses(tumor_data):
@@ -506,11 +510,14 @@ def summarize(mask, tumor_data):
     '''
     Create a series of numbers of patients, females, and males meeting a condition.
     '''
+    number_of_tumors = len(tumor_data)
+    number_of_tumors_of_males = tumor_data["Sex"].eq("Male").sum()
+    number_of_tumors_of_females = tumor_data["Sex"].eq("Female").sum()
     return pd.Series(
         {
-            "Male": (mask & (tumor_data["Sex"] == "Male")).sum(),
-            "Female": (mask & (tumor_data["Sex"] == "Female")).sum(),
-            "Total": mask.sum()
+            "Male": provide_number_and_percent((mask & (tumor_data["Sex"] == "Male")).sum(), number_of_tumors_of_males),
+            "Female": provide_number_and_percent((mask & (tumor_data["Sex"] == "Female")).sum(), number_of_tumors_of_females),
+            "Total": provide_number_and_percent(mask.sum(), number_of_tumors)
         }
     )
 
