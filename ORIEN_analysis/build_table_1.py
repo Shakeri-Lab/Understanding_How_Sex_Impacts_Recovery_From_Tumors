@@ -72,7 +72,7 @@ def flatten(list_of_lists):
     return [item for sublist in list_of_lists if isinstance(sublist, list) for item in sublist]
 
 
-def join_strings(series: pd.Series) -> str:
+def join_strings(series: pd.Series):
     list_of_strings = [string for string in series.dropna().unique() if str(string).strip()]
     return '|'.join(sorted(list_of_strings)) if list_of_strings else np.nan
 
@@ -156,24 +156,35 @@ def main():
     output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors = pd.read_csv(PATH_TO_OUTPUT_OF_PIPELINE_FOR_PAIRING_CLINICAL_DATA_AND_STAGES_OF_TUMORS, dtype = str)
     medications_data = pd.read_csv(PATH_TO_MEDICATIONS_DATA, dtype = str)
 
-    # Create a data frame of cutaneous tumors.
-    series_of_IDs_of_patients_with_cutaneous_tumors = output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors.loc[
-        output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors["AssignedPrimarySite"].str.lower() == "cutaneous", "AvatarKey"
+    # Create a data frame of clinical data of cutaneous tumors in output of pipeline.
+    tumor_data = clinical_molecular_linkage_data.merge(
+        output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors[["AvatarKey", "ORIENSpecimenID", "AssignedPrimarySite"]],
+        left_on = ["ORIENAvatarKey", "DeidSpecimenID"],
+        right_on = ["AvatarKey", "ORIENSpecimenID"],
+        how = "left"
+    ).drop(columns = "AvatarKey")
+    tumor_data = tumor_data.loc[
+        (tumor_data["Tumor/Germline"].str.lower() == "tumor") &
+        (tumor_data["AssignedPrimarySite"].str.lower() == "cutaneous")
     ]
-    tumor_data = clinical_molecular_linkage_data.loc[
-        (clinical_molecular_linkage_data["Tumor/Germline"].str.lower() == "tumor") &
-        clinical_molecular_linkage_data["ORIENAvatarKey"].isin(series_of_IDs_of_patients_with_cutaneous_tumors)
-    ].reset_index(drop = True).copy()
     
-    print("We determined a data frame of clinical molecular data corresponding to cutaneous tumors.")
     number_of_rows_in_tumor_data = len(tumor_data)
-    print(f"Number of rows in tumor data initially: {number_of_rows_in_tumor_data}")
     number_of_unique_patients_with_tumor_data = len(tumor_data["ORIENAvatarKey"].unique())
-    print(f"Number of unique patients with tumor data initially: {number_of_unique_patients_with_tumor_data}")
-    number_of_unique_patients_with_WES_data = len(tumor_data[tumor_data["WES"].notna()]["ORIENAvatarKey"].unique())
-    print(f"Number of unique patients with WES data initially: {number_of_unique_patients_with_WES_data}")
+    number_of_unique_patients_with_tumors_with_WES = len(
+        tumor_data.loc[
+            tumor_data["WES"].notna() & (tumor_data["WES"].str.strip() != ""),
+            "ORIENAvatarKey"
+        ]
+        .unique()
+    )
+
+    print("We determined a data frame of clinical molecular data corresponding to cutaneous tumors in output of pipeline.")
+    print(f"The number of rows is {number_of_rows_in_tumor_data}.")
+    print(f"The number of unique patients is {number_of_unique_patients_with_tumor_data}.")
+    print(f"The number of unique patients with tumors with WES is {number_of_unique_patients_with_tumors_with_WES}.")
+    print("The head of tumor data is")
     print(tumor_data.head(n = 3))
-    
+
     # Classify patients as having WES only, RNA sequencing only, or both WES and RNA sequencing.
     wes_any = tumor_data["WES"].notna().groupby(tumor_data["ORIENAvatarKey"]).transform("any")
     rna_any = tumor_data["RNASeq"].notna().groupby(tumor_data["ORIENAvatarKey"]).transform("any")
