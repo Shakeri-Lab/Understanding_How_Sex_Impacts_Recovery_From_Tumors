@@ -205,22 +205,19 @@ def main():
     )
 
     print(
-        "We determined a class of sequencing data for each specimen " +
+        "We determined a class of sequencing data for each specimen. " +
         "Here is a slice of tumor data with specimen IDs and classes:"
     )
     print(tumor_data[["DeidSpecimenID", "class_of_sequencing_data"]].head(n = 3))
     
     # Classify specimen sites of collection and assign each patient a string of classes.
     tumor_data["class_of_specimen_site_of_collection"] = tumor_data["SpecimenSiteOfCollection"].apply(classify_specimen_site_of_collection)
-    series_of_patient_IDs_and_strings_of_classes_of_specimen_sites_of_collection = tumor_data.groupby("ORIENAvatarKey")["class_of_specimen_site_of_collection"].apply(join_strings)
-    tumor_data["string_of_classes_of_specimen_site_of_collection"] = tumor_data["ORIENAvatarKey"].map(series_of_patient_IDs_and_strings_of_classes_of_specimen_sites_of_collection)
     
     print(
-        "We determined a string of classes of specimen sites of collection for each patient and " +
-        "then broadcasted that string back to every row belonging to that patient. " +
-        "Here is a slice of tumor data with patient IDs and strings:"
+        "We determined a class of specimen site of collection for each specimen. " +
+        "Here is a slice of tumor data with specimen IDs and classes:"
     )
-    print(tumor_data[["ORIENAvatarKey", "string_of_classes_of_specimen_site_of_collection"]].head(n = 3))
+    print(tumor_data[["DeidSpecimenID", "class_of_specimen_site_of_collection"]].head(n = 3))
     
     # Assign each patient a string of ages at specimen collection.
     series_of_patient_IDs_and_strings_of_ages_at_specimen_collection = tumor_data.groupby("ORIENAvatarKey")["Age At Specimen Collection"].apply(join_strings)
@@ -398,7 +395,7 @@ def main():
             {
                 "Characteristic": specimen_collection_site,
                 **summarize(
-                    tumor_data["string_of_classes_of_specimen_site_of_collection"].str.contains(specimen_collection_site),
+                    tumor_data["class_of_specimen_site_of_collection"].str.contains(specimen_collection_site),
                     tumor_data
                 )
             }
