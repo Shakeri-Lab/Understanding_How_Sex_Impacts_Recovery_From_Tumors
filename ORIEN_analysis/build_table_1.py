@@ -151,7 +151,7 @@ def main():
     tumor_data = tumor_data.loc[
         (tumor_data["Tumor/Germline"].str.lower() == "tumor") &
         (tumor_data["AssignedPrimarySite"].str.lower() == "cutaneous")
-    ]
+    ].reset_index(drop = True)
     
     number_of_rows_in_tumor_data = len(tumor_data)
     number_of_unique_patients_with_tumor_data = len(tumor_data["ORIENAvatarKey"].unique())
