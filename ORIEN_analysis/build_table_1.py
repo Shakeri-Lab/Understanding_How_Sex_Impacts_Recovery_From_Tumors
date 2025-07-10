@@ -34,25 +34,25 @@ def determine_ICB_status(
     Experienced with Anti-CTLA4 medication only, or
     Experienced with both Anti-PD1 and Anti-CTLA4 medications.
     
-    Compare a patient's earliest age at specimen collection fudged with
+    Compare a specimen's age at specimen collection fudged with
     ages at medication start for that patient.
-    If there is no age at medication start less than or equal to minimum age at specimen collection fudged,
-    then all ages at medication start are greater than minimum age at specimen collection fudged, and
-    age at specimen collection fudged is before any ages at medication start,
-    and patient is Naive.
+    If there is no age at medication start less than or equal to age at specimen collection fudged,
+    then all ages at medication start are greater than age at specimen collection fudged,
+    age at specimen collection fudged is before any ages at medication start, and
+    patient is Naive.
     Otherwise, patient is Experienced. 
     '''
     list_of_tuples_of_ages_at_medication_start_and_ICB_class = dictionary_of_patients_IDs_and_lists_of_tuples_of_ages_at_medication_start_and_ICB_class.get(patient_ID, [])
     if not list_of_tuples_of_ages_at_medication_start_and_ICB_class or age_at_specimen_collection is None:
         return "Naive"
-    list_of_tuples_of_ages_at_medication_start_less_than_or_equal_to_minimum_age_at_specimen_collection_fudged_and_ICB_class = [
+    list_of_tuples_of_ages_at_medication_start_less_than_or_equal_to_age_at_specimen_collection_fudged_and_ICB_classes = [
         (age, clas)
         for age, clas in list_of_tuples_of_ages_at_medication_start_and_ICB_class
         if not np.isnan(age) and age <= age_at_specimen_collection + 0.005
     ]
-    if not list_of_tuples_of_ages_at_medication_start_less_than_or_equal_to_minimum_age_at_specimen_collection_fudged_and_ICB_class:
+    if not list_of_tuples_of_ages_at_medication_start_less_than_or_equal_to_age_at_specimen_collection_fudged_and_ICB_classes:
         return "Naive"
-    set_of_classes = {clas for _, clas in list_of_tuples_of_ages_at_medication_start_less_than_or_equal_to_minimum_age_at_specimen_collection_fudged_and_ICB_class}
+    set_of_classes = {clas for _, clas in list_of_tuples_of_ages_at_medication_start_less_than_or_equal_to_age_at_specimen_collection_fudged_and_ICB_classes}
     if set_of_classes == {"Anti-PD1"}:
         return "Anti-PD1 only"
     if set_of_classes == {"Anti-CTLA4"}:
@@ -60,15 +60,6 @@ def determine_ICB_status(
     if set_of_classes == {"Anti-PD1", "Anti-CTLA4"}:
         return "Anti-PD1 and anti-CTLA4"
     return "Experienced"
-
-
-def flatten(list_of_lists):
-    return [item for sublist in list_of_lists if isinstance(sublist, list) for item in sublist]
-
-
-def join_strings(series: pd.Series):
-    list_of_strings = [string for string in series.dropna().unique() if str(string).strip()]
-    return '|'.join(sorted(list_of_strings)) if list_of_strings else np.nan
 
 
 def classify_specimen_site_of_collection(site: str) -> str | None:
@@ -229,10 +220,13 @@ def main():
     
     # Add melanoma driver genes for each patient.
     tumor_marker_data = tumor_marker_data[
-        (tumor_marker_data["TMarkerTest"].str.contains("BRAF") | tumor_marker_data["TMarkerTest"].str.contains("NRAS") | tumor_marker_data["TMarkerTest"].str.contains("PTEN")) &
+        (
+            tumor_marker_data["TMarkerTest"].str.contains("BRAF") |
+            tumor_marker_data["TMarkerTest"].str.contains("NRAS") |
+            tumor_marker_data["TMarkerTest"].str.contains("PTEN")
+        ) &
         tumor_marker_data["TMarkerResult"] == "Positive"
     ]
-
     tumor_data = tumor_data.merge(
         tumor_marker_data[["AvatarKey", "TMarkerTest"]],
         left_on = "ORIENAvatarKey",
@@ -246,28 +240,6 @@ def main():
         "corresponding values in column `TMarkerResult` containing \"Positive\"."
     )
     print(f"The number of rows in tumor data after merging column `TMarkerTest` from tumor marker data is {len(tumor_data)}.")
-    
-    '''
-    # Assign each patient a string of melanoma driver genes.
-    series_of_patient_IDs_and_strings_of_melanoma_driver_genes = tumor_data.groupby("ORIENAvatarKey")["TMarkerTest"].apply(join_strings)
-    tumor_data["string_of_melanoma_driver_genes"] = tumor_data["ORIENAvatarKey"].map(series_of_patient_IDs_and_strings_of_melanoma_driver_genes)
-    
-    print(
-        "We determined a string of melanoma driver genes for each patient and " +
-        "then broadcasted that string back to every row belonging to that patient. " +
-        "Here is a slice of tumor data with patient IDs and strings:"
-    )
-    print(tumor_data[["ORIENAvatarKey", "string_of_melanoma_driver_genes"]].head(n = 3))
-
-    # Keep 1 row of denormalized tumor data per patient.
-    tumor_data = tumor_data.drop_duplicates(subset = "ORIENAvatarKey", ignore_index = True)
-    
-    print(
-        "After denormalizing strings, " +
-        "we drop duplicate rows in tumor data by patient ID. " +
-        f"The number of rows of tumor data after dropping duplicates is {len(tumor_data)}."
-    )
-    '''
     
     # Assign an ICB class (e.g., "Anti-PD1") to each medication and trim medications data to rows with ICB classes.
     medications_data["ICB_class"] = medications_data["Medication"].map(classify_ICB_medication)
@@ -296,18 +268,19 @@ def main():
         .to_dict()
     )
 
-    # Assign an ICB status to each patient.
-    tumor_data["age_at_specimen_collection"] = tumor_data["Age At Specimen Collection"].apply(lambda age: 90.0 if age == "Age 90 or older" else float(age))
+    # Assign an ICB status to each specimen.
+    tumor_data["age_at_specimen_collection"] = tumor_data["Age At Specimen Collection"].apply(numericize_age)
     tumor_data["ICB_status"] = [
         determine_ICB_status(
             patient_ID,
             age_at_specimen_collection,
             dictionary_of_patients_IDs_and_lists_of_tuples_of_ages_at_medication_start_and_ICB_class
         )
-        for patient_ID, age_at_specimen_collection in zip(tumor_data["ORIENAvatarKey"], tumor_data["age_at_specimen_collection"])
+        for patient_ID, age_at_specimen_collection
+        in zip(tumor_data["ORIENAvatarKey"], tumor_data["age_at_specimen_collection"])
     ]
 
-    print(f"The number of rows in tumor data after assigning an ICB status to each patient is {len(tumor_data)}.")
+    print(f"The number of rows in tumor data after assigning an ICB status to each specimen is {len(tumor_data)}.")
 
     # Print summary statistics.
     number_of_tumors = len(tumor_data)
@@ -464,13 +437,6 @@ def numericize_age(age: str):
     if age == "Age Unknown/Not Recorded":
         return np.nan
     return float(age)
-    
-
-def parse_string_of_ages_at_specimen_collection(string_of_ages_at_specimen_collection: str) -> list[float]:
-    list_of_ages = []
-    for string_representation_of_age in string_of_ages_at_specimen_collection.split('|'):
-        list_of_ages.append(90.0 if string_representation_of_age == "Age 90 or older" else float(string_representation_of_age))
-    return list_of_ages
 
 
 def provide_number_and_percent(n, d):
