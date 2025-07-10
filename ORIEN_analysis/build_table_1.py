@@ -28,7 +28,7 @@ def create_stage_mask(series: pd.Series, stage: str) -> pd.Series:
 
 def determine_ICB_status(
     patient_ID: str,
-    list_of_ages_at_specimen_collection: list[float],
+    age_at_specimen_collection: float,
     dictionary_of_patients_IDs_and_lists_of_tuples_of_ages_at_medication_start_and_ICB_class
 ):
     '''
@@ -47,14 +47,13 @@ def determine_ICB_status(
     and patient is Naive.
     Otherwise, patient is Experienced. 
     '''
-    minimum_age_at_specimen_collection = min(list_of_ages_at_specimen_collection) if list_of_ages_at_specimen_collection else np.nan
     list_of_tuples_of_ages_at_medication_start_and_ICB_class = dictionary_of_patients_IDs_and_lists_of_tuples_of_ages_at_medication_start_and_ICB_class.get(patient_ID, [])
-    if not list_of_tuples_of_ages_at_medication_start_and_ICB_class or np.isnan(minimum_age_at_specimen_collection):
+    if not list_of_tuples_of_ages_at_medication_start_and_ICB_class or age_at_specimen_collection is None:
         return "Naive"
     list_of_tuples_of_ages_at_medication_start_less_than_or_equal_to_minimum_age_at_specimen_collection_fudged_and_ICB_class = [
         (age, clas)
         for age, clas in list_of_tuples_of_ages_at_medication_start_and_ICB_class
-        if not np.isnan(age) and age <= minimum_age_at_specimen_collection + 0.005
+        if not np.isnan(age) and age <= age_at_specimen_collection + 0.005
     ]
     if not list_of_tuples_of_ages_at_medication_start_less_than_or_equal_to_minimum_age_at_specimen_collection_fudged_and_ICB_class:
         return "Naive"
@@ -210,7 +209,7 @@ def main():
     )
     print(tumor_data[["DeidSpecimenID", "class_of_sequencing_data"]].head(n = 3))
     
-    # Classify specimen sites of collection and assign each patient a string of classes.
+    # Classify specimen sites of collection and assign each specimen a class.
     tumor_data["class_of_specimen_site_of_collection"] = tumor_data["SpecimenSiteOfCollection"].apply(classify_specimen_site_of_collection)
     
     print(
@@ -218,18 +217,6 @@ def main():
         "Here is a slice of tumor data with specimen IDs and classes:"
     )
     print(tumor_data[["DeidSpecimenID", "class_of_specimen_site_of_collection"]].head(n = 3))
-    
-    # Assign each patient a string of ages at specimen collection.
-    series_of_patient_IDs_and_strings_of_ages_at_specimen_collection = tumor_data.groupby("ORIENAvatarKey")["Age At Specimen Collection"].apply(join_strings)
-    tumor_data["string_of_ages_at_specimen_collection"] = tumor_data["ORIENAvatarKey"].map(series_of_patient_IDs_and_strings_of_ages_at_specimen_collection)
-    tumor_data["list_of_ages_at_specimen_collection"] = tumor_data["string_of_ages_at_specimen_collection"].apply(parse_string_of_ages_at_specimen_collection)
-
-    print(
-        "We determined a string and a list of ages at specimen collection for each patient and " +
-        "then broadcasted that string and that list back to every row belonging to that patient. " +
-        "Here is a slice of tumor data with patient IDs, strings, and lists:"
-    )
-    print(tumor_data[["ORIENAvatarKey", "string_of_ages_at_specimen_collection", "list_of_ages_at_specimen_collection"]].head(n = 3))
     
     # Add stages for each patient.
     tumor_data = tumor_data.merge(
@@ -345,13 +332,14 @@ def main():
     )
 
     # Assign an ICB status to each patient.
+    tumor_data["age_at_specimen_collection"] = tumor_data["Age At Specimen Collection"].apply(lambda age: 90.0 if age == "Age 90 or older" else float(age))
     tumor_data["ICB_status"] = [
         determine_ICB_status(
             patient_ID,
-            list_of_ages_at_specimen_collection,
+            age_at_specimen_collection,
             dictionary_of_patients_IDs_and_lists_of_tuples_of_ages_at_medication_start_and_ICB_class
         )
-        for patient_ID, list_of_ages_at_specimen_collection in zip(tumor_data["ORIENAvatarKey"], tumor_data["list_of_ages_at_specimen_collection"])
+        for patient_ID, age_at_specimen_collection in zip(tumor_data["ORIENAvatarKey"], tumor_data["age_at_specimen_collection"])
     ]
 
     print(f"The number of rows in tumor data after assigning an ICB status to each patient is {len(tumor_data)}.")
@@ -426,10 +414,8 @@ def main():
     list_of_rows_of_statistics_re_age_categories = [{"Characteristic": "Age (years)"}]
     for i, label in enumerate(list_of_labels_of_bins):
         lower_bound, upper_bound = list_of_values_of_edges_of_bins[i], list_of_values_of_edges_of_bins[i + 1]
-        mask = tumor_data["list_of_ages_at_specimen_collection"].apply(
-            lambda list_of_ages, lower_bound = lower_bound, upper_bound = upper_bound: any(
-                lower_bound <= age < upper_bound for age in list_of_ages
-            )
+        mask = tumor_data["age_at_specimen_collection"].apply(
+            lambda age, lower_bound = lower_bound, upper_bound = upper_bound: lower_bound <= age < upper_bound
         )
         list_of_rows_of_statistics_re_age_categories.append(
             {
@@ -440,9 +426,9 @@ def main():
                 )
             }
         )
-    array_of_all_ages = np.array(flatten(tumor_data["list_of_ages_at_specimen_collection"]))
-    array_of_ages_of_males = np.array(flatten(tumor_data.loc[tumor_data["Sex"] == "Male", "list_of_ages_at_specimen_collection"]))
-    array_of_ages_of_females = np.array(flatten(tumor_data.loc[tumor_data["Sex"] == "Female", "list_of_ages_at_specimen_collection"]))
+    array_of_all_ages = tumor_data["age_at_specimen_collection"]
+    array_of_ages_of_males = tumor_data.loc[tumor_data["Sex"] == "Male", "age_at_specimen_collection"]
+    array_of_ages_of_females = tumor_data.loc[tumor_data["Sex"] == "Female", "age_at_specimen_collection"]
     list_of_rows_of_statistics_re_age_categories += [
         {
             "Characteristic": "Mean age",
