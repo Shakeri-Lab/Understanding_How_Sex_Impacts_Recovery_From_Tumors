@@ -321,7 +321,7 @@ def main():
             {
                 "Characteristic": specimen_collection_site,
                 **summarize(
-                    tumor_data["class_of_specimen_site_of_collection"].str.contains(specimen_collection_site),
+                    tumor_data["class_of_specimen_site_of_collection"] == specimen_collection_site,
                     tumor_data
                 )
             }
@@ -337,7 +337,6 @@ def main():
             {
                 "Characteristic": melanoma_driver_mutation,
                 **summarize(
-                    #tumor_data["string_of_melanoma_driver_genes"].fillna("").str.upper().str.contains(melanoma_driver_mutation),
                     tumor_data["TMarkerTest"].str.contains(melanoma_driver_mutation),
                     tumor_data
                 )
@@ -370,15 +369,15 @@ def main():
     list_of_rows_of_statistics_re_age_categories += [
         {
             "Characteristic": "Mean age",
-            "Male": round(array_of_ages_of_males.mean(), 0),
-            "Female": round(array_of_ages_of_females.mean(), 0),
-            "Total": round(array_of_all_ages.mean(), 0)
+            "Male": int(round(array_of_ages_of_males.mean(), 0)),
+            "Female": int(round(array_of_ages_of_females.mean(), 0)),
+            "Total": int(round(array_of_all_ages.mean(), 0))
         },
         {
             "Characteristic": "Median age",
-            "Male": round(np.median(array_of_ages_of_males), 0),
-            "Female": round(np.median(array_of_ages_of_females), 0),
-            "Total": round(np.median(array_of_all_ages), 0)
+            "Male": int(round(np.median(array_of_ages_of_males), 0)),
+            "Female": int(round(np.median(array_of_ages_of_females), 0)),
+            "Total": int(round(np.median(array_of_all_ages), 0))
         }
     ]
     
@@ -410,7 +409,7 @@ def main():
         list_of_rows_re_ICB_statuses
     )
 
-    # Round numeric values to 0 decimal places.
+    # Avoid showing NA in Table 1.
     numeric_columns = table_1.columns.drop("Characteristic")
     table_1[numeric_columns] = table_1[numeric_columns].apply(
         lambda column: column.map(
