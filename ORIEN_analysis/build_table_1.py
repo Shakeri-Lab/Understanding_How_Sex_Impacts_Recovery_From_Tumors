@@ -21,11 +21,6 @@ def classify_ICB_medication(name: str) -> str | None:
     return None
 
 
-def create_stage_mask(series: pd.Series, stage: str) -> pd.Series:
-    pattern = rf"(?:^|\|){re.escape(stage)}(?:\||$)"
-    return series.fillna("").str.contains(pattern, regex = True)
-
-
 def determine_ICB_status(
     patient_ID: str,
     age_at_specimen_collection: float,
@@ -157,7 +152,7 @@ def main():
 
     # Create a data frame of clinical data of cutaneous tumors in output of pipeline.
     tumor_data = clinical_molecular_linkage_data.merge(
-        output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors[["AvatarKey", "ORIENSpecimenID", "AssignedPrimarySite"]],
+        output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors[["AvatarKey", "ORIENSpecimenID", "AssignedPrimarySite", "EKN Assigned Stage"]],
         left_on = ["ORIENAvatarKey", "DeidSpecimenID"],
         right_on = ["AvatarKey", "ORIENSpecimenID"],
         how = "left"
@@ -177,7 +172,10 @@ def main():
         .unique()
     )
 
-    print("We determined a data frame of clinical molecular linkage data corresponding to cutaneous tumors in output of pipeline.")
+    print(
+        "We determined a data frame of clinical molecular linkage data and " +
+        "data from output of pipeline corresponding to cutaneous tumors in output of pipeline."
+    )
     print(f"The number of rows is {number_of_rows_in_tumor_data}.")
     print(f"The number of unique patients is {number_of_unique_patients_with_tumor_data}.")
     print(f"The number of unique patients with tumors with WES is {number_of_unique_patients_with_tumors_with_WES}.")
@@ -217,39 +215,6 @@ def main():
         "Here is a slice of tumor data with specimen IDs and classes:"
     )
     print(tumor_data[["DeidSpecimenID", "class_of_specimen_site_of_collection"]].head(n = 3))
-    
-    # Add stages for each patient.
-    tumor_data = tumor_data.merge(
-        output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors[["AvatarKey", "EKN Assigned Stage"]],
-        left_on = "ORIENAvatarKey",
-        right_on = "AvatarKey",
-        how = "left"
-    )
-
-    print(
-        "The number of rows in tumor data after merging column \"EKN Assigned Stage\" " +
-        f"from output of pipeline for pairing clinical data and stages of tumors is {len(tumor_data)}."
-    )
-
-    # Assign each patient a string of stages.
-    series_of_patient_IDs_and_strings_of_stages = tumor_data.groupby("ORIENAvatarKey")["EKN Assigned Stage"].apply(join_strings)
-    tumor_data["string_of_stages"] = tumor_data["ORIENAvatarKey"].map(series_of_patient_IDs_and_strings_of_stages)
-
-    print(
-        "We determined a string of stages for each patient and " +
-        "then broadcasted that string to every row belonging to that patient. " +
-        "Here is a slice of tumor data with patient IDs and strings:"
-    )
-    print(tumor_data[["ORIENAvatarKey", "string_of_stages"]].head(n = 3))
-
-    # Keep 1 row of denormalized tumor data per patient.
-    tumor_data = tumor_data.drop_duplicates(subset = "ORIENAvatarKey", ignore_index = True)
-    
-    print(
-        "After denormalizing classes and strings, " +
-        "we drop duplicate rows in tumor data by patient ID. " +
-        f"The number of rows of tumor data after dropping duplicates is {len(tumor_data)}."
-    )
     
     # Add sex for each patient.
     tumor_data = tumor_data.merge(
@@ -451,7 +416,7 @@ def main():
             {
                 "Characteristic": stage,
                 **summarize(
-                    create_stage_mask(tumor_data["string_of_stages"], stage),
+                    tumor_data["EKN Assigned Stage"] == stage,
                     tumor_data
                 )
             }
