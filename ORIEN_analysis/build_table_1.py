@@ -166,9 +166,12 @@ def main():
     ].reset_index(drop = True).copy()
     
     print("We determined a data frame of clinical molecular data corresponding to cutaneous tumors.")
-    print(f"Number of rows in tumor data initially: {len(tumor_data)}")
-    print(f"Number of unique patients with tumor data initially: {len(tumor_data["ORIENAvatarKey"].unique())}")
-    print(f"Number of unique patients with WES data initially: {len(tumor_data[tumor_data["WES"].notna()]["ORIENAvatarKey"].unique())}")
+    number_of_rows_in_tumor_data = len(tumor_data)
+    print(f"Number of rows in tumor data initially: {number_of_rows_in_tumor_data}")
+    number_of_unique_patients_with_tumor_data = len(tumor_data["ORIENAvatarKey"].unique())
+    print(f"Number of unique patients with tumor data initially: {number_of_unique_patients_with_tumor_data}")
+    number_of_unique_patients_with_WES_data = len(tumor_data[tumor_data["WES"].notna()]["ORIENAvatarKey"].unique())
+    print(f"Number of unique patients with WES data initially: {number_of_unique_patients_with_WES_data}")
     print(tumor_data.head(n = 3))
     
     # Classify patients as having WES only, RNA sequencing only, or both WES and RNA sequencing.
