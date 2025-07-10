@@ -162,7 +162,7 @@ def main():
         left_on = ["ORIENAvatarKey", "DeidSpecimenID"],
         right_on = ["AvatarKey", "ORIENSpecimenID"],
         how = "left"
-    ).drop(columns = "AvatarKey")
+    ).drop(columns = ["AvatarKey", "ORIENSpecimenID"])
     tumor_data = tumor_data.loc[
         (tumor_data["Tumor/Germline"].str.lower() == "tumor") &
         (tumor_data["AssignedPrimarySite"].str.lower() == "cutaneous")
@@ -178,36 +178,37 @@ def main():
         .unique()
     )
 
-    print("We determined a data frame of clinical molecular data corresponding to cutaneous tumors in output of pipeline.")
+    print("We determined a data frame of clinical molecular linkage data corresponding to cutaneous tumors in output of pipeline.")
     print(f"The number of rows is {number_of_rows_in_tumor_data}.")
     print(f"The number of unique patients is {number_of_unique_patients_with_tumor_data}.")
     print(f"The number of unique patients with tumors with WES is {number_of_unique_patients_with_tumors_with_WES}.")
     print("The head of tumor data is")
     print(tumor_data.head(n = 3))
 
-    # Classify patients as having WES only, RNA sequencing only, or both WES and RNA sequencing.
-    wes_any = tumor_data["WES"].notna().groupby(tumor_data["ORIENAvatarKey"]).transform("any")
-    rna_any = tumor_data["RNASeq"].notna().groupby(tumor_data["ORIENAvatarKey"]).transform("any")
+    # Classify specimens as having WES only, RNA sequencing only, or both WES and RNA sequencing.
+    series_of_indicators_that_specimen_has_WES = tumor_data["WES"].notna() & (tumor_data["WES"].str.strip() != "")
+    series_of_indicators_that_specimen_has_RNA_sequencing = tumor_data["RNASeq"].notna() & tumor_data["RNASeq"].notna() & (tumor_data["RNASeq"].str.strip() != "")
     tumor_data["class_of_sequencing_data"] = np.select(
         [
-            wes_any & ~rna_any,
-            ~wes_any & rna_any,
-            wes_any & rna_any
+            series_of_indicators_that_specimen_has_WES & ~series_of_indicators_that_specimen_has_RNA_sequencing,
+            ~series_of_indicators_that_specimen_has_WES & series_of_indicators_that_specimen_has_RNA_sequencing,
+            series_of_indicators_that_specimen_has_WES & series_of_indicators_that_specimen_has_RNA_sequencing,
+            ~series_of_indicators_that_specimen_has_WES & ~series_of_indicators_that_specimen_has_RNA_sequencing
         ],
         [
             "WES only",
             "RNAseq only",
-            "WES and RNAseq"
+            "WES and RNAseq",
+            "not WES and not RNAseq"
         ],
         default = "None"
     )
 
     print(
-        "We determined a class of sequencing data for each patient " +
-        "and then broadcasted that class back to every row belonging to that patient. " +
-        "Here is a slice of tumor data with patient IDs and classes:"
+        "We determined a class of sequencing data for each specimen " +
+        "Here is a slice of tumor data with specimen IDs and classes:"
     )
-    print(tumor_data[["ORIENAvatarKey", "class_of_sequencing_data"]].head(n = 3))
+    print(tumor_data[["DeidSpecimenID", "class_of_sequencing_data"]].head(n = 3))
     
     # Classify specimen sites of collection and assign each patient a string of classes.
     tumor_data["class_of_specimen_site_of_collection"] = tumor_data["SpecimenSiteOfCollection"].apply(classify_specimen_site_of_collection)
@@ -378,7 +379,7 @@ def main():
                     tumor_data
                 )
             }
-            for sequencing_data_category in ["WES only", "RNAseq only", "WES and RNAseq"]
+            for sequencing_data_category in ["WES only", "RNAseq only", "WES and RNAseq"]#, "not WES and not RNAseq", None]
         )
     ]
 
