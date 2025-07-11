@@ -134,15 +134,18 @@ def run_pipeline(
             series_of_diagnosis_data_for_patient = select_diagnosis_for_patient_in_C(data_frame_of_diagnosis_data_for_patient, series_of_clinical_molecular_linkage_data_for_patient, data_frame_of_metastatic_disease_data_for_patient)
         elif group == "D":
             series_of_clinical_molecular_linkage_data_for_patient = select_tumor_for_patient_in_D(data_frame_of_clinical_molecular_linkage_data_for_patient)
-            if series_of_clinical_molecular_linkage_data_for_patient is not None:
-                series_of_diagnosis_data_for_patient = select_diagnosis_for_patient_in_D(data_frame_of_diagnosis_data_for_patient, series_of_clinical_molecular_linkage_data_for_patient)
+            if series_of_clinical_molecular_linkage_data_for_patient is None:
+                raise Exception()
+            series_of_diagnosis_data_for_patient = select_diagnosis_for_patient_in_D(data_frame_of_diagnosis_data_for_patient, series_of_clinical_molecular_linkage_data_for_patient)
         else:
             raise RuntimeError(f"Group {group} is unknown.")
 
-        if series_of_clinical_molecular_linkage_data_for_patient is not None:
-            ORIENSpecimenID = series_of_clinical_molecular_linkage_data_for_patient["DeidSpecimenID"]
-        if series_of_diagnosis_data_for_patient is not None:
-            primary_site = assign_primary_site(series_of_diagnosis_data_for_patient["PrimaryDiagnosisSite"])
+        if series_of_clinical_molecular_linkage_data_for_patient is None:
+            raise Exception()
+        ORIENSpecimenID = series_of_clinical_molecular_linkage_data_for_patient["DeidSpecimenID"]
+        if series_of_diagnosis_data_for_patient is None:
+            raise Exception()
+        primary_site = assign_primary_site(series_of_diagnosis_data_for_patient["PrimaryDiagnosisSite"])
         
         '''
         From "ORIEN Specimen Staging Revised Rules":
@@ -207,8 +210,9 @@ def run_pipeline(
         if ORIENAvatarKey in ["87AJ4KITK8", "9DLKDVIQ2W", "9EYYI5H9SU", "9HA9MZCSU2", "A594OFU98I", "AC2EJBKWJO", "FUAZTE7LVQ", "HZD0O858UJ", "L2R9RJJ88C", "MD5OTA3E8A", "NXPOH3RBWY", "QC7QX0VWAY", "QE43I70DGC", "XHTXLE3MLC"]:
             possible_new_primary = 1
         
-        if series_of_clinical_molecular_linkage_data_for_patient is not None and series_of_diagnosis_data_for_patient is not None:
-            stage, rule = assign_stage_and_rule(series_of_clinical_molecular_linkage_data_for_patient, series_of_diagnosis_data_for_patient, data_frame_of_metastatic_disease_data_for_patient)
+        if series_of_clinical_molecular_linkage_data_for_patient is None or series_of_diagnosis_data_for_patient is None:
+            raise Exception()
+        stage, rule = assign_stage_and_rule(series_of_clinical_molecular_linkage_data_for_patient, series_of_diagnosis_data_for_patient, data_frame_of_metastatic_disease_data_for_patient)
         
         '''
         From "ORIEN Specimen Staging Revised Rules":
@@ -685,8 +689,9 @@ def assign_stage_and_rule(
                         - This is the patient that had the correct stage (IV) by your script according to the rules, but an error in my file (key) for this patient. The key has been corrected.
     '''
     raw_age_at_specimen_collection: str | None = series_of_clinical_molecular_linkage_data_for_patient.get("Age At Specimen Collection")
-    if raw_age_at_specimen_collection:
-        age_at_specimen_collection: float = float(raw_age_at_specimen_collection)
+    if not raw_age_at_specimen_collection:
+        raise Exception()
+    age_at_specimen_collection: float = float(raw_age_at_specimen_collection)
     AGE_FUDGE = 0.005 # years, or approximately 1.8 days.
     
     if not data_frame_of_metastatic_disease_data_for_patient.empty:
