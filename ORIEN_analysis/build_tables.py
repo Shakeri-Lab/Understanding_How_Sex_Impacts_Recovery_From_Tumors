@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 '''
-Build "Table 1. Sequencing and clinicopathological characteristics of patient tumor specimens.".
+Build
+"Table 1. Sequencing and clinicopathological characteristics of patient tumor specimens." and
+"Table 2. Patient baseline characteristics. Demographic and clinical characteristics at the time of diagnosis."
 '''
 
 from pathlib import Path
 import numpy as np
 import pandas as pd
-import re
 
 
 def classify_ICB_medication(name: str) -> str | None:
@@ -248,10 +249,13 @@ def main():
     )
     print(f"The number of rows in tumor data after merging column `TMarkerTest` from tumor marker data is {len(tumor_data)}.")
     
+    # Numericize ages at specimen collection and ages at medication start.
+    tumor_data["age_at_specimen_collection"] = tumor_data["Age At Specimen Collection"].apply(numericize_age)
+    medications_data["AgeAtMedStart"] = medications_data["AgeAtMedStart"].apply(numericize_age)
+
     # Assign an ICB class (e.g., "Anti-PD1") to each medication and trim medications data to rows with ICB classes.
     medications_data["ICB_class"] = medications_data["Medication"].map(classify_ICB_medication)
     medications_data = medications_data[medications_data["ICB_class"].notna()]
-    medications_data["AgeAtMedStart"] = medications_data["AgeAtMedStart"].apply(numericize_age)
 
     '''
     Create a dictionary of patient IDs and lists of tuples of
@@ -276,7 +280,6 @@ def main():
     )
 
     # Assign an ICB status to each specimen.
-    tumor_data["age_at_specimen_collection"] = tumor_data["Age At Specimen Collection"].apply(numericize_age)
     tumor_data["ICB_status"] = [
         determine_ICB_status(
             patient_ID,
@@ -449,7 +452,7 @@ def main():
 def numericize_age(age: str):
     if age == "Age 90 or older":
         return 90.0
-    if age == "Age Unknown/Not Recorded":
+    if age in ["Age Unknown/Not Recorded", "Unknown/Not Applicable"]:
         return np.nan
     return float(age)
 
