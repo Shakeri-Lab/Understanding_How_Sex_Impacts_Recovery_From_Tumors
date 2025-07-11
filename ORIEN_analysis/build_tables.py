@@ -432,9 +432,18 @@ def main():
         f"Total (N = {number_of_tumors})"
     ]
     
-    # Print Table 1.
+    age_characteristics = (
+        ["Age (years)"] +
+        list_of_labels_of_bins +
+        ["Mean age", "Median age"]
+    )
+    table_2 = table_1.loc[table_1["Characteristic, N (%)"].isin(age_characteristics)].reset_index(drop = True)
+    
+    # Print Tables 1 and 2.
     print("\nTable 1. Sequencing and clinicopathological characteristics of patient tumour specimens.\n")
     print(table_1.to_string(index = False))
+    print("\nTable 2. Patient baseline characteristics. Demographic and clinical characteristics at the time of diagnosis.\n")
+    print(table_2.to_string(index = False))
 
     
 def numericize_age(age: str):
