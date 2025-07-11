@@ -31,7 +31,7 @@ import re
 from typing import Optional, Tuple
 
 
-def add_counts(data_frame_of_clinical_molecular_linkage_data: pd.DataFrame, data_frame_of_diagnosis_data: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
+def add_counts(data_frame_of_clinical_molecular_linkage_data: pd.DataFrame, data_frame_of_diagnosis_data: pd.DataFrame) -> pd.DataFrame:
     '''
     From "ORIEN Specimen Staging Revised Rules":
     3. New variables to create:
@@ -113,9 +113,9 @@ def run_pipeline(
     assert number_of_patients_in_A == 327, f"Number of patients in A was {number_of_patients_in_A} and should be 327."
     assert number_of_patients_in_B == 19, f"Number of patients in B was {number_of_patients_in_B} and should be 19."
     assert number_of_patients_in_C == 30, f"Number of patients in C was {number_of_patients_in_C} and should be 30."
-    assert number_of_patients_in_D == 3, f"Number of patients in D was {count_D} and should be 3."
+    assert number_of_patients_in_D == 3, f"Number of patients in D was {number_of_patients_in_D} and should be 3."
 
-    list_of_dictionaries_representing_rows_in_output_data: List[Dict[str, str]] = []
+    list_of_dictionaries_representing_rows_in_output_data: list[dict] = []
 
     # An ORIEN Avatar Key identifies a patient.
     for ORIENAvatarKey, data_frame_of_clinical_molecular_linkage_data_for_patient in data_frame_of_clinical_molecular_linkage_data.groupby("ORIENAvatarKey", sort = False):
@@ -134,12 +134,15 @@ def run_pipeline(
             series_of_diagnosis_data_for_patient = select_diagnosis_for_patient_in_C(data_frame_of_diagnosis_data_for_patient, series_of_clinical_molecular_linkage_data_for_patient, data_frame_of_metastatic_disease_data_for_patient)
         elif group == "D":
             series_of_clinical_molecular_linkage_data_for_patient = select_tumor_for_patient_in_D(data_frame_of_clinical_molecular_linkage_data_for_patient)
-            series_of_diagnosis_data_for_patient = select_diagnosis_for_patient_in_D(data_frame_of_diagnosis_data_for_patient, series_of_clinical_molecular_linkage_data_for_patient)
+            if series_of_clinical_molecular_linkage_data_for_patient is not None:
+                series_of_diagnosis_data_for_patient = select_diagnosis_for_patient_in_D(data_frame_of_diagnosis_data_for_patient, series_of_clinical_molecular_linkage_data_for_patient)
         else:
             raise RuntimeError(f"Group {group} is unknown.")
 
-        ORIENSpecimenID = series_of_clinical_molecular_linkage_data_for_patient["DeidSpecimenID"]
-        primary_site = assign_primary_site(series_of_diagnosis_data_for_patient["PrimaryDiagnosisSite"])
+        if series_of_clinical_molecular_linkage_data_for_patient is not None:
+            ORIENSpecimenID = series_of_clinical_molecular_linkage_data_for_patient["DeidSpecimenID"]
+        if series_of_diagnosis_data_for_patient is not None:
+            primary_site = assign_primary_site(series_of_diagnosis_data_for_patient["PrimaryDiagnosisSite"])
         
         '''
         From "ORIEN Specimen Staging Revised Rules":
@@ -204,7 +207,8 @@ def run_pipeline(
         if ORIENAvatarKey in ["87AJ4KITK8", "9DLKDVIQ2W", "9EYYI5H9SU", "9HA9MZCSU2", "A594OFU98I", "AC2EJBKWJO", "FUAZTE7LVQ", "HZD0O858UJ", "L2R9RJJ88C", "MD5OTA3E8A", "NXPOH3RBWY", "QC7QX0VWAY", "QE43I70DGC", "XHTXLE3MLC"]:
             possible_new_primary = 1
         
-        stage, rule = assign_stage_and_rule(series_of_clinical_molecular_linkage_data_for_patient, series_of_diagnosis_data_for_patient, data_frame_of_metastatic_disease_data_for_patient)
+        if series_of_clinical_molecular_linkage_data_for_patient is not None and series_of_diagnosis_data_for_patient is not None:
+            stage, rule = assign_stage_and_rule(series_of_clinical_molecular_linkage_data_for_patient, series_of_diagnosis_data_for_patient, data_frame_of_metastatic_disease_data_for_patient)
         
         '''
         From "ORIEN Specimen Staging Revised Rules":
@@ -478,7 +482,7 @@ def are_greater_than_90_days_after(age_at_specimen_collection: float | None, age
     return difference > 90 / 365.25
 
 
-def select_tumor_for_patient_in_D(data_frame_of_clinical_molecular_linkage_data_for_patient: pd.DataFrame) -> pd.Series:
+def select_tumor_for_patient_in_D(data_frame_of_clinical_molecular_linkage_data_for_patient: pd.DataFrame):
     '''
     From "ORIEN Specimen Staging Revised Rules":
     8. Group D: >1 melanoma diagnosis and >1 tumor sequenced -> n=3
@@ -508,7 +512,7 @@ def select_tumor_for_patient_in_D(data_frame_of_clinical_molecular_linkage_data_
 def select_diagnosis_for_patient_in_D(
     data_frame_of_diagnosis_data_for_patient: pd.DataFrame,
     series_of_clinical_molecular_linkage_data_for_patient: pd.Series
-) -> pd.Series:
+):
     '''
     From "ORIEN Specimen Staging Revised Rules":
     8.b. Then select diagnosis:
@@ -537,7 +541,7 @@ def assign_stage_and_rule(
     series_of_clinical_molecular_linkage_data_for_patient: pd.Series,
     series_of_diagnosis_data_for_patient: pd.Series,
     data_frame_of_metastatic_disease_data_for_patient: pd.DataFrame
-) -> Tuple[str, str]:
+) -> tuple:
     
     '''
     From "ORIEN Specimen Staging Revised Rules":
@@ -680,7 +684,9 @@ def assign_stage_and_rule(
                         - For this patient ID, set Possible New Primary = 1.
                         - This is the patient that had the correct stage (IV) by your script according to the rules, but an error in my file (key) for this patient. The key has been corrected.
     '''
-    age_at_specimen_collection = float(series_of_clinical_molecular_linkage_data_for_patient.get("Age At Specimen Collection"))
+    raw_age_at_specimen_collection: str | None = series_of_clinical_molecular_linkage_data_for_patient.get("Age At Specimen Collection")
+    if raw_age_at_specimen_collection:
+        age_at_specimen_collection: float = float(raw_age_at_specimen_collection)
     AGE_FUDGE = 0.005 # years, or approximately 1.8 days.
     
     if not data_frame_of_metastatic_disease_data_for_patient.empty:
@@ -904,7 +910,7 @@ def assign_stage_and_rule(
         if mask_of_indicators_that_row_meets_condition.any():
             return "IV", "SKINUNK"
     
-    logging.error("We reached the end of assigning a stage and a rule.")
+    raise Exception("We reached the end of assigning a stage and a rule.")
 
 
 def roman_numeral_in(stage: str) -> str | None:
@@ -946,7 +952,7 @@ def load_data(
     logging.info("Diagnosis data will be loaded.")
     data_frame_of_diagnosis_data = pd.read_csv(path_to_diagnosis_data, dtype = str)
     data_frame_of_diagnosis_data.columns = data_frame_of_diagnosis_data.columns.str.strip()
-    pattern_of_histology_codes_of_melanoma = re.compile(r"^87\d\d/\d$")
+    pattern_of_histology_codes_of_melanoma: str = r"^87\d\d/\d$"
     mask_of_indicators_that_histology_codes_represent_melanoma = data_frame_of_diagnosis_data["HistologyCode"].str.match(pattern_of_histology_codes_of_melanoma, na = False)
     data_frame_of_diagnosis_data = data_frame_of_diagnosis_data[mask_of_indicators_that_histology_codes_represent_melanoma]
 
