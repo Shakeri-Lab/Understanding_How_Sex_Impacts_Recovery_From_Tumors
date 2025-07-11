@@ -142,7 +142,7 @@ def main():
     output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors = pd.read_csv(PATH_TO_OUTPUT_OF_PIPELINE_FOR_PAIRING_CLINICAL_DATA_AND_STAGES_OF_TUMORS, dtype = str)
     medications_data = pd.read_csv(PATH_TO_MEDICATIONS_DATA, dtype = str)
 
-    # Create a data frame of clinical data of cutaneous tumors in output of pipeline.
+    # Create a data frame of clinical data and data in output of pipeline of cutaneous tumors in output of pipeline.
     tumor_data = clinical_molecular_linkage_data.merge(
         output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors[["AvatarKey", "ORIENSpecimenID", "AssignedPrimarySite", "EKN Assigned Stage"]],
         left_on = ["ORIENAvatarKey", "DeidSpecimenID"],
