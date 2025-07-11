@@ -135,16 +135,27 @@ def main():
     PATH_TO_TUMOR_MARKER_DATA = PATH_TO_NORMALIZED_FILES / "24PRJ217UVA_20241112_TumorMarker_V4.csv"
     PATH_TO_OUTPUT_OF_PIPELINE_FOR_PAIRING_CLINICAL_DATA_AND_STAGES_OF_TUMORS = "../pair_clinical_data_and_stages_of_tumors/output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors.csv"
     PATH_TO_MEDICATIONS_DATA = PATH_TO_NORMALIZED_FILES / "24PRJ217UVA_20241112_Medications_V4.csv"
+    PATH_TO_DIAGNOSIS_DATA = PATH_TO_NORMALIZED_FILES / "24PRJ217UVA_20241112_Diagnosis_V4.csv"
     
     clinical_molecular_linkage_data = pd.read_csv(PATH_TO_CLINICAL_MOLECULAR_LINKAGE_DATA, dtype = str)
     patient_data = pd.read_csv(PATH_TO_PATIENT_DATA, dtype = str)
     tumor_marker_data = pd.read_csv(PATH_TO_TUMOR_MARKER_DATA, dtype = str)
     output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors = pd.read_csv(PATH_TO_OUTPUT_OF_PIPELINE_FOR_PAIRING_CLINICAL_DATA_AND_STAGES_OF_TUMORS, dtype = str)
     medications_data = pd.read_csv(PATH_TO_MEDICATIONS_DATA, dtype = str)
+    diagnosis_data = pd.read_csv(PATH_TO_DIAGNOSIS_DATA, dtype = str)
+    diagnosis_data = diagnosis_data.reset_index().rename(columns = {"index": "index_of_row_of_diagnosis_data"})
 
     # Create a data frame of clinical data and data in output of pipeline of cutaneous tumors in output of pipeline.
     tumor_data = clinical_molecular_linkage_data.merge(
-        output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors[["AvatarKey", "ORIENSpecimenID", "AssignedPrimarySite", "EKN Assigned Stage"]],
+        output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors[
+            [
+                "AvatarKey",
+                "ORIENSpecimenID",
+                "AssignedPrimarySite",
+                "EKN Assigned Stage",
+                "index_of_row_of_diagnosis_data_paired_with_specimen"
+            ]
+        ],
         left_on = ["ORIENAvatarKey", "DeidSpecimenID"],
         right_on = ["AvatarKey", "ORIENSpecimenID"],
         how = "left"
@@ -153,6 +164,16 @@ def main():
         (tumor_data["Tumor/Germline"].str.lower() == "tumor") &
         (tumor_data["AssignedPrimarySite"].str.lower() == "cutaneous")
     ].reset_index(drop = True)
+    tumor_data["index_of_row_of_diagnosis_data_paired_with_specimen"] = pd.to_numeric(
+        tumor_data["index_of_row_of_diagnosis_data_paired_with_specimen"],
+        errors = "raise"
+    )
+    tumor_data = tumor_data.merge(
+        diagnosis_data[["AvatarKey", "index_of_row_of_diagnosis_data", "AgeAtDiagnosis"]],
+        left_on = ["ORIENAvatarKey", "index_of_row_of_diagnosis_data_paired_with_specimen"],
+        right_on = ["AvatarKey", "index_of_row_of_diagnosis_data"],
+        how = "left"
+    ).drop(columns = ["AvatarKey", "index_of_row_of_diagnosis_data"])
     
     number_of_rows_in_tumor_data = len(tumor_data)
     number_of_unique_patients_with_tumor_data = len(tumor_data["ORIENAvatarKey"].unique())
