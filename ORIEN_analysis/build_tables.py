@@ -215,17 +215,6 @@ def main():
     )
     print(tumor_data[["DeidSpecimenID", "class_of_specimen_site_of_collection"]].head(n = 3))
     
-    # Add sex for each patient.
-    tumor_data = tumor_data.merge(
-        patient_data[["AvatarKey", "Sex"]],
-        left_on = "ORIENAvatarKey",
-        right_on = "AvatarKey",
-        how = "left"
-    )
-    tumor_data["Sex"] = tumor_data["Sex"].str.title()
-
-    print(f"The number of rows in tumor data after merging column \"Sex\" from patient data is {len(tumor_data)}.")
-    
     # Add melanoma driver genes for each patient.
     tumor_marker_data = tumor_marker_data[
         (
@@ -291,6 +280,17 @@ def main():
     ]
 
     print(f"The number of rows in tumor data after assigning an ICB status to each specimen is {len(tumor_data)}.")
+
+    # Add sex for each patient.
+    tumor_data = tumor_data.merge(
+        patient_data[["AvatarKey", "Sex"]],
+        left_on = "ORIENAvatarKey",
+        right_on = "AvatarKey",
+        how = "left"
+    )
+    tumor_data["Sex"] = tumor_data["Sex"].str.title()
+
+    print(f"The number of rows in tumor data after merging column \"Sex\" from patient data is {len(tumor_data)}.")
 
     # Print summary statistics.
     number_of_tumors = len(tumor_data)
