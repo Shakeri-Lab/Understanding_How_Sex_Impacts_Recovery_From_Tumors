@@ -232,7 +232,8 @@ def run_pipeline(
                 "EKN Assigned Stage": stage,
                 "NEW RULE": rule,
                 "Discrepancy": discrepancy,
-                "Possible New Primary": possible_new_primary
+                "Possible New Primary": possible_new_primary,
+                "index_of_row_of_diagnosis_data_paired_with_specimen": int(series_of_diagnosis_data_for_patient["index_of_row_of_diagnosis_data_paired_with_specimen"])
             }
         )
 
@@ -960,6 +961,7 @@ def load_data(
     pattern_of_histology_codes_of_melanoma: str = r"^87\d\d/\d$"
     mask_of_indicators_that_histology_codes_represent_melanoma = data_frame_of_diagnosis_data["HistologyCode"].str.match(pattern_of_histology_codes_of_melanoma, na = False)
     data_frame_of_diagnosis_data = data_frame_of_diagnosis_data[mask_of_indicators_that_histology_codes_represent_melanoma]
+    data_frame_of_diagnosis_data["index_of_row_of_diagnosis_data_paired_with_specimen"] = data_frame_of_diagnosis_data.index
 
     logging.info("Metastatic disease data will be loaded.")
     data_frame_of_metastatic_disease_data = pd.read_csv(path_to_metastatic_disease_data, dtype = str)

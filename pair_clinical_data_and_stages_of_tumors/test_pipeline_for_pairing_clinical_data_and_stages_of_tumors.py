@@ -28,7 +28,7 @@ def output_of_pipeline() -> pd.DataFrame:
 
 @pytest.fixture(scope = "session")
 def orien_tumor_staging_key() -> pd.DataFrame:
-    return pd.read_csv(PATH_TO_KEY).sort_values(by = ["AvatarKey", "ORIENSpecimenID"]).reset_index(drop = True)
+    return pd.read_csv(PATH_TO_KEY)
 
 def test_that_output_of_pipeline_equals_key(output_of_pipeline: pd.DataFrame, orien_tumor_staging_key: pd.DataFrame) -> None:
     assert_frame_equal(output_of_pipeline, orien_tumor_staging_key)
