@@ -259,9 +259,10 @@ def main():
     )
     print(f"The number of rows in tumor data after merging column `TMarkerTest` from tumor marker data is {len(tumor_data)}.")
     
-    # Numericize ages at specimen collection and ages at medication start.
+    # Numericize ages at specimen collection, ages at medication start, and ages at diagnosis.
     tumor_data["age_at_specimen_collection"] = tumor_data["Age At Specimen Collection"].apply(numericize_age)
-    medications_data["AgeAtMedStart"] = medications_data["AgeAtMedStart"].apply(numericize_age)
+    medications_data["age_at_med_start"] = medications_data["AgeAtMedStart"].apply(numericize_age)
+    tumor_data["age_at_diagnosis"] = tumor_data["AgeAtDiagnosis"].apply(numericize_age)
 
     # Assign an ICB class (e.g., "Anti-PD1") to each medication and trim medications data to rows with ICB classes.
     medications_data["ICB_class"] = medications_data["Medication"].map(classify_ICB_medication)
@@ -279,11 +280,11 @@ def main():
     '''
     dictionary_of_patients_IDs_and_lists_of_tuples_of_ages_at_medication_start_and_ICB_class = (
         medications_data
-        .dropna(subset = ["AgeAtMedStart"])
-        .groupby("AvatarKey")[["AgeAtMedStart", "ICB_class"]]
+        .dropna(subset = ["age_at_med_start"])
+        .groupby("AvatarKey")[["age_at_med_start", "ICB_class"]]
         .apply(
             lambda df: list(
-                zip(df["AgeAtMedStart"], df["ICB_class"])
+                zip(df["age_at_med_start"], df["ICB_class"])
             )
         )
         .to_dict()
@@ -376,41 +377,53 @@ def main():
         )
     ]
 
-    # Create list of rows of statistics re ages at specimen collection.
+    # Create lists of rows of statistics re ages at specimen collection and ages at diagnosis.
+    list_of_rows_of_statistics_re_ages_at_specimen_collection = [{"Characteristic": "Age (years)"}]
+    list_of_rows_of_statistics_re_ages_at_diagnosis = [{"Characteristic": "Age (years)"}]
+    list_of_types_of_ages = ["age_at_specimen_collection", "age_at_diagnosis"]
+    dictionary_of_type_of_age_and_list = {
+        "age_at_specimen_collection": list_of_rows_of_statistics_re_ages_at_specimen_collection,
+        "age_at_diagnosis": list_of_rows_of_statistics_re_ages_at_diagnosis
+    }
+
     list_of_values_of_edges_of_bins = [-np.inf, 20, 30, 40, 50, 60, 70, 80, 90, np.inf]
     list_of_labels_of_bins = ["< 20", "20-29", "30-39", "40-49", "50-59", "60-69", "70-79", "80-89", "90+"]
-    list_of_rows_of_statistics_re_age_categories = [{"Characteristic": "Age (years)"}]
     for i, label in enumerate(list_of_labels_of_bins):
-        lower_bound, upper_bound = list_of_values_of_edges_of_bins[i], list_of_values_of_edges_of_bins[i + 1]
-        mask = tumor_data["age_at_specimen_collection"].apply(
-            lambda age, lower_bound = lower_bound, upper_bound = upper_bound: lower_bound <= age < upper_bound
-        )
-        list_of_rows_of_statistics_re_age_categories.append(
+        lower_bound = list_of_values_of_edges_of_bins[i]
+        upper_bound = list_of_values_of_edges_of_bins[i + 1]
+        def evaluate_whether_age_is_in_bin(age, lower_bound = lower_bound, upper_bound = upper_bound):
+            return lower_bound <= age < upper_bound
+
+        for type_of_age in list_of_types_of_ages:
+            mask = tumor_data[type_of_age].apply(evaluate_whether_age_is_in_bin)
+            dictionary_of_type_of_age_and_list[type_of_age].append(
+                {
+                    "Characteristic": label,
+                    **summarize(
+                        mask,
+                        tumor_data
+                    )
+                }
+            )
+
+    for type_of_age in list_of_types_of_ages:
+        array_of_all_ages = tumor_data[type_of_age]
+        array_of_ages_of_males = tumor_data.loc[tumor_data["Sex"] == "Male", type_of_age]
+        array_of_ages_of_females = tumor_data.loc[tumor_data["Sex"] == "Female", type_of_age]
+        dictionary_of_type_of_age_and_list[type_of_age] += [
             {
-                "Characteristic": label,
-                **summarize(
-                    mask,
-                    tumor_data
-                )
+                "Characteristic": "Mean age",
+                "Male": int(round(array_of_ages_of_males.mean(), 0)),
+                "Female": int(round(array_of_ages_of_females.mean(), 0)),
+                "Total": int(round(array_of_all_ages.mean(), 0))
+            },
+            {
+                "Characteristic": "Median age",
+                "Male": int(round(np.median(array_of_ages_of_males), 0)),
+                "Female": int(round(np.median(array_of_ages_of_females), 0)),
+                "Total": int(round(np.median(array_of_all_ages), 0))
             }
-        )
-    array_of_all_ages = tumor_data["age_at_specimen_collection"]
-    array_of_ages_of_males = tumor_data.loc[tumor_data["Sex"] == "Male", "age_at_specimen_collection"]
-    array_of_ages_of_females = tumor_data.loc[tumor_data["Sex"] == "Female", "age_at_specimen_collection"]
-    list_of_rows_of_statistics_re_age_categories += [
-        {
-            "Characteristic": "Mean age",
-            "Male": int(round(array_of_ages_of_males.mean(), 0)),
-            "Female": int(round(array_of_ages_of_females.mean(), 0)),
-            "Total": int(round(array_of_all_ages.mean(), 0))
-        },
-        {
-            "Characteristic": "Median age",
-            "Male": int(round(np.median(array_of_ages_of_males), 0)),
-            "Female": int(round(np.median(array_of_ages_of_females), 0)),
-            "Total": int(round(np.median(array_of_all_ages), 0))
-        }
-    ]
+        ]
     
     # Create list of rows of statistics re stages.
     list_of_rows_of_statistics_re_stages = [
@@ -430,44 +443,47 @@ def main():
     # Create list of rows of statistics re ICB statuses.
     list_of_rows_re_ICB_statuses = list(rows_re_ICB_statuses(tumor_data))
     
-    # Assemble Table 1.
+    # Assemble tables.
     table_1 = pd.DataFrame(
         list_of_rows_of_statistics_re_sequencing_data +
         list_of_rows_of_statistics_re_specimen_collection_sites + 
         list_of_rows_of_statistics_re_melanoma_driver_mutations +
-        list_of_rows_of_statistics_re_age_categories +
+        list_of_rows_of_statistics_re_ages_at_specimen_collection +
         list_of_rows_of_statistics_re_stages +
         list_of_rows_re_ICB_statuses
     )
+    table_2 = pd.DataFrame(
+        list_of_rows_of_statistics_re_ages_at_diagnosis
+    )
 
-    # Avoid showing NA in Table 1.
-    numeric_columns = table_1.columns.drop("Characteristic")
-    table_1[numeric_columns] = table_1[numeric_columns].apply(
-        lambda column: column.map(
-            lambda value: value if pd.notna(value) else ""
+    dictionary_of_names_of_tables_and_tables = {
+        "Table 1. Sequencing and clinicopathological characteristics of patient tumour specimens.": table_1,
+        "Table 2. Patient baseline characteristics. Demographic and clinical characteristics at the time of diagnosis.": table_2
+    }
+    for name_of_table in [
+        "Table 1. Sequencing and clinicopathological characteristics of patient tumour specimens.",
+        "Table 2. Patient baseline characteristics. Demographic and clinical characteristics at the time of diagnosis."
+    ]:
+        # Avoid showing NA in tables.
+        table = dictionary_of_names_of_tables_and_tables[name_of_table]
+        numeric_columns = table.columns.drop("Characteristic")
+        table[numeric_columns] = table[numeric_columns].apply(
+            lambda column: column.map(
+                lambda value: value if pd.notna(value) else ""
+            )
         )
-    )
 
-    # Rename columns of statistics according to cohort and numbers of patients in cohort.
-    table_1.columns = [
-        "Characteristic, N (%)",
-        f"Male (N = {number_of_tumors_of_males})",
-        f"Female (N = {number_of_tumors_of_females})",
-        f"Total (N = {number_of_tumors})"
-    ]
+        # Rename columns of statistics according to cohort and numbers of patients in cohort.
+        table.columns = [
+            "Characteristic, N (%)",
+            f"Male (N = {number_of_tumors_of_males})",
+            f"Female (N = {number_of_tumors_of_females})",
+            f"Total (N = {number_of_tumors})"
+        ]
     
-    age_characteristics = (
-        ["Age (years)"] +
-        list_of_labels_of_bins +
-        ["Mean age", "Median age"]
-    )
-    table_2 = table_1.loc[table_1["Characteristic, N (%)"].isin(age_characteristics)].reset_index(drop = True)
-    
-    # Print Tables 1 and 2.
-    print("\nTable 1. Sequencing and clinicopathological characteristics of patient tumour specimens.\n")
-    print(table_1.to_string(index = False))
-    print("\nTable 2. Patient baseline characteristics. Demographic and clinical characteristics at the time of diagnosis.\n")
-    print(table_2.to_string(index = False))
+        # Print tables.
+        print(f"\n{name_of_table}\n")
+        print(table.to_string(index = False))
 
     
 def numericize_age(age: str):
