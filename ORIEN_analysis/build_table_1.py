@@ -155,6 +155,12 @@ def main():
     
     number_of_rows_in_tumor_data = len(tumor_data)
     number_of_unique_patients_with_tumor_data = len(tumor_data["ORIENAvatarKey"].unique())
+    number_of_unique_patients_with_tumors_with_RNA_sequencing = len(
+        tumor_data.loc[
+            tumor_data["RNASeq"].notna() & (tumor_data["RNASeq"].str.strip() != ""),
+            "ORIENAvatarKey"
+        ]
+    )
     number_of_unique_patients_with_tumors_with_WES = len(
         tumor_data.loc[
             tumor_data["WES"].notna() & (tumor_data["WES"].str.strip() != ""),
@@ -170,6 +176,7 @@ def main():
     print(f"The number of rows is {number_of_rows_in_tumor_data}.")
     print(f"The number of unique patients is {number_of_unique_patients_with_tumor_data}.")
     print(f"The number of unique patients with tumors with WES is {number_of_unique_patients_with_tumors_with_WES}.")
+    print(f"The number of unique patients with tumors with RNA sequencing is {number_of_unique_patients_with_tumors_with_RNA_sequencing}.")
     print("The head of tumor data is")
     print(tumor_data.head(n = 3))
 
