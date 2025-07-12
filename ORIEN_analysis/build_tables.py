@@ -599,8 +599,6 @@ def main():
         # Print tables.
         print(f"\n{name_of_table}\n")
         print(table.to_string(index = False))
-    
-    tumor_data.to_csv("tumor_data.csv")
 
     
 def numericize_age(age: str):
