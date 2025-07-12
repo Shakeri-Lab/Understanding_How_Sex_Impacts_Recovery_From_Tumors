@@ -215,7 +215,19 @@ def main():
         (tumor_data["AssignedPrimarySite"].str.lower() == "cutaneous")
     ].reset_index(drop = True)
     tumor_data = tumor_data.merge(
-        diagnosis_data[["AvatarKey", "index_of_row_of_diagnosis_data", "AgeAtDiagnosis", "PathGroupStage", "ClinGroupStage", "TNMEditionNumber", "PrimaryDiagnosisSite"]],
+        diagnosis_data[
+            [
+                "AvatarKey",
+                "index_of_row_of_diagnosis_data",
+                "AgeAtDiagnosis",
+                "PathGroupStage",
+                "ClinGroupStage",
+                "TNMEditionNumber",
+                "PrimaryDiagnosisSite",
+                "PerformStatusAtDiagnosisScale",
+                "PerformStatusAtDiagnosis"
+            ]
+        ],
         left_on = ["ORIENAvatarKey", "index_of_row_of_diagnosis_data_paired_with_specimen"],
         right_on = ["AvatarKey", "index_of_row_of_diagnosis_data"],
         how = "left"
@@ -241,7 +253,16 @@ def main():
         ],
         default = "Unknown"
     )
-    
+    tumor_data["clean_performance_status_at_diagnosis_scale"] = tumor_data["PerformStatusAtDiagnosisScale"].fillna("").str.strip()
+    tumor_data["clean_performance_status_at_diagnosis"] = tumor_data["PerformStatusAtDiagnosis"].fillna("").str.strip()
+    series_of_indicators_that_performance_status_at_diagnosis_scale_contains_ECOG = tumor_data["clean_performance_status_at_diagnosis_scale"].str.contains("ECOG", regex = False)
+    series_of_first_numbers = tumor_data["clean_performance_status_at_diagnosis"].str.extract(r"(\d+)", expand = False).astype(float)
+    tumor_data["ECOG PS"] = np.where(
+        series_of_indicators_that_performance_status_at_diagnosis_scale_contains_ECOG,
+        series_of_first_numbers.map(map_to_class_of_ECOG_performance_status),
+        "Unknown"
+    )
+
     number_of_rows_in_tumor_data = len(tumor_data)
     number_of_unique_patients_with_tumor_data = len(tumor_data["ORIENAvatarKey"].unique())
     number_of_unique_patients_with_tumors_with_RNA_sequencing = len(
@@ -606,6 +627,21 @@ def main():
         )
     ]
 
+    # Create list of rows of statistics re ECOG performance statuses.
+    list_of_rows_of_statistics_re_ECOG_performance_statuses = [
+        {"Characteristic": "ECOG PS"},
+        *(
+            {
+                "Characteristic": ECOG_PS,
+                **summarize(
+                    tumor_data["ECOG PS"] == ECOG_PS,
+                    tumor_data
+                )
+            }
+            for ECOG_PS in ["0", "1", "2", "3+"]
+        )
+    ]
+
     # Assemble tables.
     table_1 = pd.DataFrame(
         list_of_rows_of_statistics_re_sequencing_data +
@@ -620,7 +656,8 @@ def main():
         list_of_statistics_re_races +
         list_of_statistics_re_ethnicities +
         list_of_statistics_re_stages +
-        list_of_rows_of_statistics_re_primary_diagnosis_sites
+        list_of_rows_of_statistics_re_primary_diagnosis_sites +
+        list_of_rows_of_statistics_re_ECOG_performance_statuses
     )
 
     dictionary_of_names_of_tables_and_tables = {
@@ -651,6 +688,22 @@ def main():
         # Print tables.
         print(f"\n{name_of_table}\n")
         print(table.to_string(index = False))
+
+
+def map_to_class_of_ECOG_performance_status(value) -> str:
+    '''
+    Map an integer or NA to a class of ECOG performance status.
+    0 maps to "0".
+    1 maps to "1".
+    2 maps to "2".
+    A number greater than or equal to 3 maps to "3+".
+    NA maps to "Unknown".
+    '''
+    if pd.isna(value):
+        return "Unknown"
+    if value >= 3:
+        return "3+"
+    return str(int(value))
 
     
 def numericize_age(age: str):
