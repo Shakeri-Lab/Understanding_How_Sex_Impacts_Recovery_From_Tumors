@@ -117,7 +117,10 @@ def classify_specimen_site_of_collection(site: str) -> str | None:
     ):
         return "Abdominal viscera"    
     
-    if any(keyword in lowercase_site for keyword in ["brain", "cerebellum", "frontal lobe", "occipital lobe", "temporal lobe"]):
+    if any(
+        keyword in lowercase_site
+        for keyword in ["brain", "cerebellum", "frontal lobe", "occipital lobe", "temporal lobe", "parietal lobe"]
+    ):
         return "Brain"
     
     if any(keyword in lowercase_site for keyword in ["bone", "spine", "vertebral"]):
@@ -141,9 +144,27 @@ def main():
     patient_data = pd.read_csv(PATH_TO_PATIENT_DATA, dtype = str)
     tumor_marker_data = pd.read_csv(PATH_TO_TUMOR_MARKER_DATA, dtype = str)
     output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors = pd.read_csv(PATH_TO_OUTPUT_OF_PIPELINE_FOR_PAIRING_CLINICAL_DATA_AND_STAGES_OF_TUMORS, dtype = str)
+    output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors["index_of_row_of_diagnosis_data_paired_with_specimen"] = pd.to_numeric(
+        output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors["index_of_row_of_diagnosis_data_paired_with_specimen"],
+        errors = "raise"
+    )
     medications_data = pd.read_csv(PATH_TO_MEDICATIONS_DATA, dtype = str)
     diagnosis_data = pd.read_csv(PATH_TO_DIAGNOSIS_DATA, dtype = str)
     diagnosis_data = diagnosis_data.reset_index().rename(columns = {"index": "index_of_row_of_diagnosis_data"})
+    data_from_output_of_pipeline_and_diagnosis_data = output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors[
+        ["AvatarKey", "Group", "index_of_row_of_diagnosis_data_paired_with_specimen"]
+    ].merge(
+        diagnosis_data[
+            ["AvatarKey", "index_of_row_of_diagnosis_data", "ClinTStage", "ClinNStage", "ClinMStage", "ClinGroupStage", "PathTStage", "PathNStage", "PathMStage", "PathGroupStage", "TNMEditionNumber"]
+        ],
+        left_on = ["AvatarKey", "index_of_row_of_diagnosis_data_paired_with_specimen"],
+        right_on = ["AvatarKey", "index_of_row_of_diagnosis_data"],
+        how = "left"
+    )
+    data_from_output_of_pipeline_and_diagnosis_data = data_from_output_of_pipeline_and_diagnosis_data[
+        ~data_from_output_of_pipeline_and_diagnosis_data["TNMEditionNumber"].str.contains("Eighth Edition", regex = False)
+    ]
+    data_from_output_of_pipeline_and_diagnosis_data.to_csv("data_from_output_of_pipeline_and_diagnosis_data.csv", index = False)
 
     # Create a data frame of clinical data and data in output of pipeline of cutaneous tumors in output of pipeline.
     tumor_data = clinical_molecular_linkage_data.merge(
@@ -164,12 +185,8 @@ def main():
         (tumor_data["Tumor/Germline"].str.lower() == "tumor") &
         (tumor_data["AssignedPrimarySite"].str.lower() == "cutaneous")
     ].reset_index(drop = True)
-    tumor_data["index_of_row_of_diagnosis_data_paired_with_specimen"] = pd.to_numeric(
-        tumor_data["index_of_row_of_diagnosis_data_paired_with_specimen"],
-        errors = "raise"
-    )
     tumor_data = tumor_data.merge(
-        diagnosis_data[["AvatarKey", "index_of_row_of_diagnosis_data", "AgeAtDiagnosis", "PathGroupStage", "ClinGroupStage"]],
+        diagnosis_data[["AvatarKey", "index_of_row_of_diagnosis_data", "AgeAtDiagnosis", "PathGroupStage", "ClinGroupStage", "TNMEditionNumber"]],
         left_on = ["ORIENAvatarKey", "index_of_row_of_diagnosis_data_paired_with_specimen"],
         right_on = ["AvatarKey", "index_of_row_of_diagnosis_data"],
         how = "left"
@@ -582,6 +599,8 @@ def main():
         # Print tables.
         print(f"\n{name_of_table}\n")
         print(table.to_string(index = False))
+    
+    tumor_data.to_csv("tumor_data.csv")
 
     
 def numericize_age(age: str):
