@@ -62,6 +62,35 @@ def determine_ICB_status(
         return "Anti-PD1 and anti-CTLA4"
     return "Experienced"
 
+def classify_primary_diagnosis_site(site: str) -> str | None:
+    '''
+    Classify a primary diagnosis site as
+    "Head and neck",
+    "Upper extremity",
+    "Trunk",
+    "Lower extremity",
+    "Vulva", or
+    "Skin, NOS"
+    '''
+    lowercase_site = str(site).lower()
+
+    if any(keyword in lowercase_site for keyword in ["ear", "eyelid", "lip", "scalp", "face"]):
+        return "Head and neck"
+    
+    if "upper limb" in lowercase_site:
+        return "Upper extremity"
+    
+    if "trunk" in lowercase_site:
+        return "Trunk"
+    
+    if "lower limb" in lowercase_site:
+        return "Lower extremity"
+    
+    if "Vulva, NOS".lower() in lowercase_site:
+        return "Vulva"
+    
+    if "Skin, NOS".lower() in lowercase_site:
+        return "Skin, NOS"
 
 def classify_specimen_site_of_collection(site: str) -> str | None:
     '''
@@ -186,7 +215,7 @@ def main():
         (tumor_data["AssignedPrimarySite"].str.lower() == "cutaneous")
     ].reset_index(drop = True)
     tumor_data = tumor_data.merge(
-        diagnosis_data[["AvatarKey", "index_of_row_of_diagnosis_data", "AgeAtDiagnosis", "PathGroupStage", "ClinGroupStage", "TNMEditionNumber"]],
+        diagnosis_data[["AvatarKey", "index_of_row_of_diagnosis_data", "AgeAtDiagnosis", "PathGroupStage", "ClinGroupStage", "TNMEditionNumber", "PrimaryDiagnosisSite"]],
         left_on = ["ORIENAvatarKey", "index_of_row_of_diagnosis_data_paired_with_specimen"],
         right_on = ["AvatarKey", "index_of_row_of_diagnosis_data"],
         how = "left"
@@ -265,14 +294,15 @@ def main():
     )
     print(tumor_data[["DeidSpecimenID", "class_of_sequencing_data"]].head(n = 3))
     
-    # Classify specimen sites of collection and assign each specimen a class.
+    # Classify sites and assign each specimen a class.
     tumor_data["class_of_specimen_site_of_collection"] = tumor_data["SpecimenSiteOfCollection"].apply(classify_specimen_site_of_collection)
-    
+    tumor_data["class_of_primary_diagnosis_site"] = tumor_data["PrimaryDiagnosisSite"].apply(classify_primary_diagnosis_site)
+
     print(
-        "We determined a class of specimen site of collection for each specimen. " +
-        "Here is a slice of tumor data with specimen IDs and classes:"
+        "We determined classes of sites for each specimen. Here is a slice of tumor data with specimen IDs and classes:"
     )
     print(tumor_data[["DeidSpecimenID", "class_of_specimen_site_of_collection"]].head(n = 3))
+    print(tumor_data[["DeidSpecimenID", "class_of_primary_diagnosis_site"]].head(n = 3))
     
     # Add melanoma driver genes for each patient.
     tumor_marker_data = tumor_marker_data[
@@ -376,7 +406,7 @@ def main():
         )
     ]
 
-    # Create list of rows of statistics re specimen collection sites.
+    # Create lists of rows of statistics re sites.
     list_of_specimen_collection_sites = [
         "Skin and other soft tissues",
         "Lymph node",
@@ -396,6 +426,27 @@ def main():
                 )
             }
             for specimen_collection_site in list_of_specimen_collection_sites
+        )
+    ]
+    list_of_primary_diagnosis_sites = [
+        "Head and neck",
+        "Upper extremity",
+        "Trunk",
+        "Lower extremity",
+        "Vulva",
+        "Skin, NOS"
+    ]
+    list_of_rows_of_statistics_re_primary_diagnosis_sites = [
+        {"Characteristic": "Primary Diagnosis Site"},
+        *(
+            {
+                "Characteristic": primary_diagnosis_site,
+                **summarize(
+                    tumor_data["class_of_primary_diagnosis_site"] == primary_diagnosis_site,
+                    tumor_data
+                )
+            }
+            for primary_diagnosis_site in list_of_primary_diagnosis_sites
         )
     ]
 
@@ -568,7 +619,8 @@ def main():
         list_of_rows_of_statistics_re_ages_at_diagnosis +
         list_of_statistics_re_races +
         list_of_statistics_re_ethnicities +
-        list_of_statistics_re_stages
+        list_of_statistics_re_stages +
+        list_of_rows_of_statistics_re_primary_diagnosis_sites
     )
 
     dictionary_of_names_of_tables_and_tables = {
