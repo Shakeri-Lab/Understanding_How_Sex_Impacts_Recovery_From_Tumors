@@ -169,11 +169,32 @@ def main():
         errors = "raise"
     )
     tumor_data = tumor_data.merge(
-        diagnosis_data[["AvatarKey", "index_of_row_of_diagnosis_data", "AgeAtDiagnosis"]],
+        diagnosis_data[["AvatarKey", "index_of_row_of_diagnosis_data", "AgeAtDiagnosis", "PathGroupStage", "ClinGroupStage"]],
         left_on = ["ORIENAvatarKey", "index_of_row_of_diagnosis_data_paired_with_specimen"],
         right_on = ["AvatarKey", "index_of_row_of_diagnosis_data"],
         how = "left"
     ).drop(columns = ["AvatarKey", "index_of_row_of_diagnosis_data"])
+    INVALID_STAGE_VALUES = {
+        "",
+        "Unknown/Not Reported",
+        "Unknown/Not Applicable",
+        "No TNM applicable for this site/histology combination",
+    }
+    tumor_data["clean_pathological_group_stage"] = tumor_data["PathGroupStage"].fillna("").str.strip()
+    tumor_data["clean_clinical_group_stage"] = tumor_data["ClinGroupStage"].fillna("").str.strip()
+    series_of_indicators_that_pathological_group_stage_exists = ~tumor_data["clean_pathological_group_stage"].isin(INVALID_STAGE_VALUES)
+    series_of_indicators_that_clinical_group_stage_exists = ~tumor_data["clean_clinical_group_stage"].isin(INVALID_STAGE_VALUES)
+    tumor_data["Stage"] = np.select(
+        [
+            series_of_indicators_that_pathological_group_stage_exists,
+            ~series_of_indicators_that_pathological_group_stage_exists & series_of_indicators_that_clinical_group_stage_exists
+        ],
+        [
+            tumor_data["clean_pathological_group_stage"],
+            tumor_data["clean_clinical_group_stage"]
+        ],
+        default = "Unknown"
+    )
     
     number_of_rows_in_tumor_data = len(tumor_data)
     number_of_unique_patients_with_tumor_data = len(tumor_data["ORIENAvatarKey"].unique())
@@ -488,6 +509,35 @@ def main():
         )
     ]
 
+    list_of_statistics_re_stages = [
+        {"Characteristic": "Stage"},
+        *(
+            {
+                "Characteristic": stage,
+                **summarize(
+                    tumor_data["Stage"] == stage,
+                    tumor_data
+                )
+            }
+            for stage in [
+                "IA",
+                "IB",
+                "IIA",
+                "IIB",
+                "IIC",
+                "III",
+                "IIIA",
+                "IIIB",
+                "IIIC",
+                "IIID",
+                "IV",
+                "IVA",
+                "IVB",
+                "IVC"
+            ]
+        )
+    ]
+
     # Assemble tables.
     table_1 = pd.DataFrame(
         list_of_rows_of_statistics_re_sequencing_data +
@@ -500,7 +550,8 @@ def main():
     table_2 = pd.DataFrame(
         list_of_rows_of_statistics_re_ages_at_diagnosis +
         list_of_statistics_re_races +
-        list_of_statistics_re_ethnicities
+        list_of_statistics_re_ethnicities +
+        list_of_statistics_re_stages
     )
 
     dictionary_of_names_of_tables_and_tables = {
