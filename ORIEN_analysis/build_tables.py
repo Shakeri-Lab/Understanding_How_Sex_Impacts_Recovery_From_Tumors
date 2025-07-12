@@ -305,7 +305,7 @@ def main():
 
     # Add sex for each patient.
     tumor_data = tumor_data.merge(
-        patient_data[["AvatarKey", "Sex"]],
+        patient_data[["AvatarKey", "Sex", "Race"]],
         left_on = "ORIENAvatarKey",
         right_on = "AvatarKey",
         how = "left"
@@ -443,6 +443,28 @@ def main():
     # Create list of rows of statistics re ICB statuses.
     list_of_rows_re_ICB_statuses = list(rows_re_ICB_statuses(tumor_data))
     
+    list_of_statistics_re_races = [
+        {"Characteristic": "Race"},
+        *(
+            {
+                "Characteristic": race,
+                **summarize(
+                    tumor_data["Race"] == race,
+                    tumor_data
+                )
+            }
+            for race in [
+                "American Indian or Alaska Native",
+                "Black or African American",
+                "Chinese",
+                "Korean",
+                "Some other race",
+                "Unknown by patient",
+                "White"
+            ]
+        )
+    ]
+
     # Assemble tables.
     table_1 = pd.DataFrame(
         list_of_rows_of_statistics_re_sequencing_data +
@@ -453,7 +475,8 @@ def main():
         list_of_rows_re_ICB_statuses
     )
     table_2 = pd.DataFrame(
-        list_of_rows_of_statistics_re_ages_at_diagnosis
+        list_of_rows_of_statistics_re_ages_at_diagnosis +
+        list_of_statistics_re_races
     )
 
     dictionary_of_names_of_tables_and_tables = {
