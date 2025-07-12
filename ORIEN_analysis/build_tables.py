@@ -239,9 +239,9 @@ def main():
     # Add melanoma driver genes for each patient.
     tumor_marker_data = tumor_marker_data[
         (
-            tumor_marker_data["TMarkerTest"].str.contains("BRAF") |
-            tumor_marker_data["TMarkerTest"].str.contains("NRAS") |
-            tumor_marker_data["TMarkerTest"].str.contains("PTEN")
+            tumor_marker_data["TMarkerTest"].str.contains("BRAF", regex = False) |
+            tumor_marker_data["TMarkerTest"].str.contains("NRAS", regex = False) |
+            tumor_marker_data["TMarkerTest"].str.contains("PTEN", regex = False)
         ) &
         tumor_marker_data["TMarkerResult"] == "Positive"
     ]
@@ -305,7 +305,7 @@ def main():
 
     # Add sex for each patient.
     tumor_data = tumor_data.merge(
-        patient_data[["AvatarKey", "Sex", "Race"]],
+        patient_data[["AvatarKey", "Sex", "Race", "Ethnicity"]],
         left_on = "ORIENAvatarKey",
         right_on = "AvatarKey",
         how = "left"
@@ -369,7 +369,7 @@ def main():
             {
                 "Characteristic": melanoma_driver_mutation,
                 **summarize(
-                    tumor_data["TMarkerTest"].str.contains(melanoma_driver_mutation),
+                    tumor_data["TMarkerTest"].str.contains(melanoma_driver_mutation, regex = False),
                     tumor_data
                 )
             }
@@ -465,6 +465,29 @@ def main():
         )
     ]
 
+    list_of_statistics_re_ethnicities = [
+        {"Characteristic": "Ethnicity"},
+        *(
+            {
+                "Characteristic": ethnicity,
+                **summarize(
+                    tumor_data["Ethnicity"].str.contains(ethnicity, regex = False),
+                    tumor_data
+                )
+            }
+            for ethnicity in [
+                "Hispanic, NOS",
+                "Latino, NOS",
+                "Mexican (includes Chicano)",
+                "Non-Hispanic",
+                "Non-Spanish",
+                "South or Central American (except Brazil)",
+                "Spanish, NOS",
+                "Unknown/Not Reported"
+            ]
+        )
+    ]
+
     # Assemble tables.
     table_1 = pd.DataFrame(
         list_of_rows_of_statistics_re_sequencing_data +
@@ -476,7 +499,8 @@ def main():
     )
     table_2 = pd.DataFrame(
         list_of_rows_of_statistics_re_ages_at_diagnosis +
-        list_of_statistics_re_races
+        list_of_statistics_re_races +
+        list_of_statistics_re_ethnicities
     )
 
     dictionary_of_names_of_tables_and_tables = {
