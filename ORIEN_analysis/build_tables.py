@@ -25,7 +25,7 @@ def classify_ICB_medication(name: str) -> str | None:
 def determine_ICB_status(
     patient_ID: str,
     age_at_specimen_collection: float,
-    dictionary_of_patients_IDs_and_lists_of_tuples_of_ages_at_medication_start_and_ICB_class
+    dictionary_of_patients_IDs_and_lists_of_tuples_of_ages_at_medication_start_and_ICB_classes
 ):
     '''
     Determine whether a patient is
@@ -43,12 +43,12 @@ def determine_ICB_status(
     patient is Naive.
     Otherwise, patient is Experienced. 
     '''
-    list_of_tuples_of_ages_at_medication_start_and_ICB_class = dictionary_of_patients_IDs_and_lists_of_tuples_of_ages_at_medication_start_and_ICB_class.get(patient_ID, [])
-    if not list_of_tuples_of_ages_at_medication_start_and_ICB_class or age_at_specimen_collection is None:
+    list_of_tuples_of_ages_at_medication_start_and_ICB_classes = dictionary_of_patients_IDs_and_lists_of_tuples_of_ages_at_medication_start_and_ICB_classes.get(patient_ID, [])
+    if not list_of_tuples_of_ages_at_medication_start_and_ICB_classes or age_at_specimen_collection is None:
         return "Naive"
     list_of_tuples_of_ages_at_medication_start_less_than_or_equal_to_age_at_specimen_collection_fudged_and_ICB_classes = [
         (age, clas)
-        for age, clas in list_of_tuples_of_ages_at_medication_start_and_ICB_class
+        for age, clas in list_of_tuples_of_ages_at_medication_start_and_ICB_classes
         if not np.isnan(age) and age <= age_at_specimen_collection + 0.005
     ]
     if not list_of_tuples_of_ages_at_medication_start_less_than_or_equal_to_age_at_specimen_collection_fudged_and_ICB_classes:
@@ -73,22 +73,16 @@ def classify_primary_diagnosis_site(site: str) -> str | None:
     "Skin, NOS"
     '''
     lowercase_site = str(site).lower()
-
     if any(keyword in lowercase_site for keyword in ["ear", "eyelid", "lip", "scalp", "face"]):
         return "Head and neck"
-    
     if "upper limb" in lowercase_site:
         return "Upper extremity"
-    
     if "trunk" in lowercase_site:
         return "Trunk"
-    
     if "lower limb" in lowercase_site:
         return "Lower extremity"
-    
     if "Vulva, NOS".lower() in lowercase_site:
         return "Vulva"
-    
     if "Skin, NOS".lower() in lowercase_site:
         return "Skin, NOS"
 
@@ -180,6 +174,8 @@ def main():
     medications_data = pd.read_csv(PATH_TO_MEDICATIONS_DATA, dtype = str)
     diagnosis_data = pd.read_csv(PATH_TO_DIAGNOSIS_DATA, dtype = str)
     diagnosis_data = diagnosis_data.reset_index().rename(columns = {"index": "index_of_row_of_diagnosis_data"})
+    
+    # Create CSV file with data from output of pipeline and diagnosis data.
     data_from_output_of_pipeline_and_diagnosis_data = output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors[
         ["AvatarKey", "Group", "index_of_row_of_diagnosis_data_paired_with_specimen"]
     ].merge(
@@ -195,7 +191,7 @@ def main():
     ]
     data_from_output_of_pipeline_and_diagnosis_data.to_csv("data_from_output_of_pipeline_and_diagnosis_data.csv", index = False)
 
-    # Create a data frame of clinical data and data in output of pipeline of cutaneous tumors in output of pipeline.
+    # Create a data frame of clinical data, and data in output of pipeline, of cutaneous tumors in output of pipeline.
     tumor_data = clinical_molecular_linkage_data.merge(
         output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors[
             [
@@ -238,31 +234,8 @@ def main():
         "Unknown/Not Applicable",
         "No TNM applicable for this site/histology combination",
     }
-    tumor_data["clean_pathological_group_stage"] = tumor_data["PathGroupStage"].fillna("").str.strip()
-    tumor_data["clean_clinical_group_stage"] = tumor_data["ClinGroupStage"].fillna("").str.strip()
-    series_of_indicators_that_pathological_group_stage_exists = ~tumor_data["clean_pathological_group_stage"].isin(INVALID_STAGE_VALUES)
-    series_of_indicators_that_clinical_group_stage_exists = ~tumor_data["clean_clinical_group_stage"].isin(INVALID_STAGE_VALUES)
-    tumor_data["Stage"] = np.select(
-        [
-            series_of_indicators_that_pathological_group_stage_exists,
-            ~series_of_indicators_that_pathological_group_stage_exists & series_of_indicators_that_clinical_group_stage_exists
-        ],
-        [
-            tumor_data["clean_pathological_group_stage"],
-            tumor_data["clean_clinical_group_stage"]
-        ],
-        default = "Unknown"
-    )
-    tumor_data["clean_performance_status_at_diagnosis_scale"] = tumor_data["PerformStatusAtDiagnosisScale"].fillna("").str.strip()
-    tumor_data["clean_performance_status_at_diagnosis"] = tumor_data["PerformStatusAtDiagnosis"].fillna("").str.strip()
-    series_of_indicators_that_performance_status_at_diagnosis_scale_contains_ECOG = tumor_data["clean_performance_status_at_diagnosis_scale"].str.contains("ECOG", regex = False)
-    series_of_first_numbers = tumor_data["clean_performance_status_at_diagnosis"].str.extract(r"(\d+)", expand = False).astype(float)
-    tumor_data["ECOG PS"] = np.where(
-        series_of_indicators_that_performance_status_at_diagnosis_scale_contains_ECOG,
-        series_of_first_numbers.map(map_to_class_of_ECOG_performance_status),
-        "Unknown"
-    )
 
+    # Print out initial statistics about tumor data.
     number_of_rows_in_tumor_data = len(tumor_data)
     number_of_unique_patients_with_tumor_data = len(tumor_data["ORIENAvatarKey"].unique())
     number_of_unique_patients_with_tumors_with_RNA_sequencing = len(
@@ -278,10 +251,9 @@ def main():
         ]
         .unique()
     )
-
     print(
-        "We determined a data frame of clinical molecular linkage data and " +
-        "data from output of pipeline corresponding to cutaneous tumors in output of pipeline."
+        "We determined a data frame of clinical data, and " +
+        "data from output of pipeline, corresponding to cutaneous tumors in output of pipeline."
     )
     print(f"The number of rows is {number_of_rows_in_tumor_data}.")
     print(f"The number of unique patients is {number_of_unique_patients_with_tumor_data}.")
@@ -310,8 +282,7 @@ def main():
     )
 
     print(
-        "We determined a class of sequencing data for each specimen. " +
-        "Here is a slice of tumor data with specimen IDs and classes:"
+        "We determined a class of sequencing data for each specimen. Here is a slice of tumor data with specimen IDs and classes:"
     )
     print(tumor_data[["DeidSpecimenID", "class_of_sequencing_data"]].head(n = 3))
     
@@ -320,7 +291,7 @@ def main():
     tumor_data["class_of_primary_diagnosis_site"] = tumor_data["PrimaryDiagnosisSite"].apply(classify_primary_diagnosis_site)
 
     print(
-        "We determined classes of sites for each specimen. Here is a slice of tumor data with specimen IDs and classes:"
+        "We determined classes of sites for each specimen. Here are slices of tumor data with specimen IDs and classes:"
     )
     print(tumor_data[["DeidSpecimenID", "class_of_specimen_site_of_collection"]].head(n = 3))
     print(tumor_data[["DeidSpecimenID", "class_of_primary_diagnosis_site"]].head(n = 3))
@@ -352,10 +323,14 @@ def main():
     tumor_data["age_at_specimen_collection"] = tumor_data["Age At Specimen Collection"].apply(numericize_age)
     medications_data["age_at_med_start"] = medications_data["AgeAtMedStart"].apply(numericize_age)
     tumor_data["age_at_diagnosis"] = tumor_data["AgeAtDiagnosis"].apply(numericize_age)
+    
+    print("We numericize ages at specimen collection, ages at medication start, and ages at diagnosis.")
 
-    # Assign an ICB class (e.g., "Anti-PD1") to each medication and trim medications data to rows with ICB classes.
+    # Assign an ICB class (e.g., "Anti-PD1") to each medication and filter medications data to rows with ICB classes.
     medications_data["ICB_class"] = medications_data["Medication"].map(classify_ICB_medication)
     medications_data = medications_data[medications_data["ICB_class"].notna()]
+
+    print("We assign an ICB class to each medication and filter medications data to rows with ICB classes.")
 
     '''
     Create a dictionary of patient IDs and lists of tuples of
@@ -367,7 +342,7 @@ def main():
         ]
     }
     '''
-    dictionary_of_patients_IDs_and_lists_of_tuples_of_ages_at_medication_start_and_ICB_class = (
+    dictionary_of_patient_IDs_and_lists_of_tuples_of_ages_at_medication_start_and_ICB_classes = (
         medications_data
         .dropna(subset = ["age_at_med_start"])
         .groupby("AvatarKey")[["age_at_med_start", "ICB_class"]]
@@ -379,18 +354,20 @@ def main():
         .to_dict()
     )
 
+    print("We create a dictionary of patient IDs and lists of tuples of ages at medication start and ICB classes.")
+
     # Assign an ICB status to each specimen.
     tumor_data["ICB_status"] = [
         determine_ICB_status(
             patient_ID,
             age_at_specimen_collection,
-            dictionary_of_patients_IDs_and_lists_of_tuples_of_ages_at_medication_start_and_ICB_class
+            dictionary_of_patient_IDs_and_lists_of_tuples_of_ages_at_medication_start_and_ICB_classes
         )
         for patient_ID, age_at_specimen_collection
         in zip(tumor_data["ORIENAvatarKey"], tumor_data["age_at_specimen_collection"])
     ]
 
-    print(f"The number of rows in tumor data after assigning an ICB status to each specimen is {len(tumor_data)}.")
+    print("We assign an ICB status to each specimen.")
 
     # Add sex for each patient.
     tumor_data = tumor_data.merge(
@@ -401,13 +378,43 @@ def main():
     )
     tumor_data["Sex"] = tumor_data["Sex"].str.title()
 
-    print(f"The number of rows in tumor data after merging column \"Sex\" from patient data is {len(tumor_data)}.")
+    print(f"The number of rows in tumor data after merging patient data is {len(tumor_data)}.")
+
+    tumor_data["clean_pathological_group_stage"] = tumor_data["PathGroupStage"].fillna("").str.strip()
+    tumor_data["clean_clinical_group_stage"] = tumor_data["ClinGroupStage"].fillna("").str.strip()
+    series_of_indicators_that_pathological_group_stage_exists = ~tumor_data["clean_pathological_group_stage"].isin(INVALID_STAGE_VALUES)
+    series_of_indicators_that_clinical_group_stage_exists = ~tumor_data["clean_clinical_group_stage"].isin(INVALID_STAGE_VALUES)
+    tumor_data["Stage"] = np.select(
+        [
+            series_of_indicators_that_pathological_group_stage_exists,
+            ~series_of_indicators_that_pathological_group_stage_exists & series_of_indicators_that_clinical_group_stage_exists
+        ],
+        [
+            tumor_data["clean_pathological_group_stage"],
+            tumor_data["clean_clinical_group_stage"]
+        ],
+        default = "Unknown"
+    )
+
+    print("We add column \"Stage\" to tumor data for Table 2.")
+
+    tumor_data["clean_performance_status_at_diagnosis_scale"] = tumor_data["PerformStatusAtDiagnosisScale"].fillna("").str.strip()
+    tumor_data["clean_performance_status_at_diagnosis"] = tumor_data["PerformStatusAtDiagnosis"].fillna("").str.strip()
+    series_of_indicators_that_performance_status_at_diagnosis_scale_contains_ECOG = tumor_data["clean_performance_status_at_diagnosis_scale"].str.contains("ECOG", regex = False)
+    series_of_first_numbers = tumor_data["clean_performance_status_at_diagnosis"].str.extract(r"(\d+)", expand = False).astype(float)
+    tumor_data["ECOG PS"] = np.where(
+        series_of_indicators_that_performance_status_at_diagnosis_scale_contains_ECOG,
+        series_of_first_numbers.map(map_to_class_of_ECOG_performance_status),
+        "Unknown"
+    )
+
+    print("We add column \"ECOG PS\" to tumor data for Table 2.")
 
     # Print summary statistics.
     number_of_tumors = len(tumor_data)
     number_of_tumors_of_males = tumor_data["Sex"].eq("Male").sum()
     number_of_tumors_of_females = tumor_data["Sex"].eq("Female").sum()
-    
+
     print(f"At this point, the number of tumors in our data is {number_of_tumors}.")
     print(f"The number of tumors of males in our data is {number_of_tumors_of_males}.")
     print(f"The number of tumors of females in our data is {number_of_tumors_of_females}.")
@@ -423,7 +430,7 @@ def main():
                     tumor_data
                 )
             }
-            for sequencing_data_category in ["WES only", "RNAseq only", "WES and RNAseq"]#, "not WES and not RNAseq", None]
+            for sequencing_data_category in ["WES only", "RNAseq only", "WES and RNAseq"]
         )
     ]
 
@@ -449,6 +456,7 @@ def main():
             for specimen_collection_site in list_of_specimen_collection_sites
         )
     ]
+
     list_of_primary_diagnosis_sites = [
         "Head and neck",
         "Upper extremity",
@@ -536,7 +544,7 @@ def main():
         ]
     
     # Create list of rows of statistics re stages.
-    list_of_rows_of_statistics_re_stages = [
+    list_of_rows_of_statistics_re_stages_for_Table_1 = [
         {"Characteristic": "Stage"},
         *(
             {
@@ -598,7 +606,7 @@ def main():
         )
     ]
 
-    list_of_statistics_re_stages = [
+    list_of_statistics_re_stages_for_Table_2 = [
         {"Characteristic": "Stage"},
         *(
             {
@@ -648,14 +656,14 @@ def main():
         list_of_rows_of_statistics_re_specimen_collection_sites + 
         list_of_rows_of_statistics_re_melanoma_driver_mutations +
         list_of_rows_of_statistics_re_ages_at_specimen_collection +
-        list_of_rows_of_statistics_re_stages +
+        list_of_rows_of_statistics_re_stages_for_Table_1 +
         list_of_rows_re_ICB_statuses
     )
     table_2 = pd.DataFrame(
         list_of_rows_of_statistics_re_ages_at_diagnosis +
         list_of_statistics_re_races +
         list_of_statistics_re_ethnicities +
-        list_of_statistics_re_stages +
+        list_of_statistics_re_stages_for_Table_2 +
         list_of_rows_of_statistics_re_primary_diagnosis_sites +
         list_of_rows_of_statistics_re_ECOG_performance_statuses
     )
