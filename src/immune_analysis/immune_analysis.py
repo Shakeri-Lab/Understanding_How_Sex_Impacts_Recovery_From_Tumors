@@ -1,6 +1,6 @@
 '''
 Usage:
-./miniconda3/envs/ici_sex/bin/python src/immune_analysis/immune_analysis.py
+./miniconda3/envs/ici_sex/bin/python -m src.immune_analysis.immune_analysis
 '''
 
 
@@ -14,90 +14,50 @@ import os
 import sys
 import logging
 
+from src.config import FOCUSED_XCELL_PANEL
+from src.config import paths
+
+
 # Add parent directory to path to allow imports from other modules
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 
 # Configure logger
 # Basic config if not already set elsewhere
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Define the Focused Panel (must match the one used in microenv.py)
-FOCUSED_XCELL_PANEL = [
-    'CD8+ T-cells',
-    'CD4+ memory T-cells',
-    'Tgd cells', 
-    'Macrophages M2',
-    'Tregs',
-    'cDC',
-    'pDC',
-    'Memory B-cells',
-    'Plasma cells',
-    'Endothelial cells',
-    'Fibroblasts',
-    'ImmuneScore',
-    'StromaScore',
-    'MicroenvironmentScore'
-]
 
 class ImmuneAnalysis:
     '''
-    Class for analyzing immune cell composition data
+    Class `ImmuneAnalysis` is a template for an object for analyzing immune cell composition data.
     '''
     
-    def __init__(self, data_path = None):
+    def __init__(self):
         '''
-        Initialize with merged immune and clinical data
+        Initialize with merged immune and clinical data.
         '''
-        # Set default base path
-        BASE_PATH = "/project/orien/data/aws/24PRJ217UVA_IORIG/Understanding_How_Sex_Impacts_Recovery_From_Tumors"
-        # Set correct data path to the output of microenv.py
-        if data_path is None:
-            data_path = os.path.join(BASE_PATH, "output/microenv", "melanoma_sample_immune_clinical.csv") # Corrected path
         
-        # Load the data
-        try:
-            self.data = pd.read_csv(data_path)
-            logger.info(f"Successfully loaded data from: {data_path}")
-            
-            # Check for specimen site information
-            self.has_site_info = False
-            site_columns = ['SpecimenSite', 'SpecimenSiteOfOrigin', 'SequencingSites']
-            for col in site_columns:
-                if col in self.data.columns:
-                    logger.info(f"Found specimen site information in column '{col}'")
-                    self.site_column = col
-                    self.has_site_info = True
-                    
-                    # Create metastatic flag if not already present
-                    if 'IsMetastatic' not in self.data.columns:
-                        self._create_metastatic_flag(col)
-                    break
-            
-            if not self.has_site_info:
-                logger.info("No specimen site information found in data")
-                
-        except FileNotFoundError:
-             logger.error(f"Input data file not found: {data_path}. Make sure microenv.py has been run successfully.")
-             raise
-        except Exception as e:
-             logger.error(f"Error loading data from {data_path}: {e}")
-             raise
+        self.melanoma_sample_immune_clinical_data = pd.read_csv(paths.melanoma_sample_immune_clinical_data)
         
-        # --- Corrected Immune Column Identification ---
-        # Find which panel columns are actually in the loaded data
-        self.immune_cols = [col for col in FOCUSED_XCELL_PANEL if col in self.data.columns]
+        logger.info(f"Data was successfully loaded from {paths.melanoma_sample_immune_clinical_data}.")
+        
+        self.focused_data_frame_of_scores_by_sample_and_cell_type = pd.read_csv(paths.focused_data_frame_of_scores_by_sample_and_cell_type)
+        
+        self.melanoma_sample_immune_clinical_data_and_scores = self.melanoma_sample_immune_clinical_data.merge(
+            self.focused_data_frame_of_scores_by_sample_and_cell_type,
+            left_on = "SLID",
+            right_on = "SampleID",
+            how = "left"
+        )
+        
+        # Find which panel columns are actually in the loaded data.
+        self.immune_cols = [col for col in FOCUSED_XCELL_PANEL if col in self.melanoma_sample_immune_clinical_data_and_scores.columns]
         if not self.immune_cols:
             logger.error("No columns from the FOCUSED_XCELL_PANEL found in the loaded data. Check input file.")
             raise ValueError("Input data does not contain expected immune score columns.")
         else:
             logger.info(f"Identified {len(self.immune_cols)} immune score columns based on the focused panel: {self.immune_cols}")
-        # --- End Correction ---
-        
-        # Create output directory
-        self.output_dir = os.path.join(BASE_PATH, "codes/output/immune_analysis") # Keep separate output dir
-        os.makedirs(self.output_dir, exist_ok=True)
-        logger.info(f"Output directory set to: {self.output_dir}")
         
         # Define cell type categories (Optional refinement: filter based on available cols)
         # For now, keep the full dict but analysis loops will use self.immune_cols
@@ -177,17 +137,17 @@ class ImmuneAnalysis:
         Compare cell type abundance between groups.
         Ensures cell_type exists in the data.
         """
-        if cell_type not in self.data.columns:
+        if cell_type not in self.melanoma_sample_immune_clinical_data_and_scores.columns:
             logger.error(f"Column '{cell_type}' not found in data for comparison.")
             return None # Return None instead of raising error directly
             
-        groups = self.data[group_col].dropna().unique() # Drop NA in grouping column
+        groups = self.melanoma_sample_immune_clinical_data_and_scores[group_col].dropna().unique() # Drop NA in grouping column
         if len(groups) != 2:
             logger.warning(f"Grouping column '{group_col}' does not have exactly 2 unique non-NA values ({groups}). Skipping comparison for {cell_type}.")
             return None
             
-        group1 = self.data[self.data[group_col] == groups[0]][cell_type].dropna()
-        group2 = self.data[self.data[group_col] == groups[1]][cell_type].dropna()
+        group1 = self.melanoma_sample_immune_clinical_data_and_scores[self.melanoma_sample_immune_clinical_data_and_scores[group_col] == groups[0]][cell_type].dropna()
+        group2 = self.melanoma_sample_immune_clinical_data_and_scores[self.melanoma_sample_immune_clinical_data_and_scores[group_col] == groups[1]][cell_type].dropna()
 
         if len(group1) < 3 or len(group2) < 3: # Require minimum samples per group
              logger.warning(f"Not enough data points (n<{3}) for comparison of '{cell_type}' between groups {groups[0]} (n={len(group1)}) and {groups[1]} (n={len(group2)}) in '{group_col}'.")
@@ -219,7 +179,7 @@ class ImmuneAnalysis:
         Plot distribution of cell type abundance by group.
         Handles cases where comparison is not possible.
         """
-        if cell_type not in self.data.columns:
+        if cell_type not in self.melanoma_sample_immune_clinical_data_and_scores.columns:
             logger.error(f"Cannot plot: Column '{cell_type}' not found in data.")
             return None
             
@@ -228,12 +188,12 @@ class ImmuneAnalysis:
         # Create plot
         try:
             if plot_type == 'violin':
-                ax = sns.violinplot(data=self.data, x=group_col, y=cell_type)
+                ax = sns.violinplot(data = self.melanoma_sample_immune_clinical_data_and_scores, x=group_col, y=cell_type)
             elif plot_type == 'box':
-                ax = sns.boxplot(data=self.data, x=group_col, y=cell_type)
+                ax = sns.boxplot(data = self.melanoma_sample_immune_clinical_data_and_scores, x=group_col, y=cell_type)
             elif plot_type == 'both':
-                ax = sns.violinplot(data=self.data, x=group_col, y=cell_type)
-                sns.boxplot(data=self.data, x=group_col, y=cell_type, width=0.2, color='white')
+                ax = sns.violinplot(data = self.melanoma_sample_immune_clinical_data_and_scores, x=group_col, y=cell_type)
+                sns.boxplot(data = self.melanoma_sample_immune_clinical_data_and_scores, x=group_col, y=cell_type, width=0.2, color='white')
             else:
                  logger.error(f"Unsupported plot type: {plot_type}")
                  plt.close()
@@ -272,9 +232,9 @@ class ImmuneAnalysis:
              logger.info(f"No statistical comparison result available for {cell_type} vs {group_col} to annotate plot.")
              
         plt.tight_layout()
-        output_file = os.path.join(self.output_dir, f'{cell_type.replace(" ", "_").replace("+", "")}_{group_col}_dist.png') # Sanitize filename
+        output_file = os.path.join(paths.outputs_of_immune_analysis, f'{cell_type.replace(" ", "_").replace("+", "")}_{group_col}_dist.png') # Sanitize filename
         try:
-             plt.savefig(output_file, bbox_inches='tight', dpi=300)
+             plt.savefig(output_file, bbox_inches = "tight", dpi = 300)
              logger.info(f"Saved plot to {output_file}")
         except Exception as save_err:
              logger.error(f"Failed to save plot {output_file}: {save_err}")
@@ -287,7 +247,7 @@ class ImmuneAnalysis:
         Plot correlation matrix of the identified immune cell types.
         """
         logger.info(f"Generating correlation matrix for {len(self.immune_cols)} immune scores...")
-        data = self.data[self.immune_cols].copy() # Use copy to avoid modifying original data
+        data = self.melanoma_sample_immune_clinical_data_and_scores[self.immune_cols].copy() # Use copy to avoid modifying original data
         title = 'Immune Cell Score Correlations - Focused Panel'
             
         # Clean column names for plotting using the refined method
@@ -317,65 +277,15 @@ class ImmuneAnalysis:
         plt.yticks(rotation=0, fontsize=8)
         plt.title(title)
         
-        # Save plot
-        output_file = os.path.join(self.output_dir, f'correlation_matrix_focused.png')
+        # Save plot.
         try:
-            plt.savefig(output_file, bbox_inches='tight', dpi=300)
-            logger.info(f"Saved correlation matrix to {output_file}")
+            plt.savefig(paths.correlation_matrix_focused, bbox_inches = "tight", dpi = 300)
+            logger.info(f"Saved correlation matrix to {paths.correlation_matrix_focused}")
         except Exception as save_err:
-             logger.error(f"Failed to save correlation matrix {output_file}: {save_err}")
+             logger.error(f"Failed to save correlation matrix {paths.correlation_matrix_focused}: {save_err}")
         plt.close()
         
-        return output_file
-
-    def _create_metastatic_flag(self, site_column):
-        """
-        Create IsMetastatic flag based on specimen site information.
-        
-        Args:
-            site_column (str): Name of the column containing specimen site information
-        """
-        try:
-            # Define keywords indicating metastatic sites
-            metastatic_keywords = ['lymph node', 'metastatic', 'metastasis', 'lymph_node', 'brain', 'liver', 'lung', 'distant']
-            
-            # Handle lists in SequencingSites column
-            if site_column == 'SequencingSites':
-                # For list-type columns, try to eval the string representation
-                def check_metastatic_sites(sites_str):
-                    if pd.isna(sites_str):
-                        return np.nan
-                    try:
-                        sites = eval(sites_str) if isinstance(sites_str, str) else sites_str
-                        if isinstance(sites, list):
-                            # Check if any site in the list matches metastatic keywords
-                            return any(
-                                any(keyword in str(site).lower() for keyword in metastatic_keywords)
-                                for site in sites if pd.notna(site)
-                            )
-                        return False
-                    except:
-                        return np.nan
-                
-                self.data['IsMetastatic'] = self.data[site_column].apply(check_metastatic_sites)
-            else:
-                # For regular columns, directly check against keywords
-                self.data['IsMetastatic'] = self.data[site_column].apply(
-                    lambda x: any(keyword in str(x).lower() for keyword in metastatic_keywords) 
-                            if pd.notna(x) else np.nan
-                )
-            
-            # Log the results
-            metastatic_count = self.data['IsMetastatic'].sum()
-            non_metastatic_count = (self.data['IsMetastatic'] == False).sum()
-            na_count = self.data['IsMetastatic'].isna().sum()
-            
-            logger.info(f"Classified {metastatic_count} samples as metastatic, {non_metastatic_count} as primary, and {na_count} unknown")
-            
-        except Exception as e:
-            logger.error(f"Error creating metastatic flag: {e}")
-            # Create empty flag to avoid errors in downstream analysis
-            self.data['IsMetastatic'] = np.nan
+        return paths.correlation_matrix_focused
 
     def compare_metastatic_vs_primary(self):
         """
@@ -385,15 +295,15 @@ class ImmuneAnalysis:
         Returns:
             pd.DataFrame or None: Results of comparison, or None if site information is not available
         """
-        if not self.has_site_info or 'IsMetastatic' not in self.data.columns:
+        if "IsMetastatic" not in self.melanoma_sample_immune_clinical_data_and_scores.columns:
             logger.warning("Cannot compare metastatic vs primary: No specimen site information available")
             return None
             
         logger.info("Comparing immune cell infiltration between metastatic and primary sites...")
         
         # Check if we have both metastatic and primary samples
-        metastatic_samples = self.data[self.data['IsMetastatic'] == True]
-        primary_samples = self.data[self.data['IsMetastatic'] == False]
+        metastatic_samples = self.melanoma_sample_immune_clinical_data_and_scores[self.melanoma_sample_immune_clinical_data_and_scores['IsMetastatic'] == True]
+        primary_samples = self.melanoma_sample_immune_clinical_data_and_scores[self.melanoma_sample_immune_clinical_data_and_scores['IsMetastatic'] == False]
         
         if len(metastatic_samples) < 3 or len(primary_samples) < 3:
             logger.warning(f"Not enough samples for comparison: Metastatic={len(metastatic_samples)}, Primary={len(primary_samples)}")
@@ -402,14 +312,13 @@ class ImmuneAnalysis:
         logger.info(f"Comparing {len(metastatic_samples)} metastatic samples vs {len(primary_samples)} primary samples")
         
         # Generate a detailed report of specimen sites
-        if self.site_column in self.data.columns:
+        if self.site_column in self.melanoma_sample_immune_clinical_data_and_scores.columns:
             # Count specimens by site 
-            site_counts = self.data.groupby(['IsMetastatic', self.site_column]).size().reset_index(name='Count')
+            site_counts = self.melanoma_sample_immune_clinical_data_and_scores.groupby(['IsMetastatic', self.site_column]).size().reset_index(name='Count')
             site_counts = site_counts.sort_values('Count', ascending=False)
             
-            # Save site counts to CSV
-            site_counts_file = os.path.join(self.output_dir, 'specimen_sites_by_metastatic_status.csv')
-            site_counts.to_csv(site_counts_file, index=False)
+            # Save site counts to CSV.
+            site_counts.to_csv(paths.data_frame_of_specimen_sites_by_metastatic_status, index = False)
             logger.info(f"Saved specimen site counts to {site_counts_file}")
             
             # Create visualization of specimen sites
@@ -436,8 +345,7 @@ class ImmuneAnalysis:
                 plt.legend(title='Metastatic Status', labels=['Primary', 'Metastatic'])
                 plt.tight_layout()
                 
-                site_plot_file = os.path.join(self.output_dir, 'specimen_sites_plot.png')
-                plt.savefig(site_plot_file, dpi=300, bbox_inches='tight')
+                plt.savefig(paths.specimen_sites_plot, dpi = 300, bbox_inches = "tight")
                 plt.close()
                 logger.info(f"Generated specimen site visualization: {site_plot_file}")
             except Exception as e:
@@ -481,10 +389,9 @@ class ImmuneAnalysis:
         if all_results:
             results_df = pd.DataFrame(all_results).sort_values('p_value')
             
-            # Save results
-            output_file = os.path.join(self.output_dir, 'metastatic_vs_primary_results.csv')
-            results_df.to_csv(output_file, index=False)
-            logger.info(f"Saved metastatic vs primary comparison results to {output_file}")
+            # Save results.
+            results_df.to_csv(paths.data_frame_of_metastatic_vs_primary_results, index = False)
+            logger.info(f"Saved metastatic vs primary comparison results to {paths.data_frame_of_metastatic_vs_primary_results}")
             
             # Generate heatmap of significant differences
             try:
@@ -519,9 +426,8 @@ class ImmuneAnalysis:
                     plt.title('Significant Differences in Immune Cell Infiltration\n(Metastatic vs Primary Sites)')
                     plt.tight_layout()
                     
-                    # Save heatmap
-                    heatmap_file = os.path.join(self.output_dir, 'metastatic_vs_primary_heatmap.png')
-                    plt.savefig(heatmap_file, dpi=300, bbox_inches='tight')
+                    # Save heatmap.
+                    plt.savefig(paths.metastatic_vs_primary_heatmap, dpi = 300, bbox_inches = "tight")
                     plt.close()
                     logger.info(f"Generated heatmap of significant differences: {heatmap_file}")
             except Exception as e:
@@ -548,7 +454,9 @@ class ImmuneAnalysis:
             return None
 
 def main():
-    """Main analysis workflow"""
+
+    paths.ensure_dependencies_for_immune_analysis_exist()
+    
     try:
         # Initialize analysis
         analysis = ImmuneAnalysis()
@@ -562,7 +470,7 @@ def main():
         for cell_type in analysis.immune_cols:
             logger.info(f"-- Processing: {cell_type} --")
             # Use the corrected grouping column name
-            result = analysis.compare_groups(cell_type, group_col=grouping_column)
+            result = analysis.compare_groups(cell_type, group_col = grouping_column)
             if result:
                 all_results.append({
                     'cell_type': analysis._clean_cell_type_name(cell_type),
@@ -584,7 +492,7 @@ def main():
         # Save combined results
         if all_results:
              results_df = pd.DataFrame(all_results).sort_values('p_value')
-             output_file = os.path.join(analysis.output_dir, f'all_focused_results_by_{grouping_column}.csv') # Use variable in filename
+             output_file = os.path.join(paths.outputs_of_immune_analysis, f"all_focused_results_by_{grouping_column}.csv")
              results_df.to_csv(output_file, index=False)
              logger.info(f"Saved all comparison results to {output_file}")
              # Print summary

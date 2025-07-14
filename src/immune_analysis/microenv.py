@@ -19,6 +19,7 @@ import rpy2.robjects as ro
 from rpy2.robjects.vectors import StrVector
 import traceback
 
+from src.config import FOCUSED_XCELL_PANEL
 from src.config import paths
 from src.immune_analysis.data_loading import identify_melanoma_samples, load_melanoma_data, load_rnaseq_data
 
@@ -48,24 +49,6 @@ XCELL_CELL_TYPES_ORDERED = [
     'Th1 cells', 'Th2 cells', 'Tregs', 'aDC', 'Neurons',
     'Hepatocytes', 'MSC', 'common myeloid progenitor', 'melanocyte', 'ImmuneScore',
     'StromaScore', 'MicroenvironmentScore'
-]
-
-# Define a list of columns for a focused panel for ICB response analysis.
-FOCUSED_XCELL_PANEL = [
-    'CD8+ T-cells',
-    'CD4+ memory T-cells',
-    'Tgd cells',
-    'Macrophages M2',
-    'Tregs',
-    'cDC',
-    'pDC',
-    'Memory B-cells',
-    'Plasma cells',
-    'Endothelial cells',
-    'Fibroblasts',
-    'ImmuneScore',
-    'StromaScore',
-    'MicroenvironmentScore'
 ]
 
 
@@ -201,14 +184,6 @@ def process_melanoma_immune_data():
     for slid, details in sample_details.items():
         if "patient_id" in details:
             sample_to_patient[slid] = details["patient_id"]
-
-    if not sample_to_patient:
-        
-        logger.warning("No sample details found with patient mappings. Using backup approach.")
-        
-        map_df = pd.read_csv(map_file_path)
-        for _, row in map_df.iterrows():
-            sample_to_patient[row["SampleID"]] = row["PatientID"]
 
     # Build a tidy "one row per tumour sample" data-frame from `sample_details`.
     sample_rows = (pd.DataFrame.from_dict(sample_details, orient = "index")
