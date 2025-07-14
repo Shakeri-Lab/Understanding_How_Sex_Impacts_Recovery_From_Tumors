@@ -282,45 +282,41 @@ class ImmuneAnalysis:
             
         logger.info(f"Comparing {len(metastatic_samples)} metastatic samples vs {len(primary_samples)} primary samples")
         
-        # Generate a detailed report of specimen sites
-        if self.site_column in self.melanoma_sample_immune_clinical_data_and_scores.columns:
-            # Count specimens by site 
-            site_counts = self.melanoma_sample_immune_clinical_data_and_scores.groupby(['IsMetastatic', self.site_column]).size().reset_index(name='Count')
-            site_counts = site_counts.sort_values('Count', ascending=False)
-            
-            # Save site counts to CSV.
-            site_counts.to_csv(paths.data_frame_of_specimen_sites_by_metastatic_status, index = False)
-            logger.info(f"Saved specimen site counts to {site_counts_file}")
-            
-            # Create visualization of specimen sites
-            try:
-                plt.figure(figsize=(14, 8))
-                # Filter to top 10 sites for readability
-                top_sites = site_counts.groupby(self.site_column)['Count'].sum().nlargest(10).index
-                filtered_counts = site_counts[site_counts[self.site_column].isin(top_sites)]
-                
-                # Create plot with site on x-axis, metastatic status as hue
-                site_plot = sns.barplot(
-                    data=filtered_counts,
-                    x=self.site_column,
-                    y='Count',
-                    hue='IsMetastatic',
-                    palette={'True': 'red', 'False': 'blue'},
-                    alpha=0.7
-                )
-                
-                plt.title('Sample Counts by Specimen Site and Metastatic Status')
-                plt.xlabel('Specimen Site')
-                plt.ylabel('Number of Samples')
-                plt.xticks(rotation=45, ha='right')
-                plt.legend(title='Metastatic Status', labels=['Primary', 'Metastatic'])
-                plt.tight_layout()
-                
-                plt.savefig(paths.specimen_sites_plot, dpi = 300, bbox_inches = "tight")
-                plt.close()
-                logger.info(f"Generated specimen site visualization: {site_plot_file}")
-            except Exception as e:
-                logger.error(f"Error creating specimen site visualization: {e}")
+        # Generate a detailed report of specimen sites.
+        # Count specimens by site.
+        site_counts = self.melanoma_sample_immune_clinical_data_and_scores.groupby(['IsMetastatic', "SpecimenSite"]).size().reset_index(name='Count')
+        site_counts = site_counts.sort_values('Count', ascending=False)
+
+        # Save site counts to CSV.
+        site_counts.to_csv(paths.data_frame_of_specimen_sites_by_metastatic_status, index = False)
+        logger.info(f"Specimen site counts were saved to {paths.data_frame_of_specimen_sites_by_metastatic_status}.")
+
+        # Create visualization of specimen sites.
+        plt.figure(figsize=(14, 8))
+        # Filter to top 10 sites for readability
+        top_sites = site_counts.groupby("SpecimenSite")['Count'].sum().nlargest(10).index
+        filtered_counts = site_counts[site_counts["SpecimenSite"].isin(top_sites)]
+
+        # Create plot with site on x-axis, metastatic status as hue
+        site_plot = sns.barplot(
+            data=filtered_counts,
+            x="SpecimenSite",
+            y='Count',
+            hue='IsMetastatic',
+            palette={np.True_: 'red', np.False_: 'blue'},
+            alpha=0.7
+        )
+
+        plt.title('Sample Counts by Specimen Site and Metastatic Status')
+        plt.xlabel('Specimen Site')
+        plt.ylabel('Number of Samples')
+        plt.xticks(rotation=45, ha='right')
+        plt.legend(title='Metastatic Status', labels=['Primary', 'Metastatic'])
+        plt.tight_layout()
+
+        plt.savefig(paths.specimen_sites_plot, dpi = 300, bbox_inches = "tight")
+        plt.close()
+        logger.info(f"Specimen site visualization was saved to {paths.specimen_sites_plot}.")
         
         # Run comparison for each immune cell type
         all_results = []
@@ -366,44 +362,42 @@ class ImmuneAnalysis:
             logger.info(f"Saved metastatic vs primary comparison results to {paths.data_frame_of_metastatic_vs_primary_results}")
             
             # Generate heatmap of significant differences
-            try:
-                # Filter to significant results
-                sig_results = results_df[results_df['significant']].copy()
-                if len(sig_results) > 0:
-                    # Create a pivot table for the heatmap
-                    pivot_data = pd.DataFrame({
-                        'cell_type': sig_results['cell_type'],
-                        'fold_change': sig_results['fold_change'],
-                        'p_value': sig_results['p_value'],
-                        'sig_level': sig_results['p_value'].apply(
-                            lambda p: '***' if p < self.bonferroni_threshold else 
-                                    ('**' if p < 0.01 else '*')
-                        )
-                    })
-                    
-                    # Sort by fold change
-                    pivot_data = pivot_data.sort_values('fold_change', ascending=False)
-                    
-                    # Create heatmap
-                    plt.figure(figsize=(10, len(pivot_data) * 0.4 + 2))
-                    ax = sns.heatmap(
-                        pd.DataFrame(pivot_data['fold_change']).T,
-                        annot=pd.DataFrame(pivot_data['sig_level']).T,
-                        cmap='RdBu_r',
-                        center=1,
-                        fmt='',
-                        cbar_kws={'label': 'Fold Change (Metastatic/Primary)'}
+
+            # Filter to significant results
+            sig_results = results_df[results_df['significant']].copy()
+            if len(sig_results) > 0:
+                # Create a pivot table for the heatmap
+                pivot_data = pd.DataFrame({
+                    'cell_type': sig_results['cell_type'],
+                    'fold_change': sig_results['fold_change'],
+                    'p_value': sig_results['p_value'],
+                    'sig_level': sig_results['p_value'].apply(
+                        lambda p: '***' if p < self.bonferroni_threshold else 
+                                ('**' if p < 0.01 else '*')
                     )
-                    ax.set_xticklabels(pivot_data['cell_type'], rotation=45, ha='right')
-                    plt.title('Significant Differences in Immune Cell Infiltration\n(Metastatic vs Primary Sites)')
-                    plt.tight_layout()
-                    
-                    # Save heatmap.
-                    plt.savefig(paths.metastatic_vs_primary_heatmap, dpi = 300, bbox_inches = "tight")
-                    plt.close()
-                    logger.info(f"Generated heatmap of significant differences: {heatmap_file}")
-            except Exception as e:
-                logger.error(f"Error creating heatmap of metastatic vs primary differences: {e}")
+                })
+
+                # Sort by fold change
+                pivot_data = pivot_data.sort_values('fold_change', ascending=False)
+
+                # Create heatmap
+                plt.figure(figsize=(10, len(pivot_data) * 0.4 + 2))
+                ax = sns.heatmap(
+                    pd.DataFrame(pivot_data['fold_change']).T,
+                    annot=pd.DataFrame(pivot_data['sig_level']).T,
+                    cmap='RdBu_r',
+                    center=1,
+                    fmt='',
+                    cbar_kws={'label': 'Fold Change (Metastatic/Primary)'}
+                )
+                ax.set_xticklabels(pivot_data['cell_type'], rotation=45, ha='right')
+                plt.title('Significant Differences in Immune Cell Infiltration\n(Metastatic vs Primary Sites)')
+                plt.tight_layout()
+
+                # Save heatmap.
+                plt.savefig(paths.metastatic_vs_primary_heatmap, dpi = 300, bbox_inches = "tight")
+                plt.close()
+                logger.info(f"Heatmap of significant differences was saved to {paths.metastatic_vs_primary_heatmap}.")
             
             # Log summary statistics
             n_sig = results_df['significant'].sum()
@@ -459,36 +453,39 @@ def main():
 
         analysis.plot_distribution_of_abundance_of_cells_of_type_by_group(cell_type, group_col = grouping_column)
 
-    # Save combined results
+    # Save combined results.
     if all_results:
-         results_df = pd.DataFrame(all_results).sort_values('p_value')
-         output_file = os.path.join(paths.outputs_of_immune_analysis, f"all_focused_results_by_{grouping_column}.csv")
-         results_df.to_csv(output_file, index=False)
-         logger.info(f"Saved all comparison results to {output_file}")
-         # Print summary
-         n_sig = results_df['significant'].sum()
-         n_bon_sig = results_df['bonferroni_significant'].sum()
-         logger.info(f"\nSummary for {grouping_column} comparison:") # Use variable in log
-         logger.info(f"Total tests: {len(results_df)}")
-         logger.info(f"Nominally significant (p < 0.05): {n_sig}")
-         logger.info(f"Bonferroni significant (p < {analysis.bonferroni_threshold:.3e}): {n_bon_sig}")
-         logger.info("\nTop significant cells (nominal):")
-         logger.info(results_df[results_df['significant']].head())
+        results_df = pd.DataFrame(all_results).sort_values('p_value')
+        output_file = os.path.join(
+            paths.outputs_of_immune_analysis,
+            f"all_focused_results_by_{grouping_column}.csv"
+        )
+        results_df.to_csv(output_file, index = False)
+        logger.info(f"All comparison results were saved to {output_file}.")
+         
+        # Print summary
+        n_sig = results_df['significant'].sum()
+        n_bon_sig = results_df['bonferroni_significant'].sum()
+        logger.info(f"Summary for {grouping_column} comparison:") # Use variable in log
+        logger.info(f"Total tests: {len(results_df)}")
+        logger.info(f"Nominally significant (p < 0.05): {n_sig}")
+        logger.info(f"Bonferroni significant (p < {analysis.bonferroni_threshold:.3e}): {n_bon_sig}")
+        logger.info("Top significant cells (nominal):")
+        logger.info(results_df[results_df['significant']].head())
     else:
          logger.warning("No statistical comparison results were generated.")
 
-    # Create overall correlation matrix
-    logger.info("\nGenerating overall correlation matrix for focused panel...")
-    analysis.plot_correlation_matrix() # Correlation plot doesn't need group_col here
+    # Create overall correlation matrix.
+    logger.info("Generating overall correlation matrix for focused panel...")
+    analysis.plot_correlation_matrix()
 
-    # Run the metastatic vs primary comparison if possible
-    if hasattr(analysis, 'has_site_info') and analysis.has_site_info:
-        logger.info("\nComparing metastatic vs primary sites...")
-        metastatic_results = analysis.compare_metastatic_vs_primary()
-        if metastatic_results is not None and not metastatic_results.empty:
-            logger.info(f"Completed metastatic vs primary site comparison with {len(metastatic_results)} immune features")
+    # Compare metastatic and primary sites.
+    logger.info("Metastatic and primary sites will be compared.")
+    metastatic_results = analysis.compare_metastatic_vs_primary()
+    if metastatic_results is not None and not metastatic_results.empty:
+        logger.info(f"Metastatic and primary sites were compared with {len(metastatic_results)} immune features.")
 
-    logger.info("\nAnalysis complete! Check output directory for results and plots.")
+    logger.info("Analysis complete! Check output directory for results and plots.")
 
 
 if __name__ == "__main__":
