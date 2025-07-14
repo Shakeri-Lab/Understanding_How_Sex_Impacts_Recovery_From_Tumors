@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
 '''
 Test that various scripts produce the exact same outputs as sibling reference files.
+
+Usage:
+./miniconda3/envs/ici_sex/bin/pytest test_that_outputs_are_equal.py
 '''
 
-
+from pathlib import Path
 from pandas.testing import assert_frame_equal
 from PIL import Image, ImageChops
 import pandas as pd
+import pytest
+import subprocess
 
 
 def assert_that_are_equal_images(path_1: str, path_2: str) -> None:
@@ -16,11 +21,30 @@ def assert_that_are_equal_images(path_1: str, path_2: str) -> None:
         difference = ImageChops.difference(image_1, image_2)
         assert difference.getbbox() is None, "Images differ."
 
+        
+def remove_outputs_except_references(directory: Path) -> None:
+    if not directory.exists():
+        return
+    for path in directory.rglob("*"):
+        if path.is_file() and not path.stem.endswith("_for_comparison"):
+            path.unlink(missing_ok = True)
+        
 
 # src/data_processing/utils.py doesn't have any outputs.
+def test_utils():
+    subprocess.run(
+        ["./miniconda3/envs/ici_sex/bin/python", "src/data_processing/utils.py", "../Manifest_and_QC_Files/24PRJ217UVA_20250130_RNASeq_QCMetrics.csv"],
+        check = True
+    )
 
 
-def test_that_outputs_of_EDA_are_equal() -> bool:
+def test_that_outputs_of_EDA_are_equal():
+    remove_outputs_except_references(Path("output/eda"))
+    subprocess.run(
+        ["./miniconda3/envs/ici_sex/bin/python", "-m", "src.data_processing.eda"],
+        check = True
+    )
+    
     data_frame_of_melanoma_patient_and_sequencing_data = pd.read_csv("output/eda/melanoma_patients_with_sequencing.csv")
     data_frame_of_melanoma_patient_and_sequencing_data_for_comparison = pd.read_csv("output/eda/melanoma_patients_with_sequencing_for_comparison.csv")
     assert_frame_equal(data_frame_of_melanoma_patient_and_sequencing_data, data_frame_of_melanoma_patient_and_sequencing_data)
@@ -41,7 +65,13 @@ def test_that_outputs_of_EDA_are_equal() -> bool:
     assert_frame_equal(data_frame_of_statistics_summarizing_data_frame_of_melanoma_patient_and_sequencing_data, data_frame_of_statistics_summarizing_data_frame_of_melanoma_patient_and_sequencing_data_for_comparison)
 
 
-def test_that_outputs_of_data_loading_are_equal() -> bool:
+def test_that_outputs_of_data_loading_are_equal():
+    remove_outputs_except_references(Path("output/data_loading"))
+    subprocess.run(
+        ["./miniconda3/envs/ici_sex/bin/python", "-m", "src.immune_analysis.data_loading"],
+        check = True
+    )
+    
     data_frame_of_melanoma_clinical_data = pd.read_csv("output/data_loading/melanoma_clinical_data.csv")
     data_frame_of_melanoma_clinical_data_for_comparison = pd.read_csv("output/data_loading/melanoma_clinical_data_for_comparison.csv")
     assert_frame_equal(data_frame_of_melanoma_clinical_data, data_frame_of_melanoma_clinical_data_for_comparison)

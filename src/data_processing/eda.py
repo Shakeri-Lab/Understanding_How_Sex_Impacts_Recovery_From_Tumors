@@ -292,6 +292,8 @@ def process_clinical(dfs):
 
 def main():
     
+    paths.ensure_dependencies_for_eda_exist()
+    
     dfs = load_csvs()
     print("The following CSVs were loaded.")
     print([type_of_data for type_of_data in dfs.keys()])

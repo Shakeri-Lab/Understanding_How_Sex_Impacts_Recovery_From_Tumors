@@ -62,7 +62,6 @@ class Paths():
         self.ensure_dependencies_for_src_exist()
         for path in [self.outputs_of_eda, self.eda_plots, self.eda_reports]:
             os.makedirs(path, exist_ok = True)
-        assert os.path.exists(self.map_from_sample_to_patient), f"The dependency of `src/immune_analysis` `{self.map_from_sample_to_patient}` does not exist."
 
         
     def ensure_dependencies_for_data_loading_exist(self):
