@@ -93,7 +93,7 @@ class ImmuneAnalysis:
         category = self.dictionary_of_short_cell_types_and_categories_of_cell_types.get(cell_type, None)
         if category is None:
             raise Exception("Category of cell type is None.")
-        return f"{readable_cell_type} ({category})"
+        return readable_cell_type, category
     
     
     def compare_abundance_of_cells_of_type_between_groups(self, cell_type, group_col, test = "mann-whitney"):
@@ -131,70 +131,78 @@ class ImmuneAnalysis:
         }
     
     
-    def plot_cell_distribution(self, cell_type, group_col='SEX', plot_type='violin'):
-        """
-        Plot distribution of cell type abundance by group.
-        Handles cases where comparison is not possible.
-        """
-        if cell_type not in self.melanoma_sample_immune_clinical_data_and_scores.columns:
-            logger.error(f"Cannot plot: Column '{cell_type}' not found in data.")
-            return None
-            
-        plt.figure(figsize=(10, 6))
+    def plot_distribution_of_abundance_of_cells_of_type_by_group(self, cell_type, group_col, plot_type = 'violin'):
+        '''
+        Plot distribution of abundance of cells of a provided type by group.
+        ''' 
+        plt.figure(figsize = (10, 6))
         
-        # Create plot
-        try:
-            if plot_type == 'violin':
-                ax = sns.violinplot(data = self.melanoma_sample_immune_clinical_data_and_scores, x=group_col, y=cell_type)
-            elif plot_type == 'box':
-                ax = sns.boxplot(data = self.melanoma_sample_immune_clinical_data_and_scores, x=group_col, y=cell_type)
-            elif plot_type == 'both':
-                ax = sns.violinplot(data = self.melanoma_sample_immune_clinical_data_and_scores, x=group_col, y=cell_type)
-                sns.boxplot(data = self.melanoma_sample_immune_clinical_data_and_scores, x=group_col, y=cell_type, width=0.2, color='white')
-            else:
-                 logger.error(f"Unsupported plot type: {plot_type}")
-                 plt.close()
-                 return None
-        except Exception as plot_err:
-             logger.error(f"Error creating plot for {cell_type} vs {group_col}: {plot_err}")
-             plt.close()
-             return None
-
-        clean_name = self.make_cell_type_readable(cell_type)
-        plt.title(clean_name)
-        
-        # Add statistical annotation inside plot
-        stats_result = self.compare_abundance_of_cells_of_type_between_groups(cell_type, group_col)
-        if stats_result is not None:
-             pval = stats_result['pvalue']
-             # Add significance stars
-             if pval < self.bonferroni_threshold:
-                 sig_symbol = '***'  # Bonferroni-significant
-             elif pval < 0.05:
-                 sig_symbol = '*'    # Nominally significant
-             else:
-                 sig_symbol = 'ns'   # Not significant
-             
-             # Add p-value text inside plot
-             ymin, ymax = plt.ylim()
-             # Adjust position slightly if ymax is very small
-             text_y_pos = max(ymax * 0.95, ymin + (ymax - ymin) * 0.1) 
-             plt.text(0.5, text_y_pos, 
-                     f'p = {pval:.2e} {sig_symbol}',
-                     transform=ax.transAxes, # Use axes coordinates for positioning
-                     horizontalalignment='center',
-                     verticalalignment='top',
-                     bbox=dict(facecolor='white', alpha=0.8, edgecolor='none'))
+        if plot_type == 'violin':
+            ax = sns.violinplot(
+                data = self.melanoma_sample_immune_clinical_data_and_scores,
+                x = group_col,
+                y = cell_type
+            )
+        elif plot_type == 'box':
+            ax = sns.boxplot(
+                data = self.melanoma_sample_immune_clinical_data_and_scores,
+                x = group_col,
+                y = cell_type
+            )
+        elif plot_type == 'both':
+            ax = sns.violinplot(
+                data = self.melanoma_sample_immune_clinical_data_and_scores,
+                x = group_col,
+                y = cell_type
+            )
+            sns.boxplot(
+                data = self.melanoma_sample_immune_clinical_data_and_scores,
+                x = group_col,
+                y = cell_type,
+                width = 0.2,
+                color = 'white'
+            )
         else:
-             logger.info(f"No statistical comparison result available for {cell_type} vs {group_col} to annotate plot.")
+             raise Exception(f"Plot type {plot_type} is unsupported.")
+
+        readable_cell_type, category = self.make_cell_type_readable(cell_type)
+        plt.title(f"Distribution of Abundances of Cells of Type {readable_cell_type} in Category {category}")
+        
+        # Add a statistical annotation including p value and a significance symbol inside plot.
+        dictionary_of_statistics = self.compare_abundance_of_cells_of_type_between_groups(cell_type, group_col)
+        if dictionary_of_statistics is not None:
+            pval = dictionary_of_statistics['pvalue']
+            if pval < self.bonferroni_threshold:
+                sig_symbol = '***' # Bonferroni-significant
+            elif pval < 0.05:
+                sig_symbol = '*' # Nominally significant
+            else:
+                sig_symbol = 'ns' # Not significant
+            ymin, ymax = plt.ylim()
+            text_y_pos = max(ymax * 0.95, ymin + (ymax - ymin) * 0.1) 
+            plt.text(
+                0.5,
+                text_y_pos, 
+                f'p = {pval:.2e} {sig_symbol}',
+                transform = ax.transAxes,
+                horizontalalignment = "center",
+                verticalalignment = "top",
+                bbox = {
+                    "facecolor": "white",
+                    "alpha": 0.8,
+                    "edgecolor": "none"
+                }
+            )
+        else:
+             logger.info(f"No statistical comparison result is available for {cell_type} vs. {group_col} to annotate plot.")
              
         plt.tight_layout()
-        output_file = os.path.join(paths.outputs_of_immune_analysis, f'{cell_type.replace(" ", "_").replace("+", "")}_{group_col}_dist.png') # Sanitize filename
-        try:
-             plt.savefig(output_file, bbox_inches = "tight", dpi = 300)
-             logger.info(f"Saved plot to {output_file}")
-        except Exception as save_err:
-             logger.error(f"Failed to save plot {output_file}: {save_err}")
+        output_file = os.path.join(
+            paths.outputs_of_immune_analysis,
+            f'{cell_type.replace(" ", "_").replace("+", "")}_{group_col}_dist.png'
+        )
+        plt.savefig(output_file, bbox_inches = "tight", dpi = 300)
+        logger.info(f"Plot was saved to {output_file}.")
         plt.close()
         
         return output_file
@@ -209,7 +217,11 @@ class ImmuneAnalysis:
         title = 'Immune Cell Score Correlations - Focused Panel'
             
         # Clean column names for plotting using the refined method
-        data.columns = [self.make_cell_type_readable(col) for col in data.columns]
+        list_of_readable_names_of_columns = []
+        for col in data.columns:
+            readable_cell_type, category = self.make_cell_type_readable(col)
+            list_of_readable_names_of_columns.append(f"{readable_cell_type} in {category}")
+        data.columns = list_of_readable_names_of_columns
         
         # Calculate correlation matrix
         corr = data.corr()
@@ -320,9 +332,10 @@ class ImmuneAnalysis:
                 # result['groups'] contains [False, True] or [True, False] 
                 is_metastatic_first = result['groups'][0] == True
                 
+                readable_cell_type, category = self.make_cell_type_readable(cell_type)
                 all_results.append({
-                    'cell_type': self.make_cell_type_readable(cell_type),
-                    'category': self.dictionary_of_short_cell_types_and_categories_of_cell_types.get(cell_type, 'Other'),
+                    'cell_type': readable_cell_type,
+                    'category': category,
                     'p_value': result['pvalue'],
                     'significant': result['pvalue'] < 0.05,
                     'bonferroni_significant': result['pvalue'] < self.bonferroni_threshold,
@@ -342,7 +355,7 @@ class ImmuneAnalysis:
                     all_results[-1]['fold_change'] = float('inf') if metastatic_mean > 0 else np.nan
                 
                 # Create plot for this comparison
-                self.plot_cell_distribution(cell_type, group_col='IsMetastatic')
+                self.plot_distribution_of_abundance_of_cells_of_type_by_group(cell_type, group_col='IsMetastatic')
             
         # Create summary DataFrame
         if all_results:
@@ -428,9 +441,10 @@ def main():
         result = analysis.compare_abundance_of_cells_of_type_between_groups(cell_type, group_col = grouping_column)
         
         if result:
+            readable_cell_type, category = analysis.make_cell_type_readable(cell_type)
             all_results.append(
                 {
-                    'cell_type': analysis.make_cell_type_readable(cell_type),
+                    'cell_type': f"{readable_cell_type} in {category}",
                     'p_value': result['pvalue'],
                     'significant': result['pvalue'] < 0.05,
                     'bonferroni_significant': result['pvalue'] < analysis.bonferroni_threshold,
@@ -443,7 +457,7 @@ def main():
         else:
              raise Exception(f"Comparing abundances of cells of type {cell_type} yielded no result.")
 
-        analysis.plot_cell_distribution(cell_type, group_col = grouping_column)
+        analysis.plot_distribution_of_abundance_of_cells_of_type_by_group(cell_type, group_col = grouping_column)
 
     # Save combined results
     if all_results:
