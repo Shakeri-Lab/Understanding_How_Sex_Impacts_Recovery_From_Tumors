@@ -79,3 +79,35 @@ def test_that_outputs_of_data_loading_are_equal():
     melanoma_expression_matrix = pd.read_csv("output/data_loading/melanoma_expression_matrix.csv")
     melanoma_expression_matrix_for_comparison = pd.read_csv("output/data_loading/melanoma_expression_matrix_for_comparison.csv")
     assert_frame_equal(melanoma_expression_matrix, melanoma_expression_matrix_for_comparison)
+
+
+def test_that_outputs_of_microenv_are_equal():
+    remove_outputs_except_references(Path("output/microenv"))
+    subprocess.run(
+        ["./miniconda3/envs/ici_sex/bin/python", "-m", "src.immune_analysis.microenv"],
+        check = True
+    )
+    
+    data_frame_melanoma_sample_immune_clinical = pd.read_csv("output/microenv/melanoma_sample_immune_clinical.csv")
+    data_frame_melanoma_sample_immune_clinical_for_comparison = pd.read_csv("output/microenv/melanoma_sample_immune_clinical_for_comparison.csv")
+    assert_frame_equal(data_frame_melanoma_sample_immune_clinical, data_frame_melanoma_sample_immune_clinical_for_comparison)
+    
+    metastatic_status_summary = pd.read_csv("output/microenv/metastatic_status_summary.csv")
+    metastatic_status_summary_for_comparison = pd.read_csv("output/microenv/metastatic_status_summary_for_comparison.csv")
+    assert_frame_equal(metastatic_status_summary, metastatic_status_summary_for_comparison)
+    
+    procedure_type_summary = pd.read_csv("output/microenv/procedure_type_summary.csv")
+    procedure_type_summary_for_comparison = pd.read_csv("output/microenv/procedure_type_summary_for_comparison.csv")
+    assert_frame_equal(procedure_type_summary, procedure_type_summary_for_comparison)
+    
+    specimen_site_summary = pd.read_csv("output/microenv/specimen_site_summary.csv")
+    specimen_site_summary_for_comparison = pd.read_csv("output/microenv/specimen_site_summary_for_comparison.csv")
+    assert_frame_equal(specimen_site_summary, specimen_site_summary_for_comparison)
+    
+    xcell_scores_focused_panel = pd.read_csv("output/microenv/xcell_scores_focused_panel.csv")
+    xcell_scores_focused_panel_for_comparison = pd.read_csv("output/microenv/xcell_scores_focused_panel_for_comparison.csv")
+    assert_frame_equal(xcell_scores_focused_panel, xcell_scores_focused_panel_for_comparison)
+    
+    data_frame_of_xcell_scores = pd.read_csv("output/microenv/xcell_scores_raw.csv")
+    data_frame_of_xcell_scores_for_comparison = pd.read_csv("output/microenv/xcell_scores_raw_for_comparison.csv")
+    assert_frame_equal(data_frame_of_xcell_scores, data_frame_of_xcell_scores_for_comparison)
