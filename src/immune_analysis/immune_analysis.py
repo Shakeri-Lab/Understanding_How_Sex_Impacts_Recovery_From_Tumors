@@ -18,10 +18,6 @@ from src.config import FOCUSED_XCELL_PANEL
 from src.config import paths
 
 
-# Add parent directory to path to allow imports from other modules
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-
 # Configure logger
 # Basic config if not already set elsewhere
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -34,10 +30,8 @@ class ImmuneAnalysis:
     '''
     
     def __init__(self):
-        '''
-        Initialize with merged immune and clinical data.
-        '''
-        
+
+        # Initialize a data frame of melanoma sample immune clinical data and focused scores by sample and cell type.
         self.melanoma_sample_immune_clinical_data = pd.read_csv(paths.melanoma_sample_immune_clinical_data)
         
         logger.info(f"Data was successfully loaded from {paths.melanoma_sample_immune_clinical_data}.")
@@ -50,121 +44,83 @@ class ImmuneAnalysis:
             right_on = "SampleID",
             how = "left"
         )
-        
-        # Find which panel columns are actually in the loaded data.
-        self.immune_cols = [col for col in FOCUSED_XCELL_PANEL if col in self.melanoma_sample_immune_clinical_data_and_scores.columns]
-        if not self.immune_cols:
-            logger.error("No columns from the FOCUSED_XCELL_PANEL found in the loaded data. Check input file.")
-            raise ValueError("Input data does not contain expected immune score columns.")
+
+        # Calculate Bonferroni correction threshold based on actual tests.
+        self.n_tests = len(FOCUSED_XCELL_PANEL)
+        if self.n_tests > 0:
+            self.bonferroni_threshold = 0.05 / self.n_tests
+            logger.info(f"The Bonferroni-corrected p-value threshold for {self.n_tests} tests is {self.bonferroni_threshold:.3e}.")
         else:
-            logger.info(f"Identified {len(self.immune_cols)} immune score columns based on the focused panel: {self.immune_cols}")
-        
-        # Define cell type categories (Optional refinement: filter based on available cols)
-        # For now, keep the full dict but analysis loops will use self.immune_cols
-        self.cell_categories = {
+             self.bonferroni_threshold = 0.05
+        self.dictionary_of_categories_of_cell_types_and_dictionaries_of_short_cell_types_and_long_cell_types = {
             'Innate': {
-                'aDC': 'Activated Dendritic Cells',
-                'cDC': 'Conventional Dendritic Cells', # Added based on panel
-                'DC': 'Dendritic Cells',
-                'NK': 'Natural Killer cells',
-                'NKT': 'Natural Killer T cells',
-                'Neutrophils': 'Neutrophils',
-                'Macrophages': 'Macrophages', 
-                'Macrophages M2': 'M2 Macrophages', # Added based on panel
-                'Monocytes': 'Monocytes',
-                'pDC': 'Plasmacytoid Dendritic Cells', # Added based on panel
-                'Eosinophils': 'Eosinophils',
-                'Basophils': 'Basophils',
-                'Mast': 'Mast Cells'
+                'cDC': 'Conventional Dendritic Cells',
+                'Macrophages M2': 'M2 Macrophages',
+                'pDC': 'Plasmacytoid Dendritic Cells',
             },
             'Adaptive': {
-                'CD4+ memory T-cells': 'CD4+ Memory T cells', # Added based on panel
-                'CD8+ T-cells': 'CD8+ T cells', # Added based on panel
-                'Tcm': 'Central Memory T cells',
-                'Tem': 'Effector Memory T cells',
-                'Th1': 'T Helper 1 cells',
-                'Th2': 'T Helper 2 cells',
-                'Tgd cells': 'Gamma Delta T cells', # Added based on panel
-                'Tregs': 'Regulatory T cells', # Added based on panel
-                'B-cells': 'B cells',
-                'Memory B-cells': 'Memory B cells', # Added based on panel
-                'Plasma cells': 'Plasma cells' # Added based on panel
+                'CD4+ memory T-cells': 'CD4+ Memory T cells',
+                'CD8+ T-cells': 'CD8+ T cells',
+                'Tgd cells': 'Gamma Delta T cells',
+                'Tregs': 'Regulatory T cells',
+                'Memory B-cells': 'Memory B cells',
+                'Plasma cells': 'Plasma cells'
             },
             'Stromal': {
-                'Endothelial cells': 'Endothelial cells', # Added based on panel
-                'Fibroblasts': 'Fibroblasts', # Added based on panel
-                'MSC': 'Mesenchymal Stem Cells',
-                'Adipocytes': 'Adipocytes'
+                'Endothelial cells': 'Endothelial cells',
+                'Fibroblasts': 'Fibroblasts',
             },
             'Summary Scores': {
-                'ImmuneScore': 'Immune Score', # Added based on panel
-                'StromaScore': 'Stroma Score', # Added based on panel
-                'MicroenvironmentScore': 'Microenvironment Score' # Added based on panel
+                'ImmuneScore': 'Immune Score',
+                'StromaScore': 'Stroma Score',
+                'MicroenvironmentScore': 'Microenvironment Score'
             }
         }
         
-        # Create clean names and category mappings (primarily for _clean_cell_type_name)
-        self.clean_names = {}
-        self.cell_category = {}
-        for category, cells in self.cell_categories.items():
-            for short_name, full_name in cells.items():
-                 # Use the exact column name from FOCUSED_XCELL_PANEL as the key
-                 if short_name in FOCUSED_XCELL_PANEL:
-                      self.clean_names[short_name] = full_name
-                      self.cell_category[short_name] = category
-
-        # Calculate Bonferroni correction threshold based on actual tests
-        self.n_tests = len(self.immune_cols)
-        if self.n_tests > 0:
-            self.bonferroni_threshold = 0.05 / self.n_tests
-            logger.info(f"Bonferroni-corrected p-value threshold ({self.n_tests} tests): {self.bonferroni_threshold:.3e}")
-        else:
-             self.bonferroni_threshold = 0.05 # Avoid division by zero, error already raised
+        # Create readable cell types and category mappings.
+        self.dictionary_of_short_cell_types_and_long_cell_types = {}
+        self.dictionary_of_short_cell_types_and_categories_of_cell_types = {}
+        for category, dictionary_of_short_cell_types_and_long_cell_types in self.dictionary_of_categories_of_cell_types_and_dictionaries_of_short_cell_types_and_long_cell_types.items():
+            for short_cell_type, long_cell_type in dictionary_of_short_cell_types_and_long_cell_types.items():
+                 if short_cell_type in FOCUSED_XCELL_PANEL:
+                    self.dictionary_of_short_cell_types_and_long_cell_types[short_cell_type] = long_cell_type
+                    self.dictionary_of_short_cell_types_and_categories_of_cell_types[short_cell_type] = category
     
-    def _clean_cell_type_name(self, col_name):
-        """Convert column names (immune scores) to readable format for plots."""
-        # Use the pre-generated clean names if available, otherwise use the column name itself
-        clean_name = self.clean_names.get(col_name, col_name)
-        category = self.cell_category.get(col_name, 'Other') # Get category if mapped
-        return f"{clean_name} ({category})" if category != 'Other' else clean_name
+    def make_cell_type_readable(self, cell_type):
+        readable_cell_type = self.dictionary_of_short_cell_types_and_long_cell_types.get(cell_type, None)
+        if readable_cell_type is None:
+            raise Exception("Readable cell type is None.")
+        category = self.dictionary_of_short_cell_types_and_categories_of_cell_types.get(cell_type, None)
+        if category is None:
+            raise Exception("Category of cell type is None.")
+        return f"{readable_cell_type} ({category})"
     
-    def get_cell_types(self): # This now returns the focused list
-        """Return list of immune cell types being analyzed"""
-        return self.immune_cols
     
-    def compare_groups(self, cell_type, group_col='SEX', test='mann-whitney'):
-        """
-        Compare cell type abundance between groups.
-        Ensures cell_type exists in the data.
-        """
-        if cell_type not in self.melanoma_sample_immune_clinical_data_and_scores.columns:
-            logger.error(f"Column '{cell_type}' not found in data for comparison.")
-            return None # Return None instead of raising error directly
-            
-        groups = self.melanoma_sample_immune_clinical_data_and_scores[group_col].dropna().unique() # Drop NA in grouping column
-        if len(groups) != 2:
-            logger.warning(f"Grouping column '{group_col}' does not have exactly 2 unique non-NA values ({groups}). Skipping comparison for {cell_type}.")
-            return None
-            
-        group1 = self.melanoma_sample_immune_clinical_data_and_scores[self.melanoma_sample_immune_clinical_data_and_scores[group_col] == groups[0]][cell_type].dropna()
-        group2 = self.melanoma_sample_immune_clinical_data_and_scores[self.melanoma_sample_immune_clinical_data_and_scores[group_col] == groups[1]][cell_type].dropna()
-
-        if len(group1) < 3 or len(group2) < 3: # Require minimum samples per group
-             logger.warning(f"Not enough data points (n<{3}) for comparison of '{cell_type}' between groups {groups[0]} (n={len(group1)}) and {groups[1]} (n={len(group2)}) in '{group_col}'.")
-             return None
+    def compare_abundance_of_cells_of_type_between_groups(self, cell_type, group_col, test = "mann-whitney"):
+        '''
+        Compare abundance of cells of a provided type between groups.
+        '''            
+        groups = self.melanoma_sample_immune_clinical_data_and_scores[group_col].dropna().unique()
         
-        try:
-            if test == 'mann-whitney':
-                stat, pval = stats.mannwhitneyu(group1, group2, alternative='two-sided')
-            elif test == 't-test':
-                stat, pval = stats.ttest_ind(group1, group2)
-            else:
-                 logger.error(f"Unsupported test type '{test}'")
-                 return None
-        except ValueError as ve:
-             # Handle cases like all values being identical
-             logger.warning(f"Statistical test failed for {cell_type} by {group_col} (groups: {groups}). Reason: {ve}")
-             return None
+        if len(groups) != 2:
+            raise Exception(f"Grouping column {group_col} does not have exactly 2 unique non-NA values. This column has groups ({groups}).")
+            
+        group1 = self.melanoma_sample_immune_clinical_data_and_scores[
+            self.melanoma_sample_immune_clinical_data_and_scores[group_col] == groups[0]
+        ][cell_type].dropna()
+        group2 = self.melanoma_sample_immune_clinical_data_and_scores[
+            self.melanoma_sample_immune_clinical_data_and_scores[group_col] == groups[1]
+        ][cell_type].dropna()
+
+        if len(group1) < 3 or len(group2) < 3:
+             raise Exception(f"There are not enough data points for comparison of '{cell_type}' between groups {groups[0]} (n = {len(group1)}) and {groups[1]} (n = {len(group2)}).")
+        
+        if test == 'mann-whitney':
+            stat, pval = stats.mannwhitneyu(group1, group2, alternative = "two-sided")
+        elif test == 't-test':
+            stat, pval = stats.ttest_ind(group1, group2)
+        else:
+             raise Exception(f"Test type {test} is unsupported.")
 
         return {
             'groups': groups,
@@ -173,6 +129,7 @@ class ImmuneAnalysis:
             'statistic': stat,
             'pvalue': pval
         }
+    
     
     def plot_cell_distribution(self, cell_type, group_col='SEX', plot_type='violin'):
         """
@@ -203,11 +160,11 @@ class ImmuneAnalysis:
              plt.close()
              return None
 
-        clean_name = self._clean_cell_type_name(cell_type)
+        clean_name = self.make_cell_type_readable(cell_type)
         plt.title(clean_name)
         
         # Add statistical annotation inside plot
-        stats_result = self.compare_groups(cell_type, group_col)
+        stats_result = self.compare_abundance_of_cells_of_type_between_groups(cell_type, group_col)
         if stats_result is not None:
              pval = stats_result['pvalue']
              # Add significance stars
@@ -242,16 +199,17 @@ class ImmuneAnalysis:
         
         return output_file
     
+    
     def plot_correlation_matrix(self, group_col='SEX'): # Simplified to only plot all immune_cols
         """
         Plot correlation matrix of the identified immune cell types.
         """
-        logger.info(f"Generating correlation matrix for {len(self.immune_cols)} immune scores...")
-        data = self.melanoma_sample_immune_clinical_data_and_scores[self.immune_cols].copy() # Use copy to avoid modifying original data
+        logger.info(f"Generating correlation matrix for {len(FOCUSED_XCELL_PANEL)} immune scores...")
+        data = self.melanoma_sample_immune_clinical_data_and_scores[FOCUSED_XCELL_PANEL].copy() # Use copy to avoid modifying original data
         title = 'Immune Cell Score Correlations - Focused Panel'
             
         # Clean column names for plotting using the refined method
-        data.columns = [self._clean_cell_type_name(col) for col in data.columns]
+        data.columns = [self.make_cell_type_readable(col) for col in data.columns]
         
         # Calculate correlation matrix
         corr = data.corr()
@@ -263,7 +221,7 @@ class ImmuneAnalysis:
         
         # Plot
         # Adjust figsize based on number of features for better readability
-        num_features = len(self.immune_cols)
+        num_features = len(FOCUSED_XCELL_PANEL)
         fig_size = max(8, num_features * 0.6) # Basic heuristic
         plt.figure(figsize=(fig_size, fig_size * 0.8))
         
@@ -287,6 +245,7 @@ class ImmuneAnalysis:
         
         return paths.correlation_matrix_focused
 
+    
     def compare_metastatic_vs_primary(self):
         """
         Compare immune infiltration between metastatic and primary sites.
@@ -353,17 +312,17 @@ class ImmuneAnalysis:
         
         # Run comparison for each immune cell type
         all_results = []
-        for cell_type in self.immune_cols:
+        for cell_type in FOCUSED_XCELL_PANEL:
             # Compare groups using 'IsMetastatic' as the grouping column
-            result = self.compare_groups(cell_type, group_col='IsMetastatic')
+            result = self.compare_abundance_of_cells_of_type_between_groups(cell_type, group_col = "IsMetastatic")
             if result:
                 # Ensure we're associating the right groups with metastatic/primary
                 # result['groups'] contains [False, True] or [True, False] 
                 is_metastatic_first = result['groups'][0] == True
                 
                 all_results.append({
-                    'cell_type': self._clean_cell_type_name(cell_type),
-                    'category': self.cell_category.get(cell_type, 'Other'),
+                    'cell_type': self.make_cell_type_readable(cell_type),
+                    'category': self.dictionary_of_short_cell_types_and_categories_of_cell_types.get(cell_type, 'Other'),
                     'p_value': result['pvalue'],
                     'significant': result['pvalue'] < 0.05,
                     'bonferroni_significant': result['pvalue'] < self.bonferroni_threshold,
@@ -453,75 +412,70 @@ class ImmuneAnalysis:
             logger.warning("No results generated for metastatic vs primary comparison")
             return None
 
+        
 def main():
-
     paths.ensure_dependencies_for_immune_analysis_exist()
     
-    try:
-        # Initialize analysis
-        analysis = ImmuneAnalysis()
+    analysis = ImmuneAnalysis()
+
+    grouping_column = 'Sex'
+    logger.info(f"Abudances of cells of {len(FOCUSED_XCELL_PANEL)} types will be compared by {grouping_column}.")
+
+    all_results = []
+    for cell_type in FOCUSED_XCELL_PANEL:
+        logger.info(f"Abundances of cells of type {cell_type} will be compared by {grouping_column}.")
         
-        # Define the grouping column based on the actual data
-        grouping_column = 'Sex' # Changed from 'SEX'
-        logger.info(f"\nAnalyzing {len(analysis.immune_cols)} focused immune cell types by {grouping_column}:")
+        result = analysis.compare_abundance_of_cells_of_type_between_groups(cell_type, group_col = grouping_column)
         
-        all_results = []
-        # Analyze each identified immune column directly
-        for cell_type in analysis.immune_cols:
-            logger.info(f"-- Processing: {cell_type} --")
-            # Use the corrected grouping column name
-            result = analysis.compare_groups(cell_type, group_col = grouping_column)
-            if result:
-                all_results.append({
-                    'cell_type': analysis._clean_cell_type_name(cell_type),
+        if result:
+            all_results.append(
+                {
+                    'cell_type': analysis.make_cell_type_readable(cell_type),
                     'p_value': result['pvalue'],
                     'significant': result['pvalue'] < 0.05,
                     'bonferroni_significant': result['pvalue'] < analysis.bonferroni_threshold,
-                    'mean_group0': result['means'][0], # Assuming groups[0] is first category
+                    'mean_group0': result['means'][0],
                     'mean_group1': result['means'][1],
                     'median_group0': result['medians'][0],
                     'median_group1': result['medians'][1]
-                })
-            else:
-                 logger.warning(f"Comparison skipped for {cell_type}.")
-
-            # Create plot (even if comparison failed, plot might still be informative)
-            # Use the corrected grouping column name
-            analysis.plot_cell_distribution(cell_type, group_col=grouping_column)
-            
-        # Save combined results
-        if all_results:
-             results_df = pd.DataFrame(all_results).sort_values('p_value')
-             output_file = os.path.join(paths.outputs_of_immune_analysis, f"all_focused_results_by_{grouping_column}.csv")
-             results_df.to_csv(output_file, index=False)
-             logger.info(f"Saved all comparison results to {output_file}")
-             # Print summary
-             n_sig = results_df['significant'].sum()
-             n_bon_sig = results_df['bonferroni_significant'].sum()
-             logger.info(f"\nSummary for {grouping_column} comparison:") # Use variable in log
-             logger.info(f"Total tests: {len(results_df)}")
-             logger.info(f"Nominally significant (p < 0.05): {n_sig}")
-             logger.info(f"Bonferroni significant (p < {analysis.bonferroni_threshold:.3e}): {n_bon_sig}")
-             logger.info("\nTop significant cells (nominal):")
-             logger.info(results_df[results_df['significant']].head())
+                }
+            )
         else:
-             logger.warning("No statistical comparison results were generated.")
+             raise Exception(f"Comparing abundances of cells of type {cell_type} yielded no result.")
 
-        # Create overall correlation matrix
-        logger.info("\nGenerating overall correlation matrix for focused panel...")
-        analysis.plot_correlation_matrix() # Correlation plot doesn't need group_col here
-        
-        # Run the metastatic vs primary comparison if possible
-        if hasattr(analysis, 'has_site_info') and analysis.has_site_info:
-            logger.info("\nComparing metastatic vs primary sites...")
-            metastatic_results = analysis.compare_metastatic_vs_primary()
-            if metastatic_results is not None and not metastatic_results.empty:
-                logger.info(f"Completed metastatic vs primary site comparison with {len(metastatic_results)} immune features")
-        
-        logger.info("\nAnalysis complete! Check output directory for results and plots.")
+        analysis.plot_cell_distribution(cell_type, group_col = grouping_column)
 
-    except Exception as e:
-        logger.error(f"An error occurred during the main analysis workflow: {e}", exc_info=True)
+    # Save combined results
+    if all_results:
+         results_df = pd.DataFrame(all_results).sort_values('p_value')
+         output_file = os.path.join(paths.outputs_of_immune_analysis, f"all_focused_results_by_{grouping_column}.csv")
+         results_df.to_csv(output_file, index=False)
+         logger.info(f"Saved all comparison results to {output_file}")
+         # Print summary
+         n_sig = results_df['significant'].sum()
+         n_bon_sig = results_df['bonferroni_significant'].sum()
+         logger.info(f"\nSummary for {grouping_column} comparison:") # Use variable in log
+         logger.info(f"Total tests: {len(results_df)}")
+         logger.info(f"Nominally significant (p < 0.05): {n_sig}")
+         logger.info(f"Bonferroni significant (p < {analysis.bonferroni_threshold:.3e}): {n_bon_sig}")
+         logger.info("\nTop significant cells (nominal):")
+         logger.info(results_df[results_df['significant']].head())
+    else:
+         logger.warning("No statistical comparison results were generated.")
+
+    # Create overall correlation matrix
+    logger.info("\nGenerating overall correlation matrix for focused panel...")
+    analysis.plot_correlation_matrix() # Correlation plot doesn't need group_col here
+
+    # Run the metastatic vs primary comparison if possible
+    if hasattr(analysis, 'has_site_info') and analysis.has_site_info:
+        logger.info("\nComparing metastatic vs primary sites...")
+        metastatic_results = analysis.compare_metastatic_vs_primary()
+        if metastatic_results is not None and not metastatic_results.empty:
+            logger.info(f"Completed metastatic vs primary site comparison with {len(metastatic_results)} immune features")
+
+    logger.info("\nAnalysis complete! Check output directory for results and plots.")
+
 
 if __name__ == "__main__":
     main() 
