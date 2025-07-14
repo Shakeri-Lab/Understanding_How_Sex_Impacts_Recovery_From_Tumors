@@ -195,10 +195,10 @@ class ImmuneAnalysis:
             )
         else:
              logger.info(f"No statistical comparison result is available for {cell_type} vs. {group_col} to annotate plot.")
-             
+        
         plt.tight_layout()
         output_file = os.path.join(
-            paths.outputs_of_immune_analysis,
+            paths.distributions_of_abundance_of_cells_of_type_by_group,
             f'{cell_type.replace(" ", "_").replace("+", "")}_{group_col}_dist.png'
         )
         plt.savefig(output_file, bbox_inches = "tight", dpi = 300)

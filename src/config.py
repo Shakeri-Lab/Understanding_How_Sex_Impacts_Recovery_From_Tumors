@@ -81,6 +81,7 @@ class Paths():
         # src/immune_analysis/immune_analysis.py
         # dependencies
         self.outputs_of_immune_analysis = self.root / "output/immune_analysis"
+        self.distributions_of_abundance_of_cells_of_type_by_group = self.outputs_of_immune_analysis / "distributions_of_abundance_of_cells_of_type_by_group"
         # -----
         # self.melanoma_sample_immune_clinical_data, which is defined above
         # self.focused_data_frame_of_scores_by_sample_and_cell_type, which is defined above
@@ -116,7 +117,11 @@ class Paths():
         
         
     def ensure_dependencies_for_immune_analysis_exist(self):
-        os.makedirs(self.outputs_of_immune_analysis, exist_ok = True)
+        for path in [
+            self.outputs_of_immune_analysis,
+            self.distributions_of_abundance_of_cells_of_type_by_group
+        ]:
+            os.makedirs(path, exist_ok = True)
 
 
 paths = Paths()
