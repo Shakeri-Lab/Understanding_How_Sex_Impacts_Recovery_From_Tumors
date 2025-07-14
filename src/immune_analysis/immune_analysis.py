@@ -208,51 +208,51 @@ class ImmuneAnalysis:
         return output_file
     
     
-    def plot_correlation_matrix(self, group_col='SEX'): # Simplified to only plot all immune_cols
-        """
+    def plot_correlation_matrix(self, group_col):
+        '''
         Plot correlation matrix of the identified immune cell types.
-        """
-        logger.info(f"Generating correlation matrix for {len(FOCUSED_XCELL_PANEL)} immune scores...")
-        data = self.melanoma_sample_immune_clinical_data_and_scores[FOCUSED_XCELL_PANEL].copy() # Use copy to avoid modifying original data
+        '''
+        logger.info(f"A correlation matrix for all {len(FOCUSED_XCELL_PANEL)} columns in focused data frame of xCell scores by sample and cell type will be generated.")
+        data = self.melanoma_sample_immune_clinical_data_and_scores[FOCUSED_XCELL_PANEL].copy()
         title = 'Immune Cell Score Correlations - Focused Panel'
-            
-        # Clean column names for plotting using the refined method
-        list_of_readable_names_of_columns = []
-        for col in data.columns:
-            readable_cell_type, category = self.make_cell_type_readable(col)
-            list_of_readable_names_of_columns.append(f"{readable_cell_type} in {category}")
-        data.columns = list_of_readable_names_of_columns
         
-        # Calculate correlation matrix
+        list_of_readable_cell_types = []
+        for cell_type in data.columns:
+            readable_cell_type, category = self.make_cell_type_readable(cell_type)
+            list_of_readable_cell_types.append(f"{readable_cell_type} in {category}")
+        data.columns = list_of_readable_cell_types
+        
         corr = data.corr()
         
-        # Check if correlation matrix is empty or all NaN
         if corr.isnull().all().all() or corr.empty:
-            logger.warning("Correlation matrix is empty or all NaN. Skipping plot.")
-            return None
+            raise Exception("Correlation matrix is empty or all NaN.")
         
-        # Plot
-        # Adjust figsize based on number of features for better readability
         num_features = len(FOCUSED_XCELL_PANEL)
-        fig_size = max(8, num_features * 0.6) # Basic heuristic
-        plt.figure(figsize=(fig_size, fig_size * 0.8))
+        fig_size = max(8, num_features * 0.6)
+        plt.figure(figsize = (fig_size, fig_size * 0.8))
         
-        sns.heatmap(corr, cmap='RdBu_r', center=0,
-                   xticklabels=True, yticklabels=True,
-                   square=False, annot=True, fmt='.1f', # Adjust fmt for readability
-                   annot_kws={"size": 8}, # Adjust font size
-                   linewidths=.5, # Add lines between cells
-                   cbar_kws={'shrink': .8, 'label': 'Correlation'}) # Adjust color bar
-        plt.xticks(rotation=45, ha='right', fontsize=8)
-        plt.yticks(rotation=0, fontsize=8)
+        sns.heatmap(
+            corr,
+            cmap = 'RdBu_r',
+            center = 0,
+            xticklabels = True,
+            yticklabels = True,
+            square = False,
+            annot = True,
+            fmt = '.1f',
+            annot_kws = {"size": 8},
+            linewidths = .5,
+            cbar_kws = {
+                'shrink': .8,
+                'label': 'Correlation'
+            }
+        )
+        plt.xticks(rotation = 45, ha = 'right', fontsize = 8)
+        plt.yticks(rotation = 0, fontsize = 8)
         plt.title(title)
         
-        # Save plot.
-        try:
-            plt.savefig(paths.correlation_matrix_focused, bbox_inches = "tight", dpi = 300)
-            logger.info(f"Saved correlation matrix to {paths.correlation_matrix_focused}")
-        except Exception as save_err:
-             logger.error(f"Failed to save correlation matrix {paths.correlation_matrix_focused}: {save_err}")
+        plt.savefig(paths.correlation_matrix_focused, bbox_inches = "tight", dpi = 300)
+        logger.info(f"Correlation matrix was saved to {paths.correlation_matrix_focused}.")
         plt.close()
         
         return paths.correlation_matrix_focused
@@ -466,18 +466,17 @@ def main():
         # Print summary
         n_sig = results_df['significant'].sum()
         n_bon_sig = results_df['bonferroni_significant'].sum()
-        logger.info(f"Summary for {grouping_column} comparison:") # Use variable in log
+        logger.info(f"Summary for {grouping_column} comparison:")
         logger.info(f"Total tests: {len(results_df)}")
         logger.info(f"Nominally significant (p < 0.05): {n_sig}")
         logger.info(f"Bonferroni significant (p < {analysis.bonferroni_threshold:.3e}): {n_bon_sig}")
-        logger.info("Top significant cells (nominal):")
-        logger.info(results_df[results_df['significant']].head())
+        if n_sig > 0:
+            logger.info("First rows with nominal significance:")
+            logger.info(results_df[results_df['significant']].head())
     else:
          logger.warning("No statistical comparison results were generated.")
 
-    # Create overall correlation matrix.
-    logger.info("Generating overall correlation matrix for focused panel...")
-    analysis.plot_correlation_matrix()
+    analysis.plot_correlation_matrix(group_col = "Sex")
 
     # Compare metastatic and primary sites.
     logger.info("Metastatic and primary sites will be compared.")
