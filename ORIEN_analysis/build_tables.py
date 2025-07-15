@@ -380,6 +380,51 @@ def main():
 
     print(f"The number of rows in tumor data after merging patient data is {len(tumor_data)}.")
 
+    '''
+    Create a data frame of patient IDs and denormalized and normalized ethnicities
+    for the 379 patients in patient data.
+    '''
+    data_frame_of_patient_IDs_and_ethnicities_for_patients_in_patient_data = (
+        patient_data[["AvatarKey", "Ethnicity"]]
+        .assign(
+            Ethnicity = lambda df: df["Ethnicity"].fillna(""),
+            normalized_ethnicity = lambda df: df["Ethnicity"].str.split(r"\s*;\s*")
+        )
+        .explode("normalized_ethnicity")
+        .drop_duplicates(ignore_index = True)
+        .sort_values(by = "AvatarKey")
+        .reset_index(drop = True)
+    )
+    print(
+        "The number of unique patient IDs in " +
+        f"data frame of patient IDs and ethnicities for patients in patient data is " +
+        f"{len(data_frame_of_patient_IDs_and_ethnicities_for_patients_in_patient_data["AvatarKey"].unique())}."
+    )
+    data_frame_of_patient_IDs_and_ethnicities_for_patients_in_patient_data.to_csv(
+        "data_frame_of_patient_IDs_and_ethnicities_for_patients_in_patient_data.csv",
+        index = False
+    )
+
+    '''
+    Create a data frame of patient IDs and denormalized and normalized ethnicities
+    for the 366 patients in tumor data.
+    '''
+    data_frame_of_patient_IDs_and_ethnicities_for_patients_in_tumor_data = tumor_data[["ORIENAvatarKey", "Ethnicity"]].merge(
+        data_frame_of_patient_IDs_and_ethnicities_for_patients_in_patient_data,
+        left_on = ["ORIENAvatarKey", "Ethnicity"],
+        right_on = ["AvatarKey", "Ethnicity"],
+        how = "left"
+    ).drop(columns = ["AvatarKey"])
+    print(
+        "The number of unique patient IDs in " +
+        "data frame of patient IDs and ethnicities for patients in tumor data is " +
+        f"{len(data_frame_of_patient_IDs_and_ethnicities_for_patients_in_tumor_data["ORIENAvatarKey"].unique())}."
+    )
+    data_frame_of_patient_IDs_and_ethnicities_for_patients_in_tumor_data.to_csv(
+        "data_frame_of_patient_IDs_and_ethnicities_for_patients_in_tumor_data.csv",
+        index = False
+    )
+
     tumor_data["clean_pathological_group_stage"] = tumor_data["PathGroupStage"].fillna("").str.strip()
     tumor_data["clean_clinical_group_stage"] = tumor_data["ClinGroupStage"].fillna("").str.strip()
     series_of_indicators_that_pathological_group_stage_exists = ~tumor_data["clean_pathological_group_stage"].isin(INVALID_STAGE_VALUES)
