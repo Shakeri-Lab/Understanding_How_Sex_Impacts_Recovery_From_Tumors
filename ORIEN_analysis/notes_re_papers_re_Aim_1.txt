@@ -1,0 +1,97 @@
+Significant Quotes from Sturm et al. (07/15/2019). "Comprehensive evaluation of transcriptome-based cell-type quantification methods for immuno-oncology". Bioinformatics. Accessed via https://pmc.ncbi.nlm.nih.gov/articles/PMC6612828/pdf/btz363.pdf on 07/15/2025.
+
+
+"These methods... for
+- estimating immune cell contents of tumor samples...
+- estimating the abundance of... immune and stromal cell types from bulk RNA-seq samples...
+- quantification of the cellular composition of bulk tumor samples...
+- assessing cell type composition...
+- cell-type quantification...
+- estimation of immune cell infiltrates in the tumor...
+- estimat[ing] the immune cell fractions from gene expression...
+- [e]stimating the population abundance of tissue-infiltrating immune and stromal cell populations using gene expression data...
+- [q]uantitative analyses of the tumor microenvironment composition...
+-  enumeration of cancer and immune cell types from bulk tumor gene expression data...
+- [e]stimation of immune cell content in tumour tissue using single-cell RNA-seq data...
+can, in general, be classified into two categories: marker gene-based approaches and deconvolution-based approaches. Marker gene-based approaches utilize a list of genes that are characteristic for a cell type. These gene sets are usually derived
+from targeted transcriptomics studies characterizing each immunecell type and/or from comprehensive literature search and experimental validation. By using the expression values of marker genes in heterogeneous samples, these models quantify every cell type independently, either aggregating them into an abundance score (MCPcounter, Becht et al., 2016) or by performing a statistical test for enrichment of the marker genes (xCell, Aran et al., 2017)...
+
+"[T]he marker-based approaches only
+allow for generating a semi-quantitative score, which enables a comparison between samples, but not between cell types... A limitation of TIMER and xCell is that the results of these methods depend on all samples that are analyzed in a single run, i.e. the same sample can have different scores when submitted together with different other samples. In particular, xCell uses the variability among the samples for a linear transformation of the output score. Moreover, xCell does not detect any signal when ran with few non-heterogeneous samples... [xCell scores have a]rbitrary units [that are only] comparable between samples... Nonetheless, [xCell supports] between-sample comparisons and the performance of the methods can be readily compared using Pearson correlation with the gold-standard measure of cell fractions.
+
+"We quantify the background prediction level of cell type c as the predicted score of c in samples of type c with i = 0, i.e. in samples with no cells of type c present. We quantify the minimal detection fraction as the minimal i at which the predicted score of c is significantly different from the background prediction level (one-sided t-test, alpha = 0.05).
+
+"xCell, which uses a statistical test for enrichment of the marker-genes, is highly robust against background-predictions (score = 0 for all tested cell types) at a slightly elevated minimal detection fraction (<5% infiltration for most cell types).
+
+"When interested in presence/absence of a cell type, we suggest using xCell."
+
+
+Significant Quotes from Conforti et al. (08/01/2021). "Sex-Based Dimorphism of Anticancer Immune Response and Molecular Mechanisms of Immune Evasion". Clinical Cancer Research. Accessed via https://pmc.ncbi.nlm.nih.gov/articles/PMC7611463/pdf/EMS127617.pdf on 07/15/2025.
+
+There are "sex-based differences in the tumor microenvironment (TME) [in] cell type composition of the immune infiltrate". Gene expression data [may be] analyzed through the... xCell algorithm, to estimate the abundance of 64 different cell types in the microenvironment of each tumor sample...
+
+"The entire pipeline of xCell has been previous described [in 12 and 13]..."
+
+The "results, show meaningful sex-based differences in the cell-type composition of the immune infiltrate of patients with [Non-Small Cell Lung Cancer]...
+
+"[S]uch differences are not related to other variables potentially associated with sex such as age, stage of disease, tumor histotype and smoking status.
+
+"On average women mount stronger and more structured immune-response against NSCLC, as highlighted by the higher intratumor abundance of plasmacytoid and activated dendritic cells, CD4+ and CD8+ effector T-cells, memory CD4+ T-cells and B-cells including Class-switched memory cells, as well as by greater clonality of the TCR-repertoire." A TCR repertoire is a collection of unique T Cell Receptor sequences of amino acids or nucleotides carried by all T cells in a region. Each unique sequence represents a clone / group of T cells with that sequence. Clonality is the degree to which a few clones / groups dominate.
+
+"On the contrary, the TME of NSCLC arising in males was characterized by lower abundance of a number of innate and adaptive immune cell types and by a T-cells excluded phenotype [a pattern where T cells remain outside a tumor]."
+
+There is "significant sex-based heterogeneity of response to different type of immunotherapy strategies in patients with advanced NSCLC..."
+
+There is a "smaller survival benefit experienced by women when treated with anti-PD1[PD-L1] as monotherapy" than experienced by men. There is a larger survival benefit experienced by women when treated with chemotherapy and anti-PD1/PD-L1 than experienced by men. Women have greater innate and adaptive immune cells abundance.
+
+"data... [emphasized] the importance of the features of the immune system of the host, in shaping the immune response against cancer...
+
+There is a "[s]ummary plot of sex-based differences in the cel type composition of the immune-infiltrate. Figure shows... p- values for the difference between the Enrichment Score (ES) of female tumors and male tumors based on a multiple linear regression model adjusted by age, smoking status, and tumor-histotype. Pooled p-values were calculated using random-effects models and corrected for [False Discovery Rate]...
+
+
+Significant Quotes from Ye et al (04/14/2020). "Sex-associated molecular differences for cancer immunotherapy". Nature Communications. Accessed via https://pmc.ncbi.nlm.nih.gov/articles/PMC7156379/pdf/41467_2020_Article_15679.pdf on 07/15/2025.
+
+"Male patients with colorectal cancer... or glioblastoma multiforme... with anti-PD-1/PD-L1 therapy showed better [Overall Survival]. Female patients with esophagogastric cancer (ESCA) or NSCLC tended to have better OS. We further observed a trend of higher response rate in female patients (16/32 = 50%) compared to male patients (6/24 = 25%) with NSCLC..."
+
+
+Significant Quotes from 02/27/2020. "Urinary cell transcriptomics and acute rejection in human kidney allografts". JCI Insight. Access via https://pmc.ncbi.nlm.nih.gov/articles/PMC7101135/pdf/jciinsight-5-131552.pdf on 07/16/2025.
+
+The authors "used bulk RNA cell type enrichment analysis using the gene expression data to recover the identity of the cell types found in [T Cell Mediated Rejection] urine and in [Antibody Mediated Rejection] urine. Using a gene signature expression–based cell type enrichment tool xCell (29), cell type enrichment scores (ES) across 64 immune and stromal cell types were obtained for both urinary cells and kidney allograft specimens.
+
+"Across both rejection phenotypes [patterns of rejection of kidney transplants], the urine showed enhanced enrichment of various immune cell types, indicating a stronger and more diverse immune... signal in urinary cells compared with [cells in] the kidney allograft [transplant]... On the other hand, the kidney allografts showed enrichment of select stromal cell types, and the stromal cell score was higher in the biopsies compared with urinary cells...
+
+"The enrichment of biopsy gene signatures in urinary cells and the enrichment of immune cell types in the urine compared with kidney allograft biopsies support urine as a suitable surrogate for the kidney allograft biopsy for the diagnosis of TCMR and AMR in human kidney allografts...
+
+"Allograft biopsies have thus far provided key insights regarding immune mechanisms of acute rejection; however, repetitive biopsies to capture the dynamics of the immune process is neither practical nor
+safe. Another concern is the extent to which the histological features in a biopsy core are representative
+of allograft pathology... In light of these challenges, our demonstration that urine gene expression
+patterns reflect and reinforce immune pathways previously identified using preclinical transplant models
+or by profiling the allograft suggests that urine profiling may help assess noninvasively the dynamics of
+antiallograft immune repertoire." A repertoire is a collection of sequences of amino acids or nucleotides carried by all cells in a region.
+
+"Key mechanistic insights regarding acute rejection emerged from whole transcriptome profiling of
+urinary cells. T cell receptor signaling pathway was significantly enriched during TCMR and AMR and
+suggested that not only TCMR, but also AMR involves T cell signaling. Enrichment of antigen processing and enrichment of TCR signaling pathways provided a biologic basis for allograft recognition, T cell
+stimulation, and immune rejection... Human memory T lymphocytes express increased levels of three adhesion molecules... The finding that genes encoding cell adhesion proteins are enriched during an episode of acute rejection provides a mechanistic basis for interstitial infiltration and tubulitis, the histological hallmarks of TCMR, and for peritubular capillaritis and glomerulitis, the histological characteristics of AMR... findings that genes encoding NK cell–mediated cytotoxicity are enriched suggest a mechanism for kidney allograft injury during an episode of TCMR...  the enrichment of the
+phagosome pathway genes bring into focus the participation of not only the adaptive immune system, but
+also the innate immune system in the acute rejection process."
+
+"Cell type enrichment analysis of the RNA sequencing data [was] determined using xCell, a bioinformatics tool
+that generates cell type enrichment scores based on gene expression data for 64 immune and stromal cell types. [In Figure 5.A, t] the x axis depicts the xCell enrichment score, and the y axis lists 26 of the 64 cell types that were differentially enriched... in TCMR urine versus No Rejection urine. Twenty-two of the 26 cell types were positively enriched, and 4 were negatively enriched in TCMR urine versus No Rejection urine. Box plots of the immune score (composite score of immune cell types) and the microenvironment score (composite scores of immune cell types and stromal cell types) are also shown... differential abundance of several mRNAs contribut[ed] to the higher immune score in TCMR urine versus No Rejection urine. mRNA abundance was quantified using customized RT-qPCR assays and shown as $log_2$ copies per $μg$ of total RNA in the urinary cells... Cell type enrichment scores of TCMR biopsy [were] compared with the cell type enrichment scores of TCMR urine... Cell type enrichment scores of AMR biopsy were compared with the cell type enrichment scores of AMR urine... Stromal cell types were enriched in [kidney allograft] biops[ies] compared with urin[ary cells], and immune cell types were enriched in urine compared with biopsy...
+
+"mRNAs such as mRNA for CD2, CD8A, CCL5, GZMA, NKG7, and CTLA4 were found in this study to be diagnostic of TCMR, as well as AMR. CD2 is expressed on the T cell surface, and signaling via CD2 results in T cell activation, whereas CD2 blockade results in allograft tolerance... CD8+
+T cells play a variety of roles in allograft rejection... CCL5 has been shown to play a role in acute rejection... The granzymes may also have an additional role in triggering inflammation... Urinary granzyme A mRNA is a biomarker to diagnose... cellular rejection in kidney transplant recipients... NKG7 is a NK cell granule protein and is reported to be upregulated within the allografts in patients with acute rejection...
+
+"CD103 mRNA levels in urinary cells predict acute rejection of renal allografts... Serine proteinase inhibitor-9, a... blocker of granzyme B/perforin lytic pathway, is hyperexpressed during acute rejection of renal allografts".
+
+The authors "identified a 13-gene signature, a subset of the 180 differentially expressed genes in TCMR urine versus [No Rejection] urine that outperformed the RT-qPCR–based CTOT-04 urinary cell TCMR signature in discriminating TCMR from NR.  Differential gene expression resolved by RNA-Seq of urinary cells also enabled the development of a urinary cell gene signature that perfectly discriminated TCMR from AMR...
+
+"We used GSEA to analyze genes and pathways shared between urine and biopsy specimens... Our analysis identified that 75 genes are shared between TCMR biopsies and TCMR urine, and 187 genes are shared between AMR biopsies and AMR urine. To our knowledge, this is the first demonstration that gene expression patterns of urinary cells reflect gene expression patterns of kidney allograft biopsies...
+
+"[C]haracterization of urinary cell transcriptomes by RNA-Seq and bioinformatics, in
+addition to elucidating the gene signatures and biological pathways associated with TCMR and AMR,
+helped decipher shared gene expression patterns between these 2 histologically distinct entities. Whole
+transcriptome profiling by RNA-Seq also demonstrated that TCMR and AMR biopsy gene signatures are
+enriched in urinary cells. Cell type enrichment analysis indicated a stronger and more diverse immune... signal in urinary cells compared with the kidney allograft biopsies...
+
+"[C]ell type abundance estimation was performed using the bioinformatics tool xCell (29), using normalized bulk RNA-Seq expression data (FPKM) as the input. The relative cell type abundance was quantified and visualized across all samples. Abundance for each cell type across the diagnostic groups and between kidney allograft biopsy and urinary cells was compared using Wilcoxon rank-sum test in R. Cell types with FDR < 0.1 were considered to be significantly differentially enriched."
