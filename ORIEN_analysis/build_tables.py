@@ -310,7 +310,7 @@ def main():
         left_on = "ORIENAvatarKey",
         right_on = "AvatarKey",
         how = "left"
-    )
+    ).drop(columns = "AvatarKey")
 
     print(
         "We filter tumor marker data to have " +
@@ -375,7 +375,7 @@ def main():
         left_on = "ORIENAvatarKey",
         right_on = "AvatarKey",
         how = "left"
-    )
+    ).drop(columns = "AvatarKey")
     tumor_data["Sex"] = tumor_data["Sex"].str.title()
 
     print(f"The number of rows in tumor data after merging patient data is {len(tumor_data)}.")
@@ -395,10 +395,11 @@ def main():
         .sort_values(by = "AvatarKey")
         .reset_index(drop = True)
     )
+    number_of_unique_patient_IDs = len(data_frame_of_patient_IDs_and_ethnicities_for_patients_in_patient_data["AvatarKey"].unique())
     print(
         "The number of unique patient IDs in " +
         f"data frame of patient IDs and ethnicities for patients in patient data is " +
-        f"{len(data_frame_of_patient_IDs_and_ethnicities_for_patients_in_patient_data["AvatarKey"].unique())}."
+        f"{number_of_unique_patient_IDs}."
     )
     data_frame_of_patient_IDs_and_ethnicities_for_patients_in_patient_data.to_csv(
         "data_frame_of_patient_IDs_and_ethnicities_for_patients_in_patient_data.csv",
@@ -415,10 +416,11 @@ def main():
         right_on = ["AvatarKey", "Ethnicity"],
         how = "left"
     ).drop(columns = ["AvatarKey"])
+    number_of_unique_patient_IDs = len(data_frame_of_patient_IDs_and_ethnicities_for_patients_in_tumor_data["ORIENAvatarKey"].unique())
     print(
         "The number of unique patient IDs in " +
         "data frame of patient IDs and ethnicities for patients in tumor data is " +
-        f"{len(data_frame_of_patient_IDs_and_ethnicities_for_patients_in_tumor_data["ORIENAvatarKey"].unique())}."
+        f"{number_of_unique_patient_IDs}."
     )
     data_frame_of_patient_IDs_and_ethnicities_for_patients_in_tumor_data.to_csv(
         "data_frame_of_patient_IDs_and_ethnicities_for_patients_in_tumor_data.csv",
@@ -694,6 +696,9 @@ def main():
             for ECOG_PS in ["0", "1", "2", "3+"]
         )
     ]
+    
+    data_frame_of_IDs_of_patients_specimens_and_WES = tumor_data[["ORIENAvatarKey", "DeidSpecimenID", "WES", "WES Batch"]]
+    data_frame_of_IDs_of_patients_specimens_and_WES.to_csv("data_frame_of_IDs_of_patients_specimens_and_WES.csv", index = False)
 
     # Assemble tables.
     table_1 = pd.DataFrame(
