@@ -1,0 +1,1 @@
+find ../../WES -type f -print | tee all_file_paths.txt
