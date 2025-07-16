@@ -24,7 +24,14 @@ def join_matching_paths(
     if not value or pd.isna(value):
         return ""
     value = value.strip()
-    list_of_matching_paths = [path for path in list_of_paths_to_WES if value in path]
+    list_of_matching_paths = [
+        path
+        for path in list_of_paths_to_WES
+        if (
+            (value in path) and
+            (".vcf" in path)
+        )
+    ]
     return "|".join(list_of_matching_paths)
 
 
