@@ -453,12 +453,12 @@ def load_melanoma_data():
     
     logger.info(f"Expression matrix was filtered to {len(common_slids)} melanoma tumor samples.")
     
-    # Map sample IDs (SLIDs) in the filtered expression matrix to patient IDs
-    # Handle cases where a SLID might not be in the map.
-    expr_matrix_filtered.columns = [sample_to_patient.get(col, f"UNMAPPED_{col}") for col in expr_matrix_filtered.columns]
-    
     # Filter clinical data to patients with sequencing data after successful mapping.
-    sequenced_patients = [pid for pid in expr_matrix_filtered.columns if not pid.startswith("UNMAPPED_")]
+    list_of_patient_IDs = [
+        sample_to_patient.get(col, f"UNMAPPED_{col}")
+        for col in expr_matrix_filtered.columns
+    ]
+    sequenced_patients = [pid for pid in list_of_patient_IDs if not pid.startswith("UNMAPPED_")]
     sequenced_patients = list(set(sequenced_patients)) # Get unique patient IDs
     
     if not sequenced_patients:
