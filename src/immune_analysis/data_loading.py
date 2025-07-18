@@ -431,11 +431,10 @@ def load_melanoma_data():
     expr_matrix = load_rnaseq_data()
     if expr_matrix is None:
         return None, None
-        
-    # Load sample-to-patient mapping before identifying melanoma samples that require it.
+    
     sample_to_patient = load_sample_to_patient_map()
-    if not sample_to_patient: # Check if mapping loaded successfully
-        logger.error("Load sample-to-patient map failed.")
+    if not sample_to_patient:
+        logger.error("Loading map of sample to patient failed.")
         return None, None
         
     melanoma_slids, sample_details = identify_melanoma_samples(clinical_data)
@@ -443,7 +442,6 @@ def load_melanoma_data():
         logger.warning("No melanoma SLIDs were identified.")
         return None, None
     
-    # Filter expression matrix to melanoma tumor samples
     common_slids = [c for c in expr_matrix.columns if c in melanoma_slids]
     if not common_slids:
         logger.warning("No common SLIDs were found between expression matrix columns and identified melanoma samples.")
@@ -454,11 +452,11 @@ def load_melanoma_data():
     logger.info(f"Expression matrix was filtered to {len(common_slids)} melanoma tumor samples.")
     
     # Filter clinical data to patients with sequencing data after successful mapping.
-    list_of_patient_IDs = [
+    set_of_patient_IDs = {
         sample_to_patient.get(col, f"UNMAPPED_{col}")
         for col in expr_matrix_filtered.columns
-    ]
-    sequenced_patients = [pid for pid in list_of_patient_IDs if not pid.startswith("UNMAPPED_")]
+    }
+    sequenced_patients = [pid for pid in set_of_patient_IDs if not pid.startswith("UNMAPPED_")]
     sequenced_patients = list(set(sequenced_patients)) # Get unique patient IDs
     
     if not sequenced_patients:
@@ -466,7 +464,7 @@ def load_melanoma_data():
         return expr_matrix_filtered, pd.DataFrame() # Return empty clinical df
 
     clinical_data_filtered = clinical_data[clinical_data['PATIENT_ID'].isin(sequenced_patients)].copy()
-    logger.info(f"Clinical data was filtered to {len(clinical_data_filtered)} patients with valid sequencing data mapping.")
+    logger.info(f"Clinical data was filtered to {len(clinical_data_filtered)} patients with valid sequencing data.")
     
     return expr_matrix_filtered, clinical_data_filtered
     
@@ -496,15 +494,7 @@ def load_sample_to_patient_map() -> dict[str, str]:
     '''
     map_df = pd.read_csv(paths.map_from_sample_to_patient)
 
-    logger.info(f"Columns found in mapping file ({paths.map_from_sample_to_patient}): {map_df.columns.tolist()}")
-    
-    if "SampleID" not in map_df.columns:
-        logger.error(f"Required column \"{slid_col}\" was not found in mapping file.")
-        return {}
-    
-    if "PatientID" not in map_df.columns:
-         logger.error(f"Required column \"{patient_col}\" was not found in mapping file.")
-         return {}
+    logger.info(f"Columns in mapping file ({paths.map_from_sample_to_patient}): {map_df.columns.tolist()}")
 
     # Create the dictionary using the identified column names
     sample_to_patient = dict(zip(map_df["SampleID"], map_df["PatientID"]))

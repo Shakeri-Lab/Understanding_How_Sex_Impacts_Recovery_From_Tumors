@@ -179,12 +179,6 @@ def process_melanoma_immune_data():
     logger.info(f"The shape of the immune dataframe is {immune_df.shape}.")
     logger.info(f"A sublist of the list of columns of the immune dataframe is [{immune_df.columns[:5]}...].")
 
-    # Add patient IDs and clinical information to immune data.
-    sample_to_patient = {}
-    for slid, details in sample_details.items():
-        if "patient_id" in details:
-            sample_to_patient[slid] = details["patient_id"]
-
     # Build a tidy "one row per tumour sample" data-frame from `sample_details`.
     sample_rows = (pd.DataFrame.from_dict(sample_details, orient = "index")
         .rename_axis("SLID") # make SLID an index label
