@@ -295,7 +295,9 @@ def run_xcell_analysis(expr_df: pd.DataFrame, clinical_df: pd.DataFrame) -> bool
         
         ro.r("library(xCell); data(xCell.data)")
         cell_types = [str(numpy_string_representing_cell_type) for numpy_string_representing_cell_type in ro.r("rownames(xCell.data$spill$K)")]
+        # See https://genomebiology.biomedcentral.com/articles/10.1186/s13059-017-1349-1#Sec24 .
         cell_types = cell_types + ["ImmuneScore", "StromaScore", "MicroenvironmentScore"]
+        # See line 219 of https://github.com/dviraran/xCell/blob/master/R/xCell.R .
         logger.info(f"xCell's list of cell types and scores is {cell_types}.")
 
     if len(cell_types) != scores_np.shape[0]:
