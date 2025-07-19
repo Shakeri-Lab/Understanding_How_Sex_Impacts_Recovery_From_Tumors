@@ -34,25 +34,6 @@ numpy2ri.activate()
 pandas2ri.activate()
 
 
-# Define a list of standard xCell cell types in their typical output order.
-XCELL_CELL_TYPES_ORDERED = [
-    'Adipocytes', 'Astrocytes', 'B-cells', 'Basophils', 'CD4+ memory T-cells',
-    'CD4+ naive T-cells', 'CD4+ T-cells', 'CD4+ Tcm', 'CD4+ Tem', 'CD8+ naive T-cells',
-    'CD8+ T-cells', 'CD8+ Tcm', 'CD8+ Tem', 'Chondrocytes', 'Class-switched memory B-cells',
-    'CLP', 'CMP', 'cDC', 'DC', 'Endothelial cells',
-    'Eosinophils', 'Epithelial cells', 'Erythrocytes', 'Fibroblasts', 'GMP',
-    'HSC', 'iDC', 'Keratinocytes', 'ly Endothelial cells', 'Macrophages',
-    'Macrophages M1', 'Macrophages M2', 'Mast cells', 'Megakaryocytes', 'Memory B-cells',
-    'MEP', 'Mesangial cells', 'Monocytes', 'MPP', 'mv Endothelial cells',
-    'naive B-cells', 'Neutrophils', 'NK cells', 'NKT', 'Osteoblast',
-    'pDC', 'Pericytes', 'Plasma cells', 'Platelets', 'Preadipocytes',
-    'pro B-cells', 'Sebocytes', 'Skeletal muscle', 'Smooth muscle', 'Tgd cells',
-    'Th1 cells', 'Th2 cells', 'Tregs', 'aDC', 'Neurons',
-    'Hepatocytes', 'MSC', 'common myeloid progenitor', 'melanocyte', 'ImmuneScore',
-    'StromaScore', 'MicroenvironmentScore'
-]
-
-
 def clean_expression_df(df: pd.DataFrame) -> pd.DataFrame:
     '''
     - 1. Strip versions (e.g., ".15") from Ensembl IDs, resulting in Ensembl IDs like ENSG00000000003.
@@ -312,7 +293,10 @@ def run_xcell_analysis(expr_df: pd.DataFrame, clinical_df: pd.DataFrame) -> bool
         
         logger.warning("xCell returned numeric row-names; the canonical xCell cell-type list will be used.")
         
-        cell_types = XCELL_CELL_TYPES_ORDERED.copy()
+        ro.r("library(xCell); data(xCell.data)")
+        cell_types = [str(numpy_string_representing_cell_type) for numpy_string_representing_cell_type in ro.r("rownames(xCell.data$spill$K)")]
+        cell_types = cell_types + ["ImmuneScore", "StromaScore", "MicroenvironmentScore"]
+        logger.info(f"xCell's list of cell types and scores is {cell_types}.")
 
     if len(cell_types) != scores_np.shape[0]:
         raise Exception(f"We expected {scores_np.shape[0]} cell-type names but got {len(cell_types)}.")
