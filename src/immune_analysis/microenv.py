@@ -21,7 +21,8 @@ import traceback
 
 from src.config import FOCUSED_XCELL_PANEL
 from src.config import paths
-from src.immune_analysis.data_loading import identify_melanoma_samples, load_melanoma_data, load_rnaseq_data
+from src.immune_analysis.data_loading import identify_melanoma_samples
+from src.immune_analysis.data_loading import load_RNA_sequencing_data_for_melanoma_samples
 
 
 logging.basicConfig(level=logging.INFO)
@@ -134,39 +135,32 @@ def determine_metastatic_status(site):
 def main():
     
     paths.ensure_dependencies_for_microenv_exist()
-    
-    process_melanoma_immune_data()
+
+    expr_matrix, clinical_data = load_RNA_sequencing_data_for_melanoma_samples()
+    process_melanoma_immune_data(expr_matrix, clinical_data)
 
     clinical_data_processed = pd.read_csv(paths.data_frame_of_melanoma_patient_and_sequencing_data)
-    
     logger.info(f"Clinical data for {clinical_data_processed['PATIENT_ID'].nunique()} unique melanoma patients was loaded from {paths.data_frame_of_melanoma_patient_and_sequencing_data}.")
 
-    expr_matrix = load_rnaseq_data()
-    if expr_matrix is None:
-        raise Exception("Load RNA sequencing data failed.")
-
     success = run_xcell_analysis(expr_matrix, clinical_data_processed)
-
     if success:
         logger.info("xCell analysis succeeded.")
     else:
-        logger.error("xCell analysis failed.")
+        raise Exception("xCell analysis failed.")
 
 
-def process_melanoma_immune_data():
-    """
-    Process melanoma RNA sequencing data to extract immune Micro-Environment information.
+def process_melanoma_immune_data(expression_matrix, clinical_data):
+    '''
+    Process expression matrix to extract immune Micro-Environment information.
     TODO: What is immune Micro-Environment information?
         
     Returns:
     --------
     immune_clinical: pd.DataFrame -- data frame with melanoma samples and immune features
     TODO: Describe the data frame with melanoma samples and immune features.
-    """
-
-    immune_df, clinical_data = load_melanoma_data()
+    '''
     
-    if immune_df is None or clinical_data is None:
+    if expression_matrix is None or clinical_data is None:
         logger.error("Failed to load immune or clinical data.")
         return None
 
@@ -176,8 +170,8 @@ def process_melanoma_immune_data():
     
     logger.info(f"Sample details for {len(sample_details)} samples were retrieved.")
 
-    logger.info(f"The shape of the immune dataframe is {immune_df.shape}.")
-    logger.info(f"A sublist of the list of columns of the immune dataframe is [{immune_df.columns[:5]}...].")
+    logger.info(f"The shape of the immune dataframe is {expression_matrix.shape}.")
+    logger.info(f"A sublist of the list of columns of the immune dataframe is [{expression_matrix.columns[:5]}...].")
 
     # Build a tidy "one row per tumour sample" data-frame from `sample_details`.
     sample_rows = (pd.DataFrame.from_dict(sample_details, orient = "index")

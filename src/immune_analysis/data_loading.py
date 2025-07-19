@@ -419,100 +419,71 @@ def load_clinical_data():
     return clinical_data
 
     
-def load_melanoma_data():
-    '''
-    Load RNA sequencing data for melanoma samples.
-    '''
-
+def load_RNA_sequencing_data_for_melanoma_samples():
     clinical_data = load_clinical_data()
-    if clinical_data is None:
-        return None, None
-    
+    if clinical_data is None or len(clinical_data) == 0:
+        raise Exception("Clinical data is None or has no rows.")
     expr_matrix = load_rnaseq_data()
-    if expr_matrix is None:
-        return None, None
+    sample_to_patient = load_map_of_sample_IDs_to_patient_IDs()
     
-    sample_to_patient = load_sample_to_patient_map()
-    if not sample_to_patient:
-        logger.error("Loading map of sample to patient failed.")
-        return None, None
-        
-    melanoma_slids, sample_details = identify_melanoma_samples(clinical_data)
-    if not melanoma_slids:
-        logger.warning("No melanoma SLIDs were identified.")
-        return None, None
+    # Filter expression matrix.
+    list_of_melanoma_SLIDs, _ = identify_melanoma_samples(clinical_data)
+    if not list_of_melanoma_SLIDs:
+        raise Exception("List of melanoma SLIDs is None or empty.")
+    list_of_melanoma_SLIDs_in_expression_matrix = [column for column in expr_matrix.columns if column in list_of_melanoma_SLIDs]
+    if not list_of_melanoma_SLIDs_in_expression_matrix:
+        raise Exception("List of melanoma SLIDs in expression matrix is None or empty.")
+    expr_matrix_filtered = expr_matrix[list_of_melanoma_SLIDs_in_expression_matrix]
+    logger.info(f"Expression matrix was filtered to {len(list_of_melanoma_SLIDs_in_expression_matrix)} melanoma samples.")
     
-    common_slids = [c for c in expr_matrix.columns if c in melanoma_slids]
-    if not common_slids:
-        logger.warning("No common SLIDs were found between expression matrix columns and identified melanoma samples.")
-        return None, None
-        
-    expr_matrix_filtered = expr_matrix[common_slids]
-    
-    logger.info(f"Expression matrix was filtered to {len(common_slids)} melanoma tumor samples.")
-    
-    # Filter clinical data to patients with sequencing data after successful mapping.
+    # Filter clinical data to patients with samples.
     set_of_patient_IDs = {
         sample_to_patient.get(col, f"UNMAPPED_{col}")
         for col in expr_matrix_filtered.columns
     }
-    sequenced_patients = [pid for pid in set_of_patient_IDs if not pid.startswith("UNMAPPED_")]
-    sequenced_patients = list(set(sequenced_patients)) # Get unique patient IDs
-    
-    if not sequenced_patients:
-        logger.warning("No patients remain after mapping SLIDs to PATIENT_IDs.")
-        return expr_matrix_filtered, pd.DataFrame() # Return empty clinical df
-
-    clinical_data_filtered = clinical_data[clinical_data['PATIENT_ID'].isin(sequenced_patients)].copy()
+    list_of_IDs_of_patients_with_samples = [pid for pid in set_of_patient_IDs if not pid.startswith("UNMAPPED_")]
+    if not list_of_IDs_of_patients_with_samples:
+        raise Exception("List of IDs of patients with samples is None or empty.")
+    clinical_data_filtered = clinical_data[clinical_data["PATIENT_ID"].isin(list_of_IDs_of_patients_with_samples)].copy()
     logger.info(f"Clinical data was filtered to {len(clinical_data_filtered)} patients with valid sequencing data.")
     
     return expr_matrix_filtered, clinical_data_filtered
     
 
 def load_rnaseq_data():
-    
     expr_files = list(paths.gene_and_transcript_expression_results.glob("*.genes.results"))
     if not expr_files:
-        logger.error(f"No .genes.results files were found in {paths.gene_and_transcript_expression_results}.")
-        return None
-
-    # Initialize a dictionary to store expression data
+        raise Exception(f"No .genes.results files were found in {paths.gene_and_transcript_expression_results}.")
+    
     expr_data = {
         os.path.basename(f).removesuffix(".genes.results"): pd.read_csv(f, sep = "\t").set_index("gene_id")["TPM"]
         for f in expr_files
     }
-
-    # Combine into a single DataFrame
     expr_matrix = pd.DataFrame(expr_data)
-    print(f"Expression matrix with {expr_matrix.shape} (genes x samples) was loaded.")
+    logger.info(f"Expression matrix of genes, samples, and expression values with shape {expr_matrix.shape} was loaded.")
+    
     return expr_matrix
 
     
-def load_sample_to_patient_map() -> dict[str, str]:
-    '''
-    This function loads the mapping from sample ID (SLID) to patient ID (PATIENT_ID).
-    '''
+def load_map_of_sample_IDs_to_patient_IDs() -> dict[str, str]:
     map_df = pd.read_csv(paths.map_from_sample_to_patient)
+    if map_df.empty:
+        raise Exception("Map from sample IDs to patient IDs is empty.")
+    logger.info(f"Map from sample IDs to patient IDs with path ({paths.map_from_sample_to_patient}) has columns {map_df.columns.tolist()}.")
 
-    logger.info(f"Columns in mapping file ({paths.map_from_sample_to_patient}): {map_df.columns.tolist()}")
-
-    # Create the dictionary using the identified column names
-    sample_to_patient = dict(zip(map_df["SampleID"], map_df["PatientID"]))
-    logger.info(f"Sample-to-patient mapping with {len(sample_to_patient)} entries was loaded.")
-    return sample_to_patient
+    map_of_sample_IDs_to_patient_IDs = dict(
+        zip(map_df["SampleID"], map_df["PatientID"])
+    )
+    logger.info(f"Map from sample IDs to patient IDs with {len(map_of_sample_IDs_to_patient_IDs)} items was loaded.")
+    return map_of_sample_IDs_to_patient_IDs
 
 
 if __name__ == "__main__": 
     
     paths.ensure_dependencies_for_data_loading_exist()
     
-    logger.info(f"Sample map will be loaded from {paths.map_from_sample_to_patient}.")
+    expr_matrix, clinical_data = load_RNA_sequencing_data_for_melanoma_samples()
+    expr_matrix.to_csv(paths.melanoma_expression_matrix, index_label = "Ensembl ID")
+    clinical_data.to_csv(paths.melanoma_clinical_data, index = False)
     
-    expr_matrix, clinical_data = load_melanoma_data()
-    
-    if expr_matrix is not None and not expr_matrix.empty and clinical_data is not None and not clinical_data.empty:
-        logger.info("Saving filtered expression matrix and clinical data.")
-        expr_matrix.to_csv(paths.melanoma_expression_matrix, index_label = "Ensembl ID")
-        clinical_data.to_csv(paths.melanoma_clinical_data, index = False)
-    else:
-         logger.warning("Generating or saving output files failed due to errors in data loading or processing.")
+    logger.info("Filtered expression matrix and clinical data were saved.")
