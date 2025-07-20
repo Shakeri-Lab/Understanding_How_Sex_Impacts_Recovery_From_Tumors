@@ -92,6 +92,17 @@ class Paths():
         self.data_frame_of_metastatic_vs_primary_results = self.outputs_of_immune_analysis / "metastatic_vs_primary_results.csv"
         self.metastatic_vs_primary_heatmap = self.outputs_of_immune_analysis / "metastatic_vs_primary_heatmap.png"
         
+        # src/immune_analysis/linear_mixed_models.py
+        # dependencies
+        self.outputs_of_linear_mixed_models = self.root / "output/linear_mixed_models"
+        # self.data_frame_of_scores_by_sample_and_cell_type, which is defined above
+        # self.melanoma_sample_immune_clinical_data, which is defined above
+        # self.QC_data, which is defined above
+        # -----
+        # outputs
+        self.mixed_model_results = self.outputs_of_linear_mixed_models / "mixed_model_results.csv"
+        self.mixed_model_results_significant = self.outputs_of_linear_mixed_models / "mixed_model_results_significant.csv"
+        
         # src/immune_analysis/treatment_analysis.py
         # dependencies
         self.outputs_of_treatment_analysis = self.root / "output/treatment_analysis"
@@ -142,6 +153,16 @@ class Paths():
             self.distributions_of_abundance_of_cells_of_type_by_group
         ]:
             os.makedirs(path, exist_ok = True)
+    
+    
+    def ensure_dependencies_for_linear_mixed_models_exist(self):
+        os.makedirs(self.outputs_of_linear_mixed_models, exist_ok = True)
+        for path in [
+            self.data_frame_of_scores_by_sample_and_cell_type,
+            self.melanoma_sample_immune_clinical_data,
+            self.QC_data
+        ]:
+            assert os.path.exists(path), f"The dependency of `src/immune_analysis/linear_mixed_models.py` `{path}` does not exist."
 
 
 paths = Paths()
