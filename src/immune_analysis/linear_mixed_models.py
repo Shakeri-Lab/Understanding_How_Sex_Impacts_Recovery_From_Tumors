@@ -49,87 +49,51 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def _load_xcell_scores() -> pd.DataFrame:
-    '''
-    Load matrix of samples IDs, cell types, and enrichment scores.
-    '''
-    df = pd.read_csv(paths.data_frame_of_scores_by_sample_and_cell_type, index_col = "SampleID")
-    logger.info("Matrix of sample IDs, cell types, and enrichment scores has %d sample IDs and %d cell types.", *df.shape)
-    return df
-
-
-def _load_sample_level_clinical() -> pd.DataFrame:
-    '''
-    One row per sample with clinical & technical covariates
-    (`process_melanoma_immune_data` output).
-    '''
-    df = pd.read_csv(paths.melanoma_sample_immune_clinical_data, index_col = "SLID")
-    logger.info("Sample-level clinical data: %d samples × %d columns", *df.shape)
-    return df
-
-
-def _load_qc_metrics() -> pd.DataFrame:
-    '''
-    QC file gives sequencing depth and batch.
-    If a 'Batch' column is missing, create a single-level batch.
-    '''
-    df = pd.read_csv(paths.QC_data).rename(columns = {"SLID": "SampleID"})
-    depth_col = "TotalReads" if "TotalReads" in df else df.columns[0]
-    df["SequencingDepth"] = np.log10(df[depth_col])
-    if "Batch" not in df:
-        df["Batch"] = "Batch1"
-    qc = df[["SampleID", "Batch", "SequencingDepth"]].set_index("SampleID")
-    logger.info("QC metrics: %d samples", len(qc))
-    return qc
-
-
-def _assemble_modelling_dataframe() -> tuple[pd.DataFrame, list[str]]:
-    '''
-    Join scores with covariates required for the mixed models.
-    All variables are kept as generic as possible so that the script works even
-    when some optional columns are missing.
-    '''
-    scores = _load_xcell_scores()
-    xcell_cols = scores.columns.tolist()
-    clin = _load_sample_level_clinical()
-    qc = _load_qc_metrics()
-
-    scores.index = scores.index.astype(str).str.strip()
-    clin.index = clin.index.astype(str).str.strip()
-    qc.index = qc.index.astype(str).str.strip()
+def assemble_modelling_dataframe() -> tuple[pd.DataFrame, list[str]]:
+    
+    data_frame_of_enrichment_scores = pd.read_csv(paths.data_frame_of_scores_by_sample_and_cell_type)
+    logger.info(
+        "Data frame of sample IDs, cell types, and enrichment scores has %d sample IDs and %d cell types.", 
+        *data_frame_of_enrichment_scores.shape
+    )
+    list_of_names_of_columns_of_enrichment_scores = data_frame_of_enrichment_scores.columns.tolist()[1:]
+    
+    data_frame_of_sample_IDs_and_clinical_data = pd.read_csv(paths.melanoma_sample_immune_clinical_data).rename(columns = {"SLID": "SampleID"})
+    logger.info("Data frame of sample IDs and clinical data has %d samples and %d columns.", *data_frame_of_sample_IDs_and_clinical_data.shape)
+    
+    QC_data = pd.read_csv(paths.QC_data).rename(columns = {"SLID": "SampleID"})
+    QC_data["SequencingDepth"] = np.log10(QC_data["TotalReads"])
+    QC_data = QC_data[["SampleID", "NexusBatch", "SequencingDepth"]]
+    logger.info("QC data has %d samples.", len(QC_data))
 
     df = (
-        scores
-        .join(clin, how = "inner")
-        .join(qc, how = "left")
-    )
-    df.rename(
-        columns = {
-            "Sex": "Sex",
-            "AgeAtClinicalRecordCreation": "Age",
-            "STAGE_AT_ICB": "Stage",
-            "HAS_ICB": "PriorTreatment",
-        },
-        inplace = True
+        data_frame_of_enrichment_scores
+        .merge(data_frame_of_sample_IDs_and_clinical_data, how = "inner", left_on = "SampleID", right_on = "SampleID") # Enrichment scores and sexes must both be present.
+        .merge(QC_data, how = "left", left_on = "SampleID", right_on = "SampleID")
     )
 
-    # Minimal cleaning / type coercion
+    # Clean data frame of enrichment scores, clinical data, and QC data.
     df["Sex"]  = df["Sex"].str.upper().map({"MALE": 1, "M": 1, "FEMALE": 0, "F": 0})
-    df["Age"]  = pd.to_numeric(df["Age"].apply(lambda age: 90.0 if age == "Age 90 or older" else float(age)), errors = "raise")
-    df["Stage"] = df["Stage"].fillna("Unknown")
-    if "PriorTreatment" in df:
-        df["PriorTreatment"] = df["PriorTreatment"].fillna(0).astype(int)
-    else:
-        df["PriorTreatment"] = 0
+    df["AgeAtClinicalRecordCreation"]  = pd.to_numeric(
+        df["AgeAtClinicalRecordCreation"].apply(
+            lambda age: 90.0 if age == "Age 90 or older" else float(age)
+        ),
+        errors = "raise"
+    )
+    df["STAGE_AT_ICB"] = df["STAGE_AT_ICB"].fillna("Unknown")
+    df["HAS_ICB"] = df["HAS_ICB"].fillna(0).astype(int)
+    df = df.dropna(subset = ["Sex"]) # Sex is the key predictor and must be present.
+    
+    logger.info("Data frame of enrichment scores, clinical data, and QC data has %d samples.", len(df))
+    
+    list_of_essential_predictors = ["Sex", "AgeAtClinicalRecordCreation", "STAGE_AT_ICB", "HAS_ICB", "NexusBatch", "SequencingDepth"]
+    for predictor in list_of_essential_predictors:
+        if df[predictor].empty:
+            raise Exception(f"Column {predictor} is empty.")
+        if df[predictor].isna().any():
+            raise Exception(f"Column {predictor} has some values of NA for samples.")
 
-    # Do any rows still lack essential predictors?
-    essential = ["Sex", "Age", "Stage", "PriorTreatment", "Batch", "SequencingDepth"]
-    keep = df.dropna(subset = ["Sex"]) # Sex is key predictor and must be present.
-    logger.info("After merges %d samples remain.", len(keep))
-    missing_predictors = [c for c in essential if keep[c].isna().any()]
-    if missing_predictors:
-        logger.warning("Some samples missing values for %s – affected rows will be skipped", ", ".join(missing_predictors))
-    return keep, xcell_cols
+    return df, list_of_names_of_columns_of_enrichment_scores
 
 
 def _fit_models(df: pd.DataFrame, cell_types: list[str]) -> pd.DataFrame:
@@ -137,15 +101,11 @@ def _fit_models(df: pd.DataFrame, cell_types: list[str]) -> pd.DataFrame:
     Loop over cell types, fit mixed models, and collect coefficients.
     Returns tidy results.
     '''
-    #cell_types = [
-    #    c for c in df.columns if c not in {"Sex", "Age", "Stage", "PriorTreatment", "Batch", "SequencingDepth", "PATIENT_ID"}
-    #]
-
     results = []
     for cell in cell_types:
         logger.info(f"Cell type is {cell}.")
         dat = df[[
-            cell, "Sex", "Age", "Stage", "PriorTreatment", "Batch", "SequencingDepth", "PATIENT_ID"
+            cell, "Sex", "AgeAtClinicalRecordCreation", "STAGE_AT_ICB", "HAS_ICB", "NexusBatch", "SequencingDepth", "PATIENT_ID"
         ]].rename(columns = {cell: "Score"})
         dat["Score"] = pd.to_numeric(dat["Score"], errors = "raise")
         dat = dat.dropna(subset = ["Score", "Sex"])
@@ -155,7 +115,7 @@ def _fit_models(df: pd.DataFrame, cell_types: list[str]) -> pd.DataFrame:
 
         # Build formula; Batch as categorical, Stage as categorical
         formula = (
-            f"Score ~ Sex + Age + C(Stage) + PriorTreatment + C(Batch) + SequencingDepth"
+            f"Score ~ Sex + AgeAtClinicalRecordCreation + C(STAGE_AT_ICB) + HAS_ICB + C(NexusBatch) + SequencingDepth"
         )
         model = smf.mixedlm(
             formula,
@@ -197,9 +157,9 @@ def main():
     
     paths.ensure_dependencies_for_linear_mixed_models_exist()
     
-    df, xcell_cols = _assemble_modelling_dataframe()
-    logging.info(f"Columns in enrichment matrix of sample IDs, cell types, and enrichment scores are {xcell_cols}.")
-    res = _fit_models(df, xcell_cols)
+    df, list_of_names_of_columns_of_enrichment_scores = assemble_modelling_dataframe()
+    logging.info(f"Columns in enrichment matrix of sample IDs, cell types, and enrichment scores are {list_of_names_of_columns_of_enrichment_scores}.")
+    res = _fit_models(df, list_of_names_of_columns_of_enrichment_scores)
     res = _add_fdr_adjustment(res)
 
     res.sort_values("Qval_Sex").to_csv(paths.mixed_model_results, index = False)
