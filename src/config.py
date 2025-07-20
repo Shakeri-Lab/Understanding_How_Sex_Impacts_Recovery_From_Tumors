@@ -41,7 +41,7 @@ class Paths():
         self.eda_plots = self.outputs_of_eda / "plots"
         self.eda_reports = self.outputs_of_eda / "reports"
         # -----
-        # files in self.normalized_clinical_data. Filenames are generated dynamically
+        # files in self.normalized_clinical_data. Filenames are generated dynamically.
         # outputs
         self.map_from_sample_to_patient = self.outputs_of_eda / "sample_to_patient_map.csv"
         self.data_frame_of_melanoma_patient_and_sequencing_data = self.outputs_of_eda / "melanoma_patients_with_sequencing.csv"
@@ -54,7 +54,7 @@ class Paths():
         self.outputs_of_data_loading = self.root / "output/data_loading"
         self.gene_and_transcript_expression_results = self.root / "../RNAseq/gene_and_transcript_expression_results"
         # -----
-        # files in self.gene_and_transcript_expression_results. Filenames are generated dynamically
+        # files in self.gene_and_transcript_expression_results. Filenames are generated dynamically.
         # self.map_from_sample_to_patient, which is defined above
         # self.QC_data, which is defined above
         self.diagnosis_data = self.normalized_clinical_data / "24PRJ217UVA_20241112_Diagnosis_V4.csv"
@@ -91,6 +91,26 @@ class Paths():
         self.specimen_sites_plot = self.outputs_of_immune_analysis / "specimen_sites_plot.png"
         self.data_frame_of_metastatic_vs_primary_results = self.outputs_of_immune_analysis / "metastatic_vs_primary_results.csv"
         self.metastatic_vs_primary_heatmap = self.outputs_of_immune_analysis / "metastatic_vs_primary_heatmap.png"
+        
+        # src/immune_analysis/treatment_analysis.py
+        # dependencies
+        self.outputs_of_treatment_analysis = self.root / "output/treatment_analysis"
+        self.treatment_analysis_plots = self.outputs_of_treatment_analysis / "plots"
+        # -----
+        self.outcomes_data = self.normalized_clinical_data / "24PRJ217UVA_20241112_Outcomes_V4.csv"
+        self.vital_status_data = self.normalized_clinical_data / "24PRJ217UVA_20241112_VitalStatus_V4.csv"
+        # outputs
+        self.mediation_results = self.outputs_of_treatment_analysis / "mediation_results.csv"
+        # Files with names of the form {cell_type}_survival.png are created dynamically.
+        self.immune_cell_differences = self.treatment_analysis_plots / "immune_cell_differences.png"
+        self.plot_of_t_cell_phenotypes = self.treatment_analysis_plots / "t_cell_phenotypes.png"
+        self.mediation_analysis = self.treatment_analysis_plots / "mediation_analysis.png"
+        self.sex_differences_immune = self.outputs_of_treatment_analysis / "sex_differences_immune.csv"
+        self.immune_cell_differences_2 = self.treatment_analysis_plots / "immune_cell_differences_2.png"
+        self.response_patterns = self.outputs_of_treatment_analysis / "response_patterns.csv"
+        self.sex_differences = self.outputs_of_treatment_analysis / "sex_differences.csv"
+        self.data_frame_of_T_cell_phenotypes = self.outputs_of_treatment_analysis / "data_frame_of_T_cell_phenotypes.csv"
+        self.mediation_results_2 = self.outputs_of_treatment_analysis / "mediation_results_2.csv"
     
     
     def ensure_dependencies_for_src_exist(self):
