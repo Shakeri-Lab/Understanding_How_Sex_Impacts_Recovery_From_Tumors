@@ -118,7 +118,7 @@ def main():
     paths.ensure_dependencies_for_microenv_exist()
 
     expr_matrix, clinical_data = load_RNA_sequencing_data_for_melanoma_samples()
-    process_melanoma_immune_data(expr_matrix, clinical_data)
+    process_melanoma_immune_data(clinical_data)
 
     clinical_data_processed = pd.read_csv(paths.data_frame_of_melanoma_patient_and_sequencing_data)
     logger.info(f"Clinical data for {clinical_data_processed['PATIENT_ID'].nunique()} unique melanoma patients was loaded from {paths.data_frame_of_melanoma_patient_and_sequencing_data}.")
@@ -130,7 +130,7 @@ def main():
         raise Exception("xCell analysis failed.")
 
 
-def process_melanoma_immune_data(expression_matrix, clinical_data):
+def process_melanoma_immune_data(clinical_data):
     '''
     Process expression matrix to extract immune Micro-Environment information.
     TODO: What is immune Micro-Environment information?
@@ -141,8 +141,8 @@ def process_melanoma_immune_data(expression_matrix, clinical_data):
     TODO: Describe the data frame with melanoma samples and immune features.
     '''
     
-    if expression_matrix is None or clinical_data is None:
-        logger.error("Failed to load immune or clinical data.")
+    if clinical_data is None:
+        logger.error("Failed to load clinical data.")
         return None
 
     logger.info("Sample details will be collected.")
@@ -150,9 +150,6 @@ def process_melanoma_immune_data(expression_matrix, clinical_data):
     melanoma_slids, sample_details = identify_melanoma_samples(clinical_data)
     
     logger.info(f"Sample details for {len(sample_details)} samples were retrieved.")
-
-    logger.info(f"The shape of the immune dataframe is {expression_matrix.shape}.")
-    logger.info(f"A sublist of the list of columns of the immune dataframe is [{expression_matrix.columns[:5]}...].")
 
     # Build a tidy "one row per tumour sample" data-frame from `sample_details`.
     sample_rows = (pd.DataFrame.from_dict(sample_details, orient = "index")
@@ -173,7 +170,7 @@ def process_melanoma_immune_data(expression_matrix, clinical_data):
 
     clinical_cols = ["PATIENT_ID", "Sex", "Race", "AgeAtClinicalRecordCreation", "EarliestMelanomaDiagnosisAge", "HAS_ICB", "ICB_START_AGE", "STAGE_AT_ICB"]
     available = [c for c in clinical_cols if c in clinical_data.columns]
-
+    
     immune_clinical = sample_rows.merge(clinical_data[available], on = "PATIENT_ID", how = "left").set_index("SLID")
     
     logger.info("Per-sample data-frame shape: %s", immune_clinical.shape)
@@ -217,6 +214,13 @@ def process_melanoma_immune_data(expression_matrix, clinical_data):
         immune_clinical[
             ["EarliestMelanomaDiagnosisAge", "STAGE_AT_ICB"]
         ].isna().mean().rename(lambda x: f"{x}_null_fraction"),
+    )
+    
+    immune_clinical = (
+        immune_clinical
+            .reset_index()
+            .drop_duplicates("SLID", keep="first")
+            .set_index("SLID")
     )
 
     immune_clinical.to_csv(paths.melanoma_sample_immune_clinical_data)

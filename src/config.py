@@ -22,6 +22,14 @@ FOCUSED_XCELL_PANEL = [
 
 
 class Paths():
+    '''
+    Class Paths is a template for a singleton that records dependencies and outputs of and ensures dependencies exist for
+    `src/data_processing/eda.py`,
+    `src/immune_analysis/data_loading.py`,
+    `src/immune_analysis/microenv.py`,
+    `src/immune_analysis/immune_analysis.py`, and
+    `src/immune_analysis/linear_mixed_models.py`.
+    '''
     
     def __init__(self):
         

@@ -29,6 +29,18 @@ def remove_outputs_except_references(directory: Path) -> None:
         if path.is_file() and not path.stem.endswith("_for_comparison"):
             path.unlink(missing_ok = True)
         
+        
+'''
+Test script `src/immune_analysis/utils.py`, which has no outputs.
+
+Test that outputs of the following scripts are equal to references.
+`src/data_processing/eda.py`,
+`src/immune_analysis/data_loading.py`,
+`src/immune_analysis/microenv.py`,
+TODO: `src/immune_analysis/immune_analysis.py`, and
+TODO: `src/immune_analysis/linear_mixed_models.py`.
+'''
+        
 
 # src/data_processing/utils.py doesn't have any outputs.
 def test_utils():
@@ -111,3 +123,9 @@ def test_that_outputs_of_microenv_are_equal():
     data_frame_of_xcell_scores = pd.read_csv("output/microenv/xcell_scores_raw.csv")
     data_frame_of_xcell_scores_for_comparison = pd.read_csv("output/microenv/xcell_scores_raw_for_comparison.csv")
     assert_frame_equal(data_frame_of_xcell_scores, data_frame_of_xcell_scores_for_comparison)
+    
+
+# TODO: Test that outputs of immune analysis are equal.
+
+
+# TODO: Test that outputs of linear mixed models are equal.

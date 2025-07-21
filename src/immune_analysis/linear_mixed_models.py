@@ -9,8 +9,8 @@ Let a null hypothesis be that the coefficient for Sex is 0 for the best linear m
 
 Outputs
 -------
-1. `mixed_model_results.csv` – one row per cell type with parameter for Sex, standard error of parameter for sex, p value for Sex, number of patients, q value for Sex, and an indicator that this cell type is significant.
-2. `mixed_model_results_significant.csv` – a CSV file of rows of `mixed_model_results.csv` corresponding to significant cell types.
+1. `mixed_model_results.csv` – one row per cell type with parameter for Sex, standard error of parameter for sex, p value for Sex, number of patients, q value for Sex, and an indicator that the best linear mixed model for that cell type with our variables and many samples has a coefficient of Sex that is not 0.
+2. `mixed_model_results_significant.csv` – a CSV file of rows of `mixed_model_results.csv` where the best linear mixed model for the corresponding cell type with our variables and many samples has a coefficient of Sex that is not 0.
 '''
 
 import logging
@@ -35,11 +35,8 @@ logger = logging.getLogger(__name__)
 def create_data_frame_of_enrichment_scores_clinical_data_and_QC_data() -> tuple[pd.DataFrame, list[str]]:
     
     data_frame_of_enrichment_scores = pd.read_csv(paths.data_frame_of_scores_by_sample_and_cell_type)
-    logger.info(
-        "Data frame of sample IDs, cell types, and enrichment scores has %d sample IDs and %d cell types.", 
-        *data_frame_of_enrichment_scores.shape
-    )
     list_of_cell_types = data_frame_of_enrichment_scores.columns.tolist()[1:-3]
+    logger.info(f"Data frame of sample IDs, cell types, and enrichment scores has {len(data_frame_of_enrichment_scores)} sample IDs and {len(list_of_cell_types)} cell types.")
     
     data_frame_of_sample_IDs_and_clinical_data = pd.read_csv(paths.melanoma_sample_immune_clinical_data).rename(columns = {"SLID": "SampleID"})
     logger.info("Data frame of sample IDs and clinical data has %d samples and %d columns.", *data_frame_of_sample_IDs_and_clinical_data.shape)
@@ -57,12 +54,6 @@ def create_data_frame_of_enrichment_scores_clinical_data_and_QC_data() -> tuple[
     ) # Enrichment scores and sexes must both be present.
     
     logger.info("After merging, data frame of enrichment scores and clinical data has %d samples.", len(df))
-    
-    dupes = data_frame_of_sample_IDs_and_clinical_data[
-        data_frame_of_sample_IDs_and_clinical_data["SampleID"].duplicated(keep=False)
-    ]
-    print(dupes.sort_values("SampleID"))
-    assert False
     
     df = df.merge(QC_data, how = "left", left_on = "SampleID", right_on = "SampleID")
     df["Sex"]  = df["Sex"].str.upper().map({"FEMALE": 0, "MALE": 1})
