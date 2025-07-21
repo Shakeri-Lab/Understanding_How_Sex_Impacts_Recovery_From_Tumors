@@ -90,7 +90,7 @@ def fit_linear_mixed_models(df: pd.DataFrame, list_of_cell_types: list[str]) -> 
         data_frame["Score"] = pd.to_numeric(data_frame["Score"], errors = "raise")
         data_frame = data_frame.dropna(subset = ["Score"])
         if data_frame["Sex"].nunique() < 2:
-            raise Exception(f"Only sex {data_frame["Sex"].iloc[0]} is present after dropping enrichment scores of NA for cell type {cell_type}.")
+            raise Exception(f"Only sex {data_frame['Sex'].iloc[0]} is present after dropping enrichment scores of NA for cell type {cell_type}.")
 
         '''
         # 1. Within-patient replication
@@ -126,8 +126,7 @@ def fit_linear_mixed_models(df: pd.DataFrame, list_of_cell_types: list[str]) -> 
         mixed_linear_model = smf.mixedlm(
             formula,
             data_frame,
-            groups = data_frame["PATIENT_ID"],
-            missing = "drop"
+            groups = data_frame["PATIENT_ID"]
         )
         mixed_linear_model_results_wrapper = mixed_linear_model.fit(reml = False)
         
