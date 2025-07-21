@@ -216,6 +216,18 @@ def process_melanoma_immune_data(clinical_data):
         ].isna().mean().rename(lambda x: f"{x}_null_fraction"),
     )
     
+    '''
+    immune_clinical.to_csv("immune_clinical.csv")
+    immune_clinical = immune_clinical.reset_index()
+    dupes = immune_clinical[
+        immune_clinical["SLID"].duplicated(keep = False)
+    ]
+    print(dupes.sort_values("SLID"))
+    immune_clinical = immune_clinical.set_index("SLID")
+    assert False
+    '''
+    
+    # All groups of duplicate rows have equal values in all fields.
     immune_clinical = (
         immune_clinical
             .reset_index()

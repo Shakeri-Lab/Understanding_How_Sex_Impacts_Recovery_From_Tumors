@@ -92,6 +92,34 @@ def fit_linear_mixed_models(df: pd.DataFrame, list_of_cell_types: list[str]) -> 
         if data_frame["Sex"].nunique() < 2:
             raise Exception(f"Only sex {data_frame["Sex"].iloc[0]} is present after dropping enrichment scores of NA for cell type {cell_type}.")
 
+        '''
+        # 1. Within-patient replication
+        replication_counts = data_frame.groupby("PATIENT_ID").size()
+        frac_singletons     = (replication_counts <= 1).mean()
+        logger.info(
+            "Diagnostic - %s: %.1f%% of patients contribute only one sample.",
+            cell_type, 100 * frac_singletons
+        )
+
+        # 3. Spread of the response
+        score_std = data_frame["Score"].std(ddof = 0)
+        logger.info("Diagnostic - %s: response std = %.4f", cell_type, score_std)
+
+        # 4. Categorical level sparsity
+        sparsity_msgs = []
+        for cat in ["STAGE_AT_ICB", "NexusBatch"]:
+            lvl_counts = data_frame[cat].value_counts()
+            rare_lvls  = lvl_counts[lvl_counts < 3]
+            if not rare_lvls.empty:
+                sparsity_msgs.append(f"{cat}: {len(rare_lvls)} sparse levels")
+        if sparsity_msgs:
+            logger.info("Diagnostic - %s: %s", cell_type, "; ".join(sparsity_msgs))
+
+        # 6. Scaling of numeric predictors
+        scale_summary = data_frame[["AgeAtClinicalRecordCreation", "SequencingDepth"]].describe().loc[["mean", "std"]]
+        logger.info("Diagnostic - %s: numeric predictor scale\n%s", cell_type, scale_summary.to_string())
+        '''
+        
         formula = (
             f"Score ~ Sex + AgeAtClinicalRecordCreation + C(STAGE_AT_ICB) + C(HAS_ICB) + C(NexusBatch) + SequencingDepth"
         ) # C means "make categorical".
@@ -102,10 +130,38 @@ def fit_linear_mixed_models(df: pd.DataFrame, list_of_cell_types: list[str]) -> 
             missing = "drop"
         )
         mixed_linear_model_results_wrapper = mixed_linear_model.fit(reml = False)
+        
+        '''
+        # 2. Random-effect variance & boundary fit indicator
+        try:
+            rand_var = mixed_linear_model_results_wrapper.cov_re.iloc[0, 0]
+        except Exception:
+            rand_var = np.nan
+        logger.info("Diagnostic - %s: random-effect variance = %.6g", cell_type, rand_var)
+
+        # 5. Design-matrix condition number (fixed effects only)
+        try:
+            cond_num = matrix_condition_number(mixed_linear_model.exog)
+            logger.info("Diagnostic - %s: design-matrix condition number = %.2e", cell_type, cond_num)
+        except Exception as exc:
+            logger.info("Diagnostic - %s: could not compute condition number (%s)", cell_type, exc)
+
+        # 7. AIC comparison with OLS (no random intercept)
+        try:
+            ols_res = smf.ols(formula.replace("Score ~", "Score ~"), data_frame).fit()
+            logger.info(
+                "Diagnostic - %s: AIC (mixed) = %.1f ; AIC (OLS) = %.1f",
+                cell_type, mixed_linear_model_results_wrapper.aic, ols_res.aic
+            )
+        except Exception as exc:
+            logger.info("Diagnostic - %s: could not fit OLS for AIC comparison (%s)", cell_type, exc)
+        '''
+        
         parameter_for_Sex = mixed_linear_model_results_wrapper.params["Sex"]
         standard_error_of_parameter_for_Sex = mixed_linear_model_results_wrapper.bse["Sex"]
         p_value_for_Sex = mixed_linear_model_results_wrapper.pvalues["Sex"]
         number_of_patients = len(data_frame["PATIENT_ID"].unique())
+        
         list_of_results.append(
             (
                 cell_type,
