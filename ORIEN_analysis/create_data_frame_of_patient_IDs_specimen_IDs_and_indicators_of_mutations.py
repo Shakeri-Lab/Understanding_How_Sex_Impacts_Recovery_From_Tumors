@@ -13,9 +13,6 @@ the script will
 3. scan the file corresponding to the path to WES with pysam,
 4. record whether each mutation is present, and
 5. write a tidy CSV whose columns are `ORIENAvatarKey`, `DeidSpecimenID`, `BRAF_V600E`, ..., and `NRAS_Q61P`.
-
-Both GRCh37 and GRCh38 VEP-style annotations are handled (INFO/ANN or INFO/CSQ).
-Adjust `INDEX_OF_PROTEIN_CHANGES` if your annotation field order differs.
 '''
 
 import argparse
@@ -46,64 +43,100 @@ CATALOGUE: Dict[str, tuple[str, List[str]]] = {
 }
 
 
-# 0-based index of the “Protein_change” field in a VEP/ANN string.
-# TODO: What is a VEP/ANN field?
-INDEX_OF_PROTEIN_CHANGE = 10
+def get_indices_of_gene_symbol_and_protein_change(vcf_header):
+    '''
+    Return a tuple of an index of a HUGO gene symbol in a variant record and an index of a protein change.
+    '''
+    string_of_Funcotator_fields = vcf_header.info["FUNCOTATION"].description.split("Funcotation fields are: ")[1]
+    list_of_Funcotator_fields = string_of_Funcotator_fields.split('|')
+    index_of_gene_symbol = list_of_Funcotator_fields.index("Gencode_32_hugoSymbol")
+    index_of_protein_change = list_of_Funcotator_fields.index("Gencode_32_proteinChange")
+    return index_of_gene_symbol, index_of_protein_change
 
 
-def create_dictionary_of_mutations_and_indicators_of_presence(variant_record: pysam.libcbcf.VariantRecord) -> Dict[str, bool]:
-    """
+def create_dictionary_of_mutations_and_indicators_of_presence(
+    variant_record: pysam.libcbcf.VariantRecord,
+    index_of_gene: int,
+    index_of_protein_change: int,
+    row
+) -> Dict[str, bool]:
+    '''
     Return a dictionary of mutations and indicators of presences for 1 variant record.
-    The logic is:
-      – Grab gene symbol and protein change(s) from ANN/CSQ/GENE INFO fields.
-      – Compare with our catalogue.
-    """
+    '''
+    '''
+    print("Variant record info is the following.")
+    print(variant_record.info)
+    input()
+    '''
     dictionary_of_mutations_and_indicators_of_presence = {name: False for name in CATALOGUE}
-
-    gene_symbols: List[str] = []
-    protein_changes: List[str] = []
-
-    if "GENE" in variant_record.info: # Some pipelines add INFO/GENE.
-        gene_symbols.extend(record.info["GENE"])
-
-    # VEP or snpEff style:
-    ann_key = (
-        "ANN"
-        if "ANN" in variant_record.info
-        else (
-            "CSQ"
-            if "CSQ" in variant_record.info
-            else None
-        )
-    )
-    if ann_key:
-        for entry in variant_record.info[ann_key]:
-            fields = entry.split("|")
-            if len(fields) <= INDEX_OF_PROTEIN_CHANGE:
-                continue
-            gene_symbols.append(fields[3]) # gene symbol per VEP spec
-            protein_changes.append(fields[INDEX_OF_PROTEIN_CHANGE])
-
-    # Check against catalogue.
-    for mut_name, (gene, aa_variants) in CATALOGUE.items():
-        if dictionary_of_mutations_and_indicators_of_presence[mut_name]:
-            continue
-        if gene not in gene_symbols:
-            continue
-        if any(pc in protein_changes for pc in aa_variants):
-            dictionary_of_mutations_and_indicators_of_presence[mut_name] = True
-
+    if "FUNCOTATION" in variant_record.info:
+        '''
+        print("Value corresponding to key FUNCOTATION in variant record info is the following.")
+        print(variant_record.info["FUNCOTATION"])
+        input()
+        '''
+        for entry in variant_record.info["FUNCOTATION"]:
+            '''
+            print("Entry is the following.")
+            print(entry)
+            input()
+            '''
+            fields = entry.lstrip('[').rstrip(']').split('|')
+            '''
+            print("Fields is the following.")
+            print(fields)
+            input()
+            '''
+            gene = fields[index_of_gene]
+            '''
+            print("Gene is the following.")
+            print(gene)
+            input()
+            '''
+            protein_change = fields[index_of_protein_change]
+            '''
+            print("Protein change is the following.")
+            print(protein_change)
+            input()
+            '''
+            for mutation, (expected_gene, aa_variants) in CATALOGUE.items():
+                '''
+                print(f"Mutation is {mutation}.")
+                print(f"Expected gene is {expected_gene}.")
+                input()
+                '''
+                if dictionary_of_mutations_and_indicators_of_presence[mutation]:
+                    continue
+                if gene != expected_gene:
+                    continue
+                if any(p == protein_change or p == protein_change.lstrip("p.") for p in aa_variants):
+                    patient_ID = row["ORIENAvatarKey"]
+                    specimen_ID = row["DeidSpecimenID"]
+                    print(f"Patient ID is {patient_ID}. specimen ID is {specimen_ID}. gene is {gene}. protein change is {protein_change}.")
+                    dictionary_of_mutations_and_indicators_of_presence[mutation] = True
     return dictionary_of_mutations_and_indicators_of_presence
 
 
-def create_dictionary_of_mutations_and_indicators_of_presence_in_any_record(path_to_archive: Path) -> Dict[str, bool]:
+def create_dictionary_of_mutations_and_indicators_of_presence_in_any_record(row) -> Dict[str, bool]:
     '''
     Return a dictionary of mutations and indicators of presences for 1 archive.
     '''
-    dictionary_of_mutations_and_indicators_of_presence_in_any_record = {name: False for name in CATALOGUE}
+    path_to_archive = Path(row["path_to_WES"]).expanduser().resolve()
     with pysam.VariantFile(path_to_archive) as variant_file:
+        index_of_gene_symbol, index_of_protein_change = get_indices_of_gene_symbol_and_protein_change(variant_file.header)
+        '''
+        print(f"Index of gene symbol is {index_of_gene_symbol}.")
+        print(f"Index of protein change is {index_of_protein_change}.")
+        input()
+        '''
+        dictionary_of_mutations_and_indicators_of_presence_in_any_record = {name: False for name in CATALOGUE}
         for variant_record in variant_file:
-            dictionary_of_mutations_and_indicators_of_presence_in_record = create_dictionary_of_mutations_and_indicators_of_presence(variant_record)
+            '''
+            print("Variant record is the following.")
+            print(variant_record)
+            input()
+            '''
+            dictionary_of_mutations_and_indicators_of_presence_in_record = create_dictionary_of_mutations_and_indicators_of_presence(variant_record, index_of_gene_symbol, index_of_protein_change, row)
             dictionary_of_mutations_and_indicators_of_presence_in_any_record = {
                 k: dictionary_of_mutations_and_indicators_of_presence_in_any_record[k] or dictionary_of_mutations_and_indicators_of_presence_in_record[k]
                 for k in dictionary_of_mutations_and_indicators_of_presence_in_any_record
@@ -134,8 +167,7 @@ def process_specimens(path_to_data_frame_of_IDs_of_patients_specimens_and_WES_an
         if row["path_to_WES"] == "":
             print(f"path to WES does not exist for specimen with ID {specimen_id}.")
             continue
-        path_to_archive = Path(row["path_to_WES"]).expanduser().resolve()
-        dictionary_of_mutations_and_indicators_of_presence = create_dictionary_of_mutations_and_indicators_of_presence_in_any_record(path_to_archive)
+        dictionary_of_mutations_and_indicators_of_presence = create_dictionary_of_mutations_and_indicators_of_presence_in_any_record(row)
         list_of_row_information.append(
             {
                 "ORIENAvatarKey": patient_id,
