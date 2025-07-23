@@ -3,6 +3,9 @@
 Build
 "Table 1. Sequencing and clinicopathological characteristics of patient tumor specimens." and
 "Table 2. Patient baseline characteristics. Demographic and clinical characteristics at the time of diagnosis."
+
+Usage:
+../miniconda3/envs/ici_sex/bin/python build_tables.py
 '''
 
 from pathlib import Path
