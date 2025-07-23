@@ -41,6 +41,9 @@ def create_data_frame_of_enrichment_scores_clinical_data_and_QC_data() -> tuple[
     data_frame_of_sample_IDs_and_clinical_data = pd.read_csv(paths.melanoma_sample_immune_clinical_data).rename(columns = {"SLID": "SampleID"})
     logger.info("Data frame of sample IDs and clinical data has %d samples and %d columns.", *data_frame_of_sample_IDs_and_clinical_data.shape)
     
+    missing = set(data_frame_of_enrichment_scores.SampleID) - set(data_frame_of_sample_IDs_and_clinical_data.SampleID)
+    logger.info(f"{len(missing)} enrichment rows with the following sample IDs lack clinical data: {sorted(missing)}")
+    
     QC_data = pd.read_csv(paths.QC_data).rename(columns = {"SLID": "SampleID"})
     QC_data["SequencingDepth"] = np.log10(QC_data["TotalReads"])
     QC_data = QC_data[["SampleID", "NexusBatch", "SequencingDepth"]]
