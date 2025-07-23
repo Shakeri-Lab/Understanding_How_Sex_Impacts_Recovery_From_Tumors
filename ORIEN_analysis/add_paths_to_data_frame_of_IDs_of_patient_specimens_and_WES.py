@@ -42,15 +42,34 @@ def join_matching_paths(
     if len(list_of_matching_paths) == 1:
         return "|".join(list_of_matching_paths)
     if len(list_of_matching_paths) < 1:
-        print(f"A path containing \"annotated\", \"somatic\", \"{value}\", \".ft\", and \".vcf\", and ending with \".gz\" does not exist.")
-        print(f"Paths containing {value} and \".vcf\" are the following.")
+        
         list_of_matching_paths = [
             path
             for path in list_of_paths_to_WES
-            if (value in path) and (".vcf" in path)
+            if (
+                ("annotated" in path) and
+                ("tumor" in path) and
+                (value in path) and
+                (".ft" in path) and
+                (".vcf" in path) and
+                path.endswith(".gz")
+            )
         ]
-        print('\n'.join(list_of_matching_paths) + '\n')
-        return ""
+        if len(list_of_matching_paths) == 1:
+            return "|".join(list_of_matching_paths)
+        if len(list_of_matching_paths) < 1:
+            print(f"A path containing \"annotated\", \"somatic\", \"{value}\", \".ft\", and \".vcf\", and ending with \".gz\" does not exist.")
+            print(f"Paths containing {value} and \".vcf\" are the following.")
+            list_of_matching_paths = [
+                path
+                for path in list_of_paths_to_WES
+                if (value in path) and (".vcf" in path)
+            ]
+            print('\n'.join(list_of_matching_paths) + '\n')
+            return ""
+        if len(list_of_matching_paths) > 1:
+            raise Exception(f"Multiple paths containing \"annotated\", \"tumor\", \"{value}\", \".ft\", and \".vcf\", and ending with \".gz\" exist.")    
+    
     if len(list_of_matching_paths) > 1:
         raise Exception(f"Multiple paths containing \"annotated\", \"somatic\", \"{value}\", \".ft\", and \".vcf\", and ending with \".gz\" exist.")
 
