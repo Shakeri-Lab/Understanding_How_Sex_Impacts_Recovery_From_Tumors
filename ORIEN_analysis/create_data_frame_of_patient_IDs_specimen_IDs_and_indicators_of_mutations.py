@@ -109,10 +109,10 @@ def create_dictionary_of_mutations_and_indicators_of_presence(
                     continue
                 if gene != expected_gene:
                     continue
-                if any(p == protein_change or p == protein_change.lstrip("p.") for p in aa_variants):
+                if any(p == protein_change or p.lstrip("p.") == protein_change for p in aa_variants):
                     patient_ID = row["ORIENAvatarKey"]
                     specimen_ID = row["DeidSpecimenID"]
-                    print(f"Patient ID is {patient_ID}. specimen ID is {specimen_ID}. gene is {gene}. protein change is {protein_change}.")
+                    print(f"Patient ID is {patient_ID}. Specimen ID is {specimen_ID}. Gene is {gene}. Protein change is {protein_change}.")
                     dictionary_of_mutations_and_indicators_of_presence[mutation] = True
     return dictionary_of_mutations_and_indicators_of_presence
 
@@ -165,7 +165,7 @@ def process_specimens(path_to_data_frame_of_IDs_of_patients_specimens_and_WES_an
         patient_id = row["ORIENAvatarKey"]
         specimen_id = row["DeidSpecimenID"]
         if row["path_to_WES"] == "":
-            print(f"path to WES does not exist for specimen with ID {specimen_id}.")
+            print(f"Path to WES does not exist for specimen with ID {specimen_id}.")
             continue
         dictionary_of_mutations_and_indicators_of_presence = create_dictionary_of_mutations_and_indicators_of_presence_in_any_record(row)
         list_of_row_information.append(
