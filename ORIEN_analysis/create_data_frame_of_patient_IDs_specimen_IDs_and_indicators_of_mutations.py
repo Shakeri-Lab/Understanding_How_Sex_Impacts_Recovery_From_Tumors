@@ -1,27 +1,22 @@
 #!/usr/bin/env python3
-"""
-Parse somatic-VCF archives and flag key hotspot mutations.
+'''
+Parse annotated somatic and tumor FT VCF archives corresponding to WES IDs and
+create a data frame of patient IDs, specimen IDs, and indicators of whether mutations are present.
 
 For every row in a CSV that looks like
 
 ORIENAvatarKey,DeidSpecimenID,WES,WES Batch,path_to_WES,path_to_WES_Batch
-078QIEYNUY,W67BNFRO92FVVVAVYXSCQHMGF,FT-SA185777D,FT-SPN04200,../../WES/annotated_somatic_vcfs/TFT-SA185777D_st_t_NFT-SA187862_st_g.ft.M2GEN.PoN.v2.vcf.gz,
-…
+078QIEYNUY,W67BNFRO92FVVVAVYXSCQHMGF,FT-SA185777D,FT-SPN04200,../../WES/annotated_somatic_vcfs/TFT-SA185777D_st_t_NFT-SA187862_st_g.ft.M2GEN.PoN.v2.vcf.gz
 
 the script will
 
-1. copy the “ *.vcf.gz ” archive to a temporary folder,
-2. gun-zip it to a plain “ *.vcf ” file,
-3. scan the file with **pysam**,
-4. record whether each of the ten predefined hotspot mutations is present, and
-5. write a tidy CSV whose columns are  
-   `PatientID, SpecimenID, BRAF_V600E, … , NRAS_Q61P`.
+3. scan the file corresponding to the path to WES with pysam,
+4. record whether each mutation is present, and
+5. write a tidy CSV whose columns are `ORIENAvatarKey`, `DeidSpecimenID`, `BRAF_V600E`, ..., and `NRAS_Q61P`.
 
-Both GRCh37 and GRCh38 VEP-style annotations are handled (INFO/ANN or
-INFO/CSQ).  Adjust `ANN_PROT_INDEX` if your annotation field order differs.
-
-The work is done in pure Python; no external CLI tools are required.
-"""
+Both GRCh37 and GRCh38 VEP-style annotations are handled (INFO/ANN or INFO/CSQ).
+Adjust `INDEX_OF_PROTEIN_CHANGES` if your annotation field order differs.
+'''
 
 import argparse
 import csv
