@@ -166,17 +166,21 @@ def create_list_of_dictionaries_of_mutations(row: pd.Series) -> List[dict]:
                 if "FUNCOTATION" not in variant_record.info:
                     continue
 
-                for entry in variant_record.info["FUNCOTATION"]:
+                for index_of_alternate_allele, entry in enumerate(variant_record.info["FUNCOTATION"]):
                     fields = entry.lstrip('[').rstrip(']').split('|')
                     gene = fields[index_of_gene]
                     protein_change = fields[index_of_protein_change]
 
                     for mutation, lookup in CATALOGUE.items():
-                        expected_gene, list_of_protein_changes, *_ = lookup
+                        expected_gene, list_of_protein_changes, _, _, expected_reference_allele, list_of_alternate_alleles = lookup
                         if (
                             gene == expected_gene and
                             any(p == protein_change or p.lstrip("p.") == protein_change for p in list_of_protein_changes)
                         ):
+                            alternate_allele_for_this_entry = variant_record.alts[index_of_alternate_allele]
+                            if alternate_allele_for_this_entry not in list_of_alternate_alleles:
+                                continue
+                            
                             print(f"Patient ID is {patient_ID}. Specimen ID is {specimen_ID}. Gene is {gene}. Protein change is {protein_change}.")
                             results[mutation].update(
                                 {
@@ -185,7 +189,7 @@ def create_list_of_dictionaries_of_mutations(row: pd.Series) -> List[dict]:
                                     "Chromosome": variant_record.chrom,
                                     "Genomic Position": variant_record.pos,
                                     "Reference Allele": variant_record.ref,
-                                    "Alternate Allele": ','.join(variant_record.alts)
+                                    "Alternate Allele": alternate_allele_for_this_entry
                                 }
                             )
                             break
