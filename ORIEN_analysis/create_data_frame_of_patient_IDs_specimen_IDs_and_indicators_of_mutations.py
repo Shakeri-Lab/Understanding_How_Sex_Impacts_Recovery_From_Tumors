@@ -27,8 +27,7 @@ import pandas as pd
 import pysam
 
 
-# Map names of mutations to tuples of gene symbol and lists of AA-changes-that-count.
-# TODO: What is an AA-change-that-counts?
+# Map names of mutations to tuples of gene symbol and lists of equivalent protein changes.
 CATALOGUE: Dict[str, tuple[str, List[str]]] = {
     "BRAF_V600E": ("BRAF", ["p.V600E", "p.Val600Glu"]),
     "BRAF_V600K": ("BRAF", ["p.V600K", "p.Val600Lys"]),
