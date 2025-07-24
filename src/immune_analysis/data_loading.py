@@ -179,8 +179,6 @@ def identify_melanoma_samples(clinical_data):
 
     logger.info(f"{len(melanoma_biopsies)} total biopsies for melanoma patients were found.")
 
-    # TODO: Evaluate keeping only first row in `24PRJ217UVA_20250130_RNASeq_QCMetrics.csv` per patient.
-
     # Attach exactly one SLID per patient from the QC metrics file.
     qc_ranked = (
         qc_df.assign(
@@ -416,6 +414,14 @@ def load_clinical_data():
     logger.info("Data frame of clinical data has columns [%s].", ", ".join(sorted(clinical_data.columns.tolist())))
     logger.info(f"Clinical data for {len(clinical_data)} melanoma patients was loaded.")
 
+    clinical_molecular_linkage_data = pd.read_csv(paths.clinical_molecular_linkage_data)
+    clinical_data = clinical_data.merge(
+        clinical_molecular_linkage_data[["ORIENAvatarKey", "Primary/Met"]],
+        how = "left",
+        left_on = "PATIENT_ID",
+        right_on = "ORIENAvatarKey"
+    )
+    
     return clinical_data
 
     

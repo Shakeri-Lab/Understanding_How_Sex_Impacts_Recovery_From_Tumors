@@ -65,6 +65,7 @@ class Paths():
         # files in self.gene_and_transcript_expression_results. Filenames are generated dynamically.
         # self.map_from_sample_to_patient, which is defined above
         # self.QC_data, which is defined above
+        self.clinical_molecular_linkage_data = self.normalized_clinical_data / "24PRJ217UVA_20241112_ClinicalMolLinkage_V4.csv"
         self.diagnosis_data = self.normalized_clinical_data / "24PRJ217UVA_20241112_Diagnosis_V4.csv"
         self.medications_data = self.normalized_clinical_data / "24PRJ217UVA_20241112_Medications_V4.csv"
         self.patient_data = self.normalized_clinical_data / "24PRJ217UVA_20241112_PatientMaster_V4.csv"

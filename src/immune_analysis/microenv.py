@@ -95,22 +95,22 @@ def clean_expression_df(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def determine_metastatic_status(site):
-    '''
-    Determine if a specimen site is part of metastatic disease.
-    '''
-    if pd.isna(site) or site is None:
+def metastatic_from_primary_met(flag: str | float | None):
+    """
+    Translate the Diagnosis-level "Primary/Met" column into a Boolean.
+
+    • "Metastatic"  → True  
+    • "Primary"     → False  
+    • "Not applicable (germline)" or NA/blank → None
+    """
+    if pd.isna(flag):
         return None
-    site_lower = str(site).lower()
-    # Add metastatic status based on specimen site information.
-    # Define keywords that might indicate metastatic sites.
-    metastatic_keywords = ['metast', 'lymph node', 'brain', 'lung', 'liver', 'distant']
-    if any(keyword in site_lower for keyword in metastatic_keywords):
+    flag = str(flag).strip().lower()
+    if flag == "metastatic":
         return True
-    primary_sites = ['skin', 'cutaneous', 'dermal', 'epidermis', 'primary'] # `primary_sites` is a list of common primary melanoma sites.
-    if any(keyword in site_lower for keyword in primary_sites):
+    if flag == "primary":
         return False
-    return None # It is unknown / uncertain that the site is part of metastatic disease.
+    return None
 
 
 def main():
@@ -168,7 +168,7 @@ def process_melanoma_immune_data(clinical_data):
         }
     )
 
-    clinical_cols = ["PATIENT_ID", "Sex", "Race", "AgeAtClinicalRecordCreation", "EarliestMelanomaDiagnosisAge", "HAS_ICB", "ICB_START_AGE", "STAGE_AT_ICB"]
+    clinical_cols = ["PATIENT_ID", "Sex", "Race", "AgeAtClinicalRecordCreation", "EarliestMelanomaDiagnosisAge", "HAS_ICB", "ICB_START_AGE", "STAGE_AT_ICB", "Primary/Met"]
     available = [c for c in clinical_cols if c in clinical_data.columns]
     
     immune_clinical = sample_rows.merge(clinical_data[available], on = "PATIENT_ID", how = "left").set_index("SLID")
@@ -182,8 +182,7 @@ def process_melanoma_immune_data(clinical_data):
         
         logger.warning(f"Missing clinical columns: {missing_cols}")
 
-    # Add a column of indicators that corresponding specimen sites are part of metastatic disease.
-    immune_clinical['IsMetastatic'] = immune_clinical['SpecimenSite'].apply(determine_metastatic_status)
+    immune_clinical["IsMetastatic"] = immune_clinical["Primary/Met"].apply(metastatic_from_primary_met)
     
     logger.info(f"Metastatic status was determined for {immune_clinical['IsMetastatic'].count()} samples.")
     logger.info(f"There are {(immune_clinical['IsMetastatic'] == True).sum()} samples that are part of metastatic disease.")
