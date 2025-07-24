@@ -130,7 +130,6 @@ def create_list_of_dictionaries_of_mutations(row: pd.Series) -> List[dict]:
     For 1 specimen, provide a list of dictionaries each corresponding to a mutation.
     A dictionary will have keys equal to the names of columns in the final data frame.
     '''
-    path = Path(row["path_to_WES"]).expanduser().resolve()
     patient_ID = row["ORIENAvatarKey"]
     specimen_ID = row["DeidSpecimenID"]
     
@@ -155,35 +154,41 @@ def create_list_of_dictionaries_of_mutations(row: pd.Series) -> List[dict]:
             "Alternate Allele": ','.join(alternate_allele)
         }
     
-    with pysam.VariantFile(path) as variant_file:
-        index_of_gene, index_of_protein_change = get_tuple_of_indices_of_gene_symbol_and_protein_change(variant_file.header)
-        
-        for variant_record in variant_file:
-            if "FUNCOTATION" not in variant_record.info:
-                continue
+    if row["path_to_WES"] == "":
+        specimen_ID = row["DeidSpecimenID"]
+        print(f"Path to WES does not exist for specimen with ID {specimen_ID}.")
+    else:
+        path = Path(row["path_to_WES"]).expanduser().resolve()
+        with pysam.VariantFile(path) as variant_file:
+            index_of_gene, index_of_protein_change = get_tuple_of_indices_of_gene_symbol_and_protein_change(variant_file.header)
 
-            for entry in variant_record.info["FUNCOTATION"]:
-                fields = entry.lstrip('[').rstrip(']').split('|')
-                gene = fields[index_of_gene]
-                protein_change = fields[index_of_protein_change]
+            for variant_record in variant_file:
+                if "FUNCOTATION" not in variant_record.info:
+                    continue
 
-                for mutation, lookup in CATALOGUE.items():
-                    expected_gene, list_of_protein_changes, *_ = lookup
-                    if (
-                        gene == expected_gene and
-                        any(p == protein_change or p.lstrip("p.") == protein_change for p in list_of_protein_changes)
-                    ):
-                        print(f"Patient ID is {patient_ID}. Specimen ID is {specimen_ID}. Gene is {gene}. Protein change is {protein_change}.")
-                        results[mutation].update(
-                            {
-                                "Present": True,
-                                "Gene Name": gene,
-                                "Chromosome": variant_record.chrom,
-                                "Genomic Position": variant_record.pos,
-                                "Reference Allele": variant_record.ref,
-                                "Alternate Allele": ','.join(variant_record.alts)
-                            }
-                        )
+                for entry in variant_record.info["FUNCOTATION"]:
+                    fields = entry.lstrip('[').rstrip(']').split('|')
+                    gene = fields[index_of_gene]
+                    protein_change = fields[index_of_protein_change]
+
+                    for mutation, lookup in CATALOGUE.items():
+                        expected_gene, list_of_protein_changes, *_ = lookup
+                        if (
+                            gene == expected_gene and
+                            any(p == protein_change or p.lstrip("p.") == protein_change for p in list_of_protein_changes)
+                        ):
+                            print(f"Patient ID is {patient_ID}. Specimen ID is {specimen_ID}. Gene is {gene}. Protein change is {protein_change}.")
+                            results[mutation].update(
+                                {
+                                    "Present": True,
+                                    "Gene Name": gene,
+                                    "Chromosome": variant_record.chrom,
+                                    "Genomic Position": variant_record.pos,
+                                    "Reference Allele": variant_record.ref,
+                                    "Alternate Allele": ','.join(variant_record.alts)
+                                }
+                            )
+                            break
             
     return list(results.values())
 
@@ -197,10 +202,6 @@ def create_summary(path_to_data_frame_of_IDs_of_patients_specimens_and_WES_and_p
     
     list_of_dictionaries: List[dict] = []
     for _, row in data_frame_of_IDs_of_patients_specimens_and_WES_and_paths_to_WES.iterrows():
-        if row["path_to_WES"] == "":
-            specimen_ID = row["DeidSpecimenID"]
-            print(f"Path to WES does not exist for specimen with ID {specimen_ID}.")
-            continue
         list_of_dictionaries.extend(create_list_of_dictionaries_of_mutations(row))
     
     return pd.DataFrame(
