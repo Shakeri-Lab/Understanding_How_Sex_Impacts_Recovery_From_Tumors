@@ -12,9 +12,6 @@ Genomic Position,
 Reference Allele, and
 Alternate Allele.
 
-Columns "Gene Name", "Chromosome", "Genomic Position", "Reference Allele", and "Alternate Allele" are filled
-when the mutation of the row is present. Otherwise, these fields are left blank.
-
 General Usage:
 ../miniconda3/envs/ici_sex/bin/python create_summary_of_driver_mutations.py <input_csv> [--output_csv <output_csv>]
 
@@ -187,7 +184,6 @@ def create_list_of_dictionaries_of_mutations(row: pd.Series) -> List[dict]:
                                 "Alternate Allele": ','.join(variant_record.alts)
                             }
                         )
-                        break
             
     return list(results.values())
 
