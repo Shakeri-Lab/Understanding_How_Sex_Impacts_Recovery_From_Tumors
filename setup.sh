@@ -31,6 +31,9 @@ fi
 # Make sure conda is initialized
 source "$CONDA_DIR/etc/profile.d/conda.sh"
 
+export CONDA_PLUGINS_AUTO_ACCEPT_TOS=yes
+conda config --set plugins.auto_accept_tos yes
+
 conda config --env --set channel_priority strict
 conda config --env --prepend channels conda-forge
 conda config --env --append channels bioconda
@@ -48,7 +51,7 @@ conda activate ici_sex
 echo "Installing required packages..."
 conda install -y 'libblas=*=*openblas' lifelines numpy matplotlib pandas scipy scikit-learn seaborn statsmodels 'r-base>=4.4,<4.5' r-essentials r-devtools r-remotes 'r-htmltools>=0.5.7' r-pracma r-quadprog 'bioconductor-genomeinfodbdata=1.2.13' bioconductor-gsva bioconductor-gseabase bioconductor-biobase bioconductor-summarizedexperiment bioconductor-biomart bioconductor-org.hs.eg.db
 
-pip install --no-cache-dir rpy2==3.5.17
+./miniconda3/envs/ici_sex/bin/pip install --no-cache-dir rpy2==3.5.17
 
 # Install R and Bioconductor packages through conda
 echo "Installing R packages..."
@@ -63,6 +66,7 @@ conda run -n ici_sex R -e '
   
   # Install xCell from GitHub
   remotes::install_github("dviraran/xCell", dependencies = FALSE, upgrade = "never");
+  remotes::install_github("AlmogAngel/xCell2", upgrade = "never");
   
   # Download and save xCell data
   library(xCell);

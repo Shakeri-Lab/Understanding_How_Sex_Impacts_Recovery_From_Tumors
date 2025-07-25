@@ -243,61 +243,18 @@ def run_xcell_analysis(expr_df: pd.DataFrame, clinical_df: pd.DataFrame) -> bool
         expr_r = ro.conversion.py2rpy(expr_df)
 
     # 3. Run xCell.
-    xcell  = importr("xCell")
-    scores_r = xcell.xCellAnalysis(expr_r, rnaseq = True) # scores_r is a matrix of cell type and sample information.
+    #xcell = importr("xCell")
+    xcell2 = importr("xCell2")
+    ro.r('data(TMECompendium.xCell2Ref, package = "xCell2")')
+    tme_ref = ro.r('TMECompendium.xCell2Ref')
+    #scores_r = xcell.xCellAnalysis(expr_r, rnaseq = True) # scores_r is a matrix of cell type and sample information.
+    scores_r = ro.r('as.data.frame')(xcell2.xCell2Analysis(mix = expr_r, xcell2object = tme_ref))
     
     logger.info("HGNC symbols that are elements of the index of the matrix of gene and sample information were matched with gene sets.")
 
     # Convert `scores_r` to `scores_np`.
     with localconverter(ro.default_converter + pandas2ri.converter):
-        scores_np = ro.conversion.rpy2py(scores_r)
-    r_samp_ids = safe_r_names(ro.r("colnames")(scores_r))
-
-    # Retrieve cell-type names (i.e., labels of rows of the R matrix).
-    cell_types = safe_r_names(ro.r("rownames")(scores_r))
-
-    if not cell_types: # Our first search for cell-types names failed.
-        tmp_df_r   = ro.r("as.data.frame")(scores_r)
-        cell_types = safe_r_names(ro.r("rownames")(tmp_df_r))
-
-    if cell_types and all(ct.strip().isdigit() for ct in cell_types): # Assume xCell lost cell-type names.
-        
-        logger.warning("xCell returned numeric row-names; the canonical xCell cell-type list will be used.")
-        
-        ro.r("library(xCell); data(xCell.data)")
-        cell_types = [str(numpy_string_representing_cell_type) for numpy_string_representing_cell_type in ro.r("rownames(xCell.data$spill$K)")]
-        # See https://genomebiology.biomedcentral.com/articles/10.1186/s13059-017-1349-1#Sec24 .
-        cell_types = cell_types + ["ImmuneScore", "StromaScore", "MicroenvironmentScore"]
-        # See line 219 of https://github.com/dviraran/xCell/blob/master/R/xCell.R .
-        logger.info(f"xCell's list of cell types and scores is {cell_types}.")
-
-    if len(cell_types) != scores_np.shape[0]:
-        raise Exception(f"We expected {scores_np.shape[0]} cell-type names but got {len(cell_types)}.")
-
-    '''
-    Align sample IDs.
-    Prefer the order coming from xCell;
-    If sizes mismatch, fall back to the cleaned expression matrix (xCell may drop duplicate / empty columns).
-    '''
-    if r_samp_ids and len(r_samp_ids) == scores_np.shape[1]:
-        sample_ids = r_samp_ids
-    else:
-        sample_ids = list(expr_df.columns.astype(str))[: scores_np.shape[1]]
-        logger.warning(
-            "Recovered %d sample IDs from expression matrix because xCell returned %d columns.",
-            len(sample_ids),
-            scores_np.shape[1]
-        )
-
-    # Build the DataFrame with correct labels on both axes.
-    scores_df = pd.DataFrame(
-        scores_np,
-        index = pd.Index(cell_types, name = "CellType"),
-        columns = pd.Index(sample_ids, name="SampleID")
-    )
-    # Clean.
-    scores_df.index = scores_df.index.str.strip()
-    scores_df.columns = scores_df.columns.str.strip()
+        scores_df = ro.conversion.rpy2py(scores_r)
 
     # Transpose to a data frame of sample and cell type information.
     scores_df = scores_df.T
