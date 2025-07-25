@@ -35,63 +35,22 @@ pandas2ri.activate()
 
 
 def clean_expression_df(df: pd.DataFrame) -> pd.DataFrame:
-    '''
-    - 1. Strip versions (e.g., ".15") from Ensembl IDs, resulting in Ensembl IDs like ENSG00000000003.
-    - 2. Convert Ensembl IDs to HGNC symbols.
-    - 3. Keep rows with HGNC symbols and make the index the HGNC symbols.
-    - 4. Drop duplicates / unmapped rows and convert to numeric.
-    
-    This function returns a tidy gene by sample matrix ready to be analyzed by xCell.
-    '''
-
     df.index = df.index.astype(str)
-
-    # 1. Strip versions from Ensembl IDs.
-    df.index = df.index.str.replace(r"\.\d+$", "", regex = True)
-
-    # 2. Convert Ensembl IDs to HGNC symbols.
-    #ro.r("library(org.Hs.eg.db)")
-    ro.r("suppressPackageStartupMessages(library(org.Hs.eg.db))")
-    org_Hs_eg_db = ro.r("org.Hs.eg.db")
-    annotation_dbi = importr("AnnotationDbi")
-
-    keys = df.index.unique().to_list()
-
-    with localconverter(ro.default_converter + pandas2ri.converter):
-        res_r = annotation_dbi.select(
-            org_Hs_eg_db,
-            keys = StrVector(keys),
-            columns = StrVector(["SYMBOL"]),
-            keytype = "ENSEMBL"
+    dictionary_of_Ensembl_IDs_and_HGNC_symbols = (
+        pd.read_csv(
+            paths.data_frame_of_Ensembl_IDs_and_HGNC_symbols,
+            usecols = ["gene_id", "gene_symbol"]
         )
-        res_df: pd.DataFrame = ro.conversion.rpy2py(res_r)
-
-    # TODO: Evaluate selecting first row of multiple rows per Ensembl ID.
-    
-    logger.info("First row of multiple rows per Ensembl ID will be selected.")
-
-    res_df = (res_df[["ENSEMBL", "SYMBOL"]]
-        .dropna()
-        .query("SYMBOL != ''")
-        .drop_duplicates("ENSEMBL")
+        .dropna(subset = ["gene_symbol"])
+        .drop_duplicates(subset = ["gene_id"])
+        .set_index("gene_id")["gene_symbol"]
+        .to_dict()
     )
-    ens2sym = dict(
-        zip(
-            res_df["ENSEMBL"],
-            res_df["SYMBOL"])
-    )
-
-    # 3. Keep rows with HGNC symbols and make the index the HGNC symbols.
-    df = df.loc[df.index.isin(ens2sym)].copy()
-    df.index = df.index.map(ens2sym.get)
-
-    # 4. Drop duplicates / unmapped rows and convert to numeric.
-    df = df[~df.index.duplicated(keep = "first")]          # drop duplicate symbols
-    
-    # TODO: Don't coerce.
-    
-    df = df.apply(pd.to_numeric, errors = "coerce").fillna(0.0)
-
+    df = df.loc[df.index.isin(dictionary_of_Ensembl_IDs_and_HGNC_symbols.keys())].copy()
+    df.index = df.index.map(dictionary_of_Ensembl_IDs_and_HGNC_symbols.get)
+    df = df.groupby(level = 0, sort = False).sum(numeric_only = True)
+    df = df.loc[df.index.notna() & (df.index != "")]
+    df = df.apply(pd.to_numeric, errors = "raise").fillna(0.0)
     return df
 
 

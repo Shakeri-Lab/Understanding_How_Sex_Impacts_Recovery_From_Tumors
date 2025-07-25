@@ -71,6 +71,7 @@ class Paths():
         self.patient_data = self.normalized_clinical_data / "24PRJ217UVA_20241112_PatientMaster_V4.csv"
         self.surgery_biopsy_data = self.normalized_clinical_data / "24PRJ217UVA_20241112_SurgeryBiopsy_V4.csv"
         # outputs
+        self.data_frame_of_Ensembl_IDs_and_HGNC_symbols = self.outputs_of_data_loading / "data_frame_of_Ensembl_IDs_and_HGNC_symbols.csv"
         self.melanoma_clinical_data = self.outputs_of_data_loading / "melanoma_clinical_data.csv"
         self.melanoma_expression_matrix = self.outputs_of_data_loading / "melanoma_expression_matrix.csv"
         

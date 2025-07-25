@@ -461,11 +461,35 @@ def load_rnaseq_data():
     if not expr_files:
         raise Exception(f"No .genes.results files were found in {paths.gene_and_transcript_expression_results}.")
     
-    expr_data = {
-        os.path.basename(f).removesuffix(".genes.results"): pd.read_csv(f, sep = "\t").set_index("gene_id")["TPM"]
-        for f in expr_files
-    }
+    '''
+    We construct a data frame of Ensembl IDs and HGNC symbols.
+    '''
+    data_frame_of_Ensembl_IDs_and_HGNC_symbols = (
+        pd.concat(
+            [pd.read_csv(f, sep = '\t', usecols = ["gene_id", "gene_symbol"]) for f in expr_files],
+            ignore_index = True
+        )
+        .assign(gene_id = lambda df: df["gene_id"].str.replace(r"\.\d+$", "", regex = True))
+        .drop_duplicates("gene_id")
+        .query("gene_symbol != ''")
+        .set_index("gene_id")["gene_symbol"]
+    )
+    data_frame_of_Ensembl_IDs_and_HGNC_symbols.to_csv(paths.data_frame_of_Ensembl_IDs_and_HGNC_symbols)
+    
+    logger.info(f"A data frame of Ensembl IDs and HGNC symbols was built with {data_frame_of_Ensembl_IDs_and_HGNC_symbols.size} entries and {data_frame_of_Ensembl_IDs_and_HGNC_symbols.notna().sum()} non-blank symbols.")
+    
+    # Create a dictionary of sample IDs and series of Ensembl IDs and expression values in Transcripts Per Million.
+    expr_data: dict[str, pd.Series] = {}
+    for f in expr_files:
+        sample_id = os.path.basename(f).removesuffix(".genes.results")
+        tpm = (
+            pd.read_csv(f, sep = '\t', usecols = ["gene_id", "TPM"])
+            .assign(gene_id = lambda df: df["gene_id"].str.replace(r"\.\d+$", "", regex = True))
+            .set_index("gene_id")["TPM"]
+        )
+        expr_data[sample_id] = tpm
     expr_matrix = pd.DataFrame(expr_data)
+    
     logger.info(f"Expression matrix of genes, samples, and expression values with shape {expr_matrix.shape} was loaded.")
     
     return expr_matrix
