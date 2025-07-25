@@ -247,6 +247,17 @@ def run_xcell_analysis(expr_df: pd.DataFrame, clinical_df: pd.DataFrame) -> bool
     xcell2 = importr("xCell2")
     ro.r('data(TMECompendium.xCell2Ref, package = "xCell2")')
     tme_ref = ro.r('TMECompendium.xCell2Ref')
+    get_signatures = ro.r('xCell2::getSignatures')
+    names_fn = ro.r['names']
+    cell_types_r = names_fn(get_signatures(tme_ref))
+    with localconverter(ro.default_converter):
+        cell_types_raw = list(map(str, ro.conversion.rpy2py(cell_types_r)))
+        cell_types = []
+        for s in cell_types_raw:
+            cell_type = s.split("#")[0]
+            if cell_type not in cell_types:
+                cell_types.append(cell_type)
+    logger.info(f"TME Compendium reference contains {len(cell_types)} cell types {', '.join(cell_types)}.")
     #scores_r = xcell.xCellAnalysis(expr_r, rnaseq = True) # scores_r is a matrix of cell type and sample information.
     scores_r = ro.r('as.data.frame')(xcell2.xCell2Analysis(mix = expr_r, xcell2object = tme_ref))
     
@@ -255,12 +266,13 @@ def run_xcell_analysis(expr_df: pd.DataFrame, clinical_df: pd.DataFrame) -> bool
     # Convert `scores_r` to `scores_np`.
     with localconverter(ro.default_converter + pandas2ri.converter):
         scores_df = ro.conversion.rpy2py(scores_r)
+    scores_df.columns = expr_df.columns
 
     # Transpose to a data frame of sample and cell type information.
     scores_df = scores_df.T
     scores_df.index.name = "SampleID"
 
-    # 5 : Write results.
+    scores_df.columns = cell_types
     scores_df.to_csv(paths.data_frame_of_scores_by_sample_and_cell_type, index_label = "SampleID")
     
     logger.info("Full xCell score matrix was written to %s.", paths.data_frame_of_scores_by_sample_and_cell_type)
