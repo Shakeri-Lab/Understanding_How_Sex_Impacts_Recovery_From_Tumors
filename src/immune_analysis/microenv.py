@@ -243,41 +243,56 @@ def run_xcell_analysis(expr_df: pd.DataFrame, clinical_df: pd.DataFrame) -> bool
         expr_r = ro.conversion.py2rpy(expr_df)
 
     # 3. Run xCell.
-    #xcell = importr("xCell")
+    xcell = importr("xCell")
     xcell2 = importr("xCell2")
+    
+    scores_xcell = ro.r('as.data.frame')(xcell.xCellAnalysis(expr_r, rnaseq = True))
+    
     ro.r('data(TMECompendium.xCell2Ref, package = "xCell2")')
     tme_ref = ro.r('TMECompendium.xCell2Ref')
+    scores_xcell2 = ro.r('as.data.frame')(xcell2.xCell2Analysis(mix = expr_r, xcell2object = tme_ref))
+    
+    with localconverter(ro.default_converter + pandas2ri.converter):
+        scores_df_xcell = ro.conversion.rpy2py(scores_xcell)
+        scores_df_xcell2 = ro.conversion.rpy2py(scores_xcell2)
+        
+    scores_df_xcell.columns = expr_df.columns
+    scores_df_xcell2.columns = expr_df.columns
+        
+    ro.r("library(xCell); data(xCell.data)")
+    cell_types_xcell = [str(numpy_string_representing_cell_type) for numpy_string_representing_cell_type in ro.r("rownames(xCell.data$spill$K)")]
+    # See https://genomebiology.biomedcentral.com/articles/10.1186/s13059-017-1349-1#Sec24 .
+    cell_types_xcell = cell_types_xcell + ["ImmuneScore", "StromaScore", "MicroenvironmentScore"]
+    # See line 219 of https://github.com/dviraran/xCell/blob/master/R/xCell.R .
+    
     get_signatures = ro.r('xCell2::getSignatures')
     names_fn = ro.r['names']
     cell_types_r = names_fn(get_signatures(tme_ref))
     with localconverter(ro.default_converter):
         cell_types_raw = list(map(str, ro.conversion.rpy2py(cell_types_r)))
-        cell_types = []
+        cell_types_xcell2 = []
         for s in cell_types_raw:
             cell_type = s.split("#")[0]
-            if cell_type not in cell_types:
-                cell_types.append(cell_type)
-    logger.info(f"TME Compendium reference contains {len(cell_types)} cell types {', '.join(cell_types)}.")
-    #scores_r = xcell.xCellAnalysis(expr_r, rnaseq = True) # scores_r is a matrix of cell type and sample information.
-    scores_r = ro.r('as.data.frame')(xcell2.xCell2Analysis(mix = expr_r, xcell2object = tme_ref))
+            if cell_type not in cell_types_xcell2:
+                cell_types_xcell2.append(cell_type)
+
+    scores_df_xcell = scores_df_xcell.T
+    scores_df_xcell.index.name = "SampleID"
     
-    logger.info("HGNC symbols that are elements of the index of the matrix of gene and sample information were matched with gene sets.")
+    scores_df_xcell2 = scores_df_xcell2.T
+    scores_df_xcell2.index.name = "SampleID"
 
-    # Convert `scores_r` to `scores_np`.
-    with localconverter(ro.default_converter + pandas2ri.converter):
-        scores_df = ro.conversion.rpy2py(scores_r)
-    scores_df.columns = expr_df.columns
-
-    # Transpose to a data frame of sample and cell type information.
-    scores_df = scores_df.T
-    scores_df.index.name = "SampleID"
-
-    scores_df.columns = cell_types
-    scores_df.to_csv(paths.data_frame_of_scores_by_sample_and_cell_type, index_label = "SampleID")
+    scores_df_xcell.columns = cell_types_xcell
+    scores_df_xcell.to_csv(paths.data_frame_of_scores_by_sample_and_cell_type, index_label = "SampleID")
+    
+    scores_df_xcell2.columns = cell_types_xcell2
+    path = paths.data_frame_of_scores_by_sample_and_cell_type.with_name(f"{paths.data_frame_of_scores_by_sample_and_cell_type.stem}_2{paths.data_frame_of_scores_by_sample_and_cell_type.suffix}")
+    scores_df_xcell2.to_csv(path)
     
     logger.info("Full xCell score matrix was written to %s.", paths.data_frame_of_scores_by_sample_and_cell_type)
+    logger.info("Full xCell2 score matrix was written to %s.", path)
 
-    panel_cols = [c for c in FOCUSED_XCELL_PANEL if c in scores_df.columns]
+    panel_cols = [c for c in FOCUSED_XCELL_PANEL if c in scores_df_xcell.columns]
     missing = sorted(set(FOCUSED_XCELL_PANEL) - set(panel_cols))
     if missing:
         logger.warning(
@@ -285,7 +300,7 @@ def run_xcell_analysis(expr_df: pd.DataFrame, clinical_df: pd.DataFrame) -> bool
             ", ".join(sorted(missing))
         )
 
-    focused_df = scores_df[panel_cols]
+    focused_df = scores_df_xcell[panel_cols]
     focused_df.to_csv(paths.focused_data_frame_of_scores_by_sample_and_cell_type)
     
     logger.info("Focused panel was written to %s", paths.focused_data_frame_of_scores_by_sample_and_cell_type)
