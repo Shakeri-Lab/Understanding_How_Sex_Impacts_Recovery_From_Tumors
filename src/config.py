@@ -85,8 +85,10 @@ class Paths():
         self.map_of_biopsy_locations_to_counts = self.outputs_of_microenv / "specimen_site_summary.csv"
         self.map_of_procedure_types_to_counts = self.outputs_of_microenv / "procedure_type_summary.csv"
         self.map_of_indicators_that_specimens_are_part_of_metastatic_disease_to_counts = self.outputs_of_microenv / "metastatic_status_summary.csv"
-        self.data_frame_of_scores_by_sample_and_cell_type = self.outputs_of_microenv / "xcell_scores_raw_per_xCell.csv"
-        self.focused_data_frame_of_scores_by_sample_and_cell_type = self.outputs_of_microenv / "xcell_scores_focused_panel.csv"
+        self.enrichment_data_frame_per_xCell = self.outputs_of_microenv / "xcell_scores_raw_per_xCell.csv"
+        self.focused_enrichment_data_frame = self.outputs_of_microenv / "xcell_scores_focused_panel.csv"
+        self.enrichment_data_frame_per_xCell2_and_Pan_Cancer = self.outputs_of_microenv / "xcell_scores_raw_per_xCell.csv"
+        self.enrichment_data_frame_per_xCell2_and_TME_Compendium = self.outputs_of_microenv / "xcell_scores_raw_per_xCell.csv"
         
         # src/immune_analysis/immune_analysis.py
         # dependencies
@@ -110,7 +112,7 @@ class Paths():
         # self.QC_data, which is defined above
         # -----
         # outputs
-        self.mixed_model_results = self.outputs_of_linear_mixed_models / "mixed_model_results.csv"
+        self.mixed_model_results = self.outputs_of_linear_mixed_models / "mixed_model_results_for_xCell.csv"
         self.mixed_model_results_significant = self.outputs_of_linear_mixed_models / "mixed_model_results_significant.csv"
         
         # src/immune_analysis/treatment_analysis.py

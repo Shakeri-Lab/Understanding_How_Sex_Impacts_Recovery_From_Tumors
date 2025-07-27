@@ -323,19 +323,30 @@ def run_xcell_analysis(expr_df: pd.DataFrame, clinical_df: pd.DataFrame) -> bool
     data_frame_of_enrichment_scores_per_xCell2_and_reference_TME_Compendium.index.name = "SampleID"
 
     data_frame_of_enrichment_scores_per_xCell.columns = cell_types_per_xCell
-    data_frame_of_enrichment_scores_per_xCell.to_csv(paths.data_frame_of_scores_by_sample_and_cell_type)
+    data_frame_of_enrichment_scores_per_xCell.to_csv(paths.enrichment_data_frame_per_xCell)
     
     data_frame_of_enrichment_scores_per_xCell2_and_reference_Pan_Cancer.columns = list_of_cell_types_per_xCell2_and_Pan_Cancer
-    path_to_data_frame_of_enrichment_scores_per_xCell2_and_reference_Pan_Cancer = paths.data_frame_of_scores_by_sample_and_cell_type.with_name(f"{paths.data_frame_of_scores_by_sample_and_cell_type.stem}2_and_Pan_Cancer{paths.data_frame_of_scores_by_sample_and_cell_type.suffix}")
-    data_frame_of_enrichment_scores_per_xCell2_and_reference_Pan_Cancer.to_csv(path_to_data_frame_of_enrichment_scores_per_xCell2_and_reference_Pan_Cancer)
+    data_frame_of_enrichment_scores_per_xCell2_and_reference_Pan_Cancer.to_csv(
+        paths.enrichment_data_frame_per_xCell2_and_Pan_Cancer
+    )
     
     data_frame_of_enrichment_scores_per_xCell2_and_reference_TME_Compendium.columns = list_of_cell_types_per_xCell2_and_TME_Compendium
-    path_to_data_frame_of_enrichment_scores_per_xCell2_and_reference_TME_Compendium = paths.data_frame_of_scores_by_sample_and_cell_type.with_name(f"{paths.data_frame_of_scores_by_sample_and_cell_type.stem}2_TME_Compendium{paths.data_frame_of_scores_by_sample_and_cell_type.suffix}")
-    data_frame_of_enrichment_scores_per_xCell2_and_reference_TME_Compendium.to_csv(path_to_data_frame_of_enrichment_scores_per_xCell2_and_reference_TME_Compendium)
+    data_frame_of_enrichment_scores_per_xCell2_and_reference_TME_Compendium.to_csv(
+        paths.enrichment_data_frame_per_xCell2_and_TME_Compendium
+    )
     
-    logger.info("Full xCell score matrix was written to %s.", paths.data_frame_of_scores_by_sample_and_cell_type)
-    logger.info("Full enrichment score matrix per xCell2 and Pan Cancer was written to %s.", path_to_data_frame_of_enrichment_scores_per_xCell2_and_reference_Pan_Cancer)
-    logger.info("Full enrichment score matrix per xCell2 and TME Compendium was written to %s.", path_to_data_frame_of_enrichment_scores_per_xCell2_and_reference_TME_Compendium)
+    logger.info(
+        "Full xCell score matrix was written to %s.",
+        paths.enrichment_data_frame_per_xCell
+    )
+    logger.info(
+        "Full enrichment score matrix per xCell2 and Pan Cancer was written to %s.", 
+        paths.enrichment_data_frame_per_xCell2_and_Pan_Cancer
+    )
+    logger.info(
+        "Full enrichment score matrix per xCell2 and TME Compendium was written to %s.",
+        paths.enrichment_data_frame_per_xCell2_and_TME_Compendium
+    )
 
     panel_cols = [c for c in FOCUSED_XCELL_PANEL if c in data_frame_of_enrichment_scores_per_xCell.columns]
     missing = sorted(set(FOCUSED_XCELL_PANEL) - set(panel_cols))
@@ -345,9 +356,9 @@ def run_xcell_analysis(expr_df: pd.DataFrame, clinical_df: pd.DataFrame) -> bool
             ", ".join(sorted(missing))
         )
     focused_df = data_frame_of_enrichment_scores_per_xCell[panel_cols]
-    focused_df.to_csv(paths.focused_data_frame_of_scores_by_sample_and_cell_type)
+    focused_df.to_csv(paths.focused_enrichment_data_frame)
     
-    logger.info("Focused panel was written to %s", paths.focused_data_frame_of_scores_by_sample_and_cell_type)
+    logger.info("Focused panel was written to %s", paths.focused_enrichment_data_frame)
 
     return True
 
