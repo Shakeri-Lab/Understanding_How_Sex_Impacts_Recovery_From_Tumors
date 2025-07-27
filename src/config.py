@@ -85,7 +85,7 @@ class Paths():
         self.map_of_biopsy_locations_to_counts = self.outputs_of_microenv / "specimen_site_summary.csv"
         self.map_of_procedure_types_to_counts = self.outputs_of_microenv / "procedure_type_summary.csv"
         self.map_of_indicators_that_specimens_are_part_of_metastatic_disease_to_counts = self.outputs_of_microenv / "metastatic_status_summary.csv"
-        self.data_frame_of_scores_by_sample_and_cell_type = self.outputs_of_microenv / "xcell_scores_raw.csv"
+        self.data_frame_of_scores_by_sample_and_cell_type = self.outputs_of_microenv / "xcell_scores_raw_per_xCell.csv"
         self.focused_data_frame_of_scores_by_sample_and_cell_type = self.outputs_of_microenv / "xcell_scores_focused_panel.csv"
         
         # src/immune_analysis/immune_analysis.py

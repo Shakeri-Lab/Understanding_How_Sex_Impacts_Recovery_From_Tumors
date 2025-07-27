@@ -99,10 +99,6 @@ def process_melanoma_immune_data(clinical_data):
     immune_clinical: pd.DataFrame -- data frame with melanoma samples and immune features
     TODO: Describe the data frame with melanoma samples and immune features.
     '''
-    
-    if clinical_data is None:
-        logger.error("Failed to load clinical data.")
-        return None
 
     logger.info("Sample details will be collected.")
     
@@ -111,9 +107,10 @@ def process_melanoma_immune_data(clinical_data):
     logger.info(f"Sample details for {len(sample_details)} samples were retrieved.")
 
     # Build a tidy "one row per tumour sample" data-frame from `sample_details`.
-    sample_rows = (pd.DataFrame.from_dict(sample_details, orient = "index")
-        .rename_axis("SLID") # make SLID an index label
-        .reset_index() # turn SLID into an ordinary column
+    sample_rows = (
+        pd.DataFrame.from_dict(sample_details, orient = "index")
+        .rename_axis("SLID")
+        .reset_index()
         .rename(columns = {"patient_id": "PATIENT_ID"})
     )
 
@@ -127,7 +124,17 @@ def process_melanoma_immune_data(clinical_data):
         }
     )
 
-    clinical_cols = ["PATIENT_ID", "Sex", "Race", "AgeAtClinicalRecordCreation", "EarliestMelanomaDiagnosisAge", "HAS_ICB", "ICB_START_AGE", "STAGE_AT_ICB", "Primary/Met"]
+    clinical_cols = [
+        "PATIENT_ID",
+        "Sex",
+        "Race",
+        "AgeAtClinicalRecordCreation",
+        "EarliestMelanomaDiagnosisAge",
+        "HAS_ICB",
+        "ICB_START_AGE",
+        "STAGE_AT_ICB",
+        "Primary/Met"
+    ]
     available = [c for c in clinical_cols if c in clinical_data.columns]
     
     immune_clinical = sample_rows.merge(clinical_data[available], on = "PATIENT_ID", how = "left").set_index("SLID")
@@ -169,12 +176,9 @@ def process_melanoma_immune_data(clinical_data):
 
     logger.info(
         "Column completeness just before write:\n%s",
-        immune_clinical[
-            ["EarliestMelanomaDiagnosisAge", "STAGE_AT_ICB"]
-        ].isna().mean().rename(lambda x: f"{x}_null_fraction"),
+        immune_clinical[["EarliestMelanomaDiagnosisAge", "STAGE_AT_ICB"]].isna().mean().rename(lambda x: f"{x}_null_fraction")
     )
     
-    #pd.set_option("display.max_columns", None)
     immune_clinical = immune_clinical.reset_index()
     dupes = immune_clinical[
         immune_clinical["SLID"].duplicated(keep = False)
@@ -186,7 +190,7 @@ def process_melanoma_immune_data(clinical_data):
     immune_clinical = (
         immune_clinical
             .reset_index()
-            .drop_duplicates("SLID", keep="first")
+            .drop_duplicates("SLID", keep = "first")
             .set_index("SLID")
     )
 
@@ -202,7 +206,18 @@ def process_melanoma_immune_data(clinical_data):
     logger.info(f"Map of biopsy locations to counts was saved to {paths.map_of_biopsy_locations_to_counts}.")
 
     # Create a summary of procedure types.
-    proc_summary = immune_clinical["ProcedureType"].dropna().str.split('|').explode().str.strip().value_counts().reset_index(name = "Count").rename(columns = {"index": "ProcedureType"})
+    proc_summary = (
+        immune_clinical["ProcedureType"]
+        .dropna()
+        .str
+        .split('|')
+        .explode()
+        .str
+        .strip()
+        .value_counts()
+        .reset_index(name = "Count")
+        .rename(columns = {"index": "ProcedureType"})
+    )
     proc_summary.to_csv(paths.map_of_procedure_types_to_counts, index = False)
     
     logger.info(f"Map of procedure type to counts was saved to {paths.map_of_procedure_types_to_counts}.")
@@ -222,118 +237,119 @@ def run_xcell_analysis(expr_df: pd.DataFrame, clinical_df: pd.DataFrame) -> bool
     Run xCell on a gene-by-sample matrix and write `xcell_scores_raw.csv` and `xcell_scores_focused_panel.csv`.
     '''
 
-    # 1. Tidy the matrix so xCell will recognise the genes.
     expr_df = clean_expression_df(expr_df)
-    if expr_df.empty:
-        raise Exception("Expression matrix is empty after cleaning — aborting.")
     
     logger.info(
         "The matrix of gene and sample information after cleaning has %s genes and %s samples.",
         expr_df.shape[0],
         expr_df.shape[1]
     )
-
-    # 2. Convert matrix of gene and sample information to R.
-    
-    # TODO: What is the type of `expr_r`?
     
     logger.info("The matrix of gene and sample information will be converted to R.")
 
     with localconverter(ro.default_converter + pandas2ri.converter):
-        expr_r = ro.conversion.py2rpy(expr_df)
+        expression_data_frame = ro.conversion.py2rpy(expr_df)
 
-    # 3. Run xCell.
-    xcell = importr("xCell")
-    xcell2 = importr("xCell2")
+    xCell = importr("xCell")
+    xCell2 = importr("xCell2")
     
-    scores_xcell = ro.r('as.data.frame')(xcell.xCellAnalysis(expr_r, rnaseq = True))
-    
+    r_data_frame_of_enrichment_scores_per_xCell = ro.r('as.data.frame')(xCell.xCellAnalysis(expression_data_frame, rnaseq = True))
     ro.r('data(PanCancer.xCell2Ref, package = "xCell2")')
     ro.r('data(TMECompendium.xCell2Ref, package = "xCell2")')
-    pan_cancer_reference = ro.r('PanCancer.xCell2Ref')
-    tme_ref = ro.r('TMECompendium.xCell2Ref')
+    reference_Pan_Cancer = ro.r('PanCancer.xCell2Ref')
+    reference_TME_Compendium = ro.r('TMECompendium.xCell2Ref')
     r_data_frame_of_enrichment_scores_per_xCell2_and_reference_Pan_Cancer = ro.r('as.data.frame')(
-        xcell2.xCell2Analysis(mix = expr_r, xcell2object = pan_cancer_reference)
+        xCell2.xCell2Analysis(mix = expression_data_frame, xcell2object = reference_Pan_Cancer)
     )
-    scores_xcell2 = ro.r('as.data.frame')(xcell2.xCell2Analysis(mix = expr_r, xcell2object = tme_ref))
+    r_data_frame_of_enrichment_scores_per_xCell_and_TME_Compendium = ro.r('as.data.frame')(
+        xCell2.xCell2Analysis(mix = expression_data_frame, xcell2object = reference_TME_Compendium)
+    )
     
     with localconverter(ro.default_converter + pandas2ri.converter):
-        scores_df_xcell = ro.conversion.rpy2py(scores_xcell)
+        data_frame_of_enrichment_scores_per_xCell = ro.conversion.rpy2py(r_data_frame_of_enrichment_scores_per_xCell)
         data_frame_of_enrichment_scores_per_xCell2_and_reference_Pan_Cancer = ro.conversion.rpy2py(r_data_frame_of_enrichment_scores_per_xCell2_and_reference_Pan_Cancer)
-        scores_df_xcell2 = ro.conversion.rpy2py(scores_xcell2)
+        data_frame_of_enrichment_scores_per_xCell2_and_reference_TME_Compendium = ro.conversion.rpy2py(r_data_frame_of_enrichment_scores_per_xCell_and_TME_Compendium)
         
-    scores_df_xcell.columns = expr_df.columns
+    data_frame_of_enrichment_scores_per_xCell.columns = expr_df.columns
     data_frame_of_enrichment_scores_per_xCell2_and_reference_Pan_Cancer.columns = expr_df.columns
-    scores_df_xcell2.columns = expr_df.columns
+    data_frame_of_enrichment_scores_per_xCell2_and_reference_TME_Compendium.columns = expr_df.columns
         
-    ro.r("library(xCell); data(xCell.data)")
-    cell_types_xcell = [str(numpy_string_representing_cell_type) for numpy_string_representing_cell_type in ro.r("rownames(xCell.data$spill$K)")]
-    # See https://genomebiology.biomedcentral.com/articles/10.1186/s13059-017-1349-1#Sec24 .
+    ro.r("library(xCell)")
+    ro.r("data(xCell.data)")
+    cell_types_per_xCell = [
+        str(numpy_string_representing_cell_type)
+        for numpy_string_representing_cell_type
+        in ro.r("rownames(xCell.data$spill$K)")
+    ] # See https://genomebiology.biomedcentral.com/articles/10.1186/s13059-017-1349-1#Sec24 .
+    cell_types_per_xCell = cell_types_per_xCell + [
+        "ImmuneScore",
+        "StromaScore",
+        "MicroenvironmentScore"
+    ] # See line 219 of https://github.com/dviraran/xCell/blob/master/R/xCell.R .
     
-    cell_types_xcell = cell_types_xcell + ["ImmuneScore", "StromaScore", "MicroenvironmentScore"]
-    # See line 219 of https://github.com/dviraran/xCell/blob/master/R/xCell.R .
-    
-    get_signatures = ro.r('xCell2::getSignatures')
-    names_fn = ro.r['names']
-    pan_cancer_cell_types = names_fn(get_signatures(pan_cancer_reference))
-    cell_types_r = names_fn(get_signatures(tme_ref))
+    function_get_signatures = ro.r('xCell2::getSignatures')
+    function_names = ro.r['names']
+    array_of_cell_types_per_xCell2_and_Pan_Cancer = function_names(function_get_signatures(reference_Pan_Cancer))
+    array_of_cell_types_per_xCell2_and_TME_Compendium = function_names(function_get_signatures(reference_TME_Compendium))
     with localconverter(ro.default_converter):
-        pan_cancer_cell_types_raw = list(map(str, ro.conversion.rpy2py(pan_cancer_cell_types)))
-        cell_types_raw = list(map(str, ro.conversion.rpy2py(cell_types_r)))
-        list_of_pan_cancer_cell_types = []
-        cell_types_xcell2 = []
-        for s in pan_cancer_cell_types_raw:
-            cell_type = s.split("#")[0]
-            if cell_type not in list_of_pan_cancer_cell_types:
-                list_of_pan_cancer_cell_types.append(cell_type)
-        for s in cell_types_raw:
-            cell_type = s.split("#")[0]
-            if cell_type not in cell_types_xcell2:
-                cell_types_xcell2.append(cell_type)
+        list_of_raw_cell_types_per_xCell2_and_Pan_Cancer = list(
+            map(
+                str,
+                ro.conversion.rpy2py(array_of_cell_types_per_xCell2_and_Pan_Cancer)
+            )
+        )
+        list_of_raw_cell_types_per_xCell2_and_TME_Compendium = list(
+            map(
+                str,
+                ro.conversion.rpy2py(array_of_cell_types_per_xCell2_and_TME_Compendium)
+            )
+        )
+        list_of_cell_types_per_xCell2_and_Pan_Cancer = []
+        list_of_cell_types_per_xCell2_and_TME_Compendium = []
+        for raw_cell_type in list_of_raw_cell_types_per_xCell2_and_Pan_Cancer:
+            cell_type = raw_cell_type.split("#")[0]
+            if cell_type not in list_of_cell_types_per_xCell2_and_Pan_Cancer:
+                list_of_cell_types_per_xCell2_and_Pan_Cancer.append(cell_type)
+        for raw_cell_type in list_of_raw_cell_types_per_xCell2_and_TME_Compendium:
+            cell_type = raw_cell_type.split("#")[0]
+            if cell_type not in list_of_cell_types_per_xCell2_and_TME_Compendium:
+                list_of_cell_types_per_xCell2_and_TME_Compendium.append(cell_type)
 
-    scores_df_xcell = scores_df_xcell.T
-    scores_df_xcell.index.name = "SampleID"
+    data_frame_of_enrichment_scores_per_xCell = data_frame_of_enrichment_scores_per_xCell.T
+    data_frame_of_enrichment_scores_per_xCell.index.name = "SampleID"
     data_frame_of_enrichment_scores_per_xCell2_and_reference_Pan_Cancer = data_frame_of_enrichment_scores_per_xCell2_and_reference_Pan_Cancer.T
     data_frame_of_enrichment_scores_per_xCell2_and_reference_Pan_Cancer.index.name = "SampleID"
-    scores_df_xcell2 = scores_df_xcell2.T
-    scores_df_xcell2.index.name = "SampleID"
+    data_frame_of_enrichment_scores_per_xCell2_and_reference_TME_Compendium = data_frame_of_enrichment_scores_per_xCell2_and_reference_TME_Compendium.T
+    data_frame_of_enrichment_scores_per_xCell2_and_reference_TME_Compendium.index.name = "SampleID"
 
-    scores_df_xcell.columns = cell_types_xcell
-    scores_df_xcell.to_csv(paths.data_frame_of_scores_by_sample_and_cell_type, index_label = "SampleID")
+    data_frame_of_enrichment_scores_per_xCell.columns = cell_types_per_xCell
+    data_frame_of_enrichment_scores_per_xCell.to_csv(paths.data_frame_of_scores_by_sample_and_cell_type)
     
-    data_frame_of_enrichment_scores_per_xCell2_and_reference_Pan_Cancer.columns = list_of_pan_cancer_cell_types
-    path_pan_cancer = paths.data_frame_of_scores_by_sample_and_cell_type.with_name(f"{paths.data_frame_of_scores_by_sample_and_cell_type.stem}_pan_cancer{paths.data_frame_of_scores_by_sample_and_cell_type.suffix}")
-    data_frame_of_enrichment_scores_per_xCell2_and_reference_Pan_Cancer.to_csv(path_pan_cancer)
+    data_frame_of_enrichment_scores_per_xCell2_and_reference_Pan_Cancer.columns = list_of_cell_types_per_xCell2_and_Pan_Cancer
+    path_to_data_frame_of_enrichment_scores_per_xCell2_and_reference_Pan_Cancer = paths.data_frame_of_scores_by_sample_and_cell_type.with_name(f"{paths.data_frame_of_scores_by_sample_and_cell_type.stem}2_and_Pan_Cancer{paths.data_frame_of_scores_by_sample_and_cell_type.suffix}")
+    data_frame_of_enrichment_scores_per_xCell2_and_reference_Pan_Cancer.to_csv(path_to_data_frame_of_enrichment_scores_per_xCell2_and_reference_Pan_Cancer)
     
-    scores_df_xcell2.columns = cell_types_xcell2
-    path_tme = paths.data_frame_of_scores_by_sample_and_cell_type.with_name(f"{paths.data_frame_of_scores_by_sample_and_cell_type.stem}_tme{paths.data_frame_of_scores_by_sample_and_cell_type.suffix}")
-    scores_df_xcell2.to_csv(path_tme)
+    data_frame_of_enrichment_scores_per_xCell2_and_reference_TME_Compendium.columns = list_of_cell_types_per_xCell2_and_TME_Compendium
+    path_to_data_frame_of_enrichment_scores_per_xCell2_and_reference_TME_Compendium = paths.data_frame_of_scores_by_sample_and_cell_type.with_name(f"{paths.data_frame_of_scores_by_sample_and_cell_type.stem}2_TME_Compendium{paths.data_frame_of_scores_by_sample_and_cell_type.suffix}")
+    data_frame_of_enrichment_scores_per_xCell2_and_reference_TME_Compendium.to_csv(path_to_data_frame_of_enrichment_scores_per_xCell2_and_reference_TME_Compendium)
     
     logger.info("Full xCell score matrix was written to %s.", paths.data_frame_of_scores_by_sample_and_cell_type)
-    logger.info("Full enrichment score matrix per xCell2 and Pan Cancer was written to %s.", path_pan_cancer)
-    logger.info("Full enrichment score matrix per xCell2 and TME Compendium was written to %s.", path_tme)
+    logger.info("Full enrichment score matrix per xCell2 and Pan Cancer was written to %s.", path_to_data_frame_of_enrichment_scores_per_xCell2_and_reference_Pan_Cancer)
+    logger.info("Full enrichment score matrix per xCell2 and TME Compendium was written to %s.", path_to_data_frame_of_enrichment_scores_per_xCell2_and_reference_TME_Compendium)
 
-    panel_cols = [c for c in FOCUSED_XCELL_PANEL if c in scores_df_xcell.columns]
+    panel_cols = [c for c in FOCUSED_XCELL_PANEL if c in data_frame_of_enrichment_scores_per_xCell.columns]
     missing = sorted(set(FOCUSED_XCELL_PANEL) - set(panel_cols))
     if missing:
         logger.warning(
             "Focused panel is missing columns in the following list. [%s]",
             ", ".join(sorted(missing))
         )
-
-    focused_df = scores_df_xcell[panel_cols]
+    focused_df = data_frame_of_enrichment_scores_per_xCell[panel_cols]
     focused_df.to_csv(paths.focused_data_frame_of_scores_by_sample_and_cell_type)
     
     logger.info("Focused panel was written to %s", paths.focused_data_frame_of_scores_by_sample_and_cell_type)
 
     return True
-    
-    
-def safe_r_names(r_call_result) -> list[str]:
-    '''
-    Return row/col names or an empty list when the R value is NULL.
-    '''
-    return [] if isinstance(r_call_result, NULLType) else list(map(str, r_call_result))
 
 
 if __name__ == "__main__":
