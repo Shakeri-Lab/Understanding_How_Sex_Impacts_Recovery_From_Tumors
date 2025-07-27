@@ -32,9 +32,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def create_data_frame_of_enrichment_scores_clinical_data_and_QC_data() -> tuple[pd.DataFrame, list[str]]:
+def create_data_frame_of_enrichment_scores_clinical_data_and_QC_data(path) -> tuple[pd.DataFrame, list[str]]:
     
-    data_frame_of_enrichment_scores = pd.read_csv(paths.data_frame_of_scores_by_sample_and_cell_type)
+    data_frame_of_enrichment_scores = pd.read_csv(path)
     list_of_cell_types = data_frame_of_enrichment_scores.columns.tolist()[1:-3]
     logger.info(f"Data frame of sample IDs, cell types, and enrichment scores has {len(data_frame_of_enrichment_scores)} sample IDs and {len(list_of_cell_types)} cell types.")
     
@@ -202,21 +202,40 @@ def main():
     
     paths.ensure_dependencies_for_linear_mixed_models_exist()
     
-    data_frame_of_enrichment_scores_clinical_data_and_QC_data, list_of_cell_types = create_data_frame_of_enrichment_scores_clinical_data_and_QC_data()
+    dictionary_of_paths_of_enrichment_data_frames_and_tuples_of_paths_of_mixed_model_results = {
+        paths.enrichment_data_frame_per_xCell: (
+            paths.mixed_model_results_per_xCell,
+            paths.mixed_model_results_significant_per_xCell
+        ),
+        paths.enrichment_data_frame_per_xCell2_and_Pan_Cancer: (
+            paths.mixed_model_results_per_xCell2_and_Pan_Cancer,
+            paths.mixed_model_results_significant_per_xCell2_and_Pan_Cancer
+        ),
+        paths.enrichment_data_frame_per_xCell2_and_TME_Compendium: (
+            paths.mixed_model_results_per_xCell2_and_TME_Compendium,
+            paths.mixed_model_results_significant_per_xCell2_and_TME_Compendium
+        )
+    }
     
-    data_frame_of_results = fit_linear_mixed_models(data_frame_of_enrichment_scores_clinical_data_and_QC_data, list_of_cell_types)
-    data_frame_of_results = add_fdr_adjustment(data_frame_of_results)
-    
-    data_frame_of_results.sort_values("q value for Sex").to_csv(paths.mixed_model_results, index = False)
-    data_frame_of_results.query("significant").sort_values("q value for Sex").to_csv(paths.mixed_model_results_significant, index = False)
-    logger.info("Data frame of all results were saved to %s.", paths.mixed_model_results)
-    logger.info("Data frame of significant results were saved to %s.", paths.mixed_model_results_significant)
-    
-    logger.info(
-        "%d out of %d cell types were significant at False Discovery Rate 10%%",
-        data_frame_of_results["significant"].sum(),
-        len(data_frame_of_results)
-    )
+    for path_of_enrichment_data_frame, tuple_of_paths_of_mixed_model_results in dictionary_of_paths_of_enrichment_data_frames_and_tuples_of_paths_of_mixed_model_results.items():
+        path_of_mixed_model_results = tuple_of_paths_of_mixed_model_results[0]
+        path_of_significant_mixed_model_results = tuple_of_paths_of_mixed_model_results[1]
+        
+        data_frame_of_enrichment_scores_clinical_data_and_QC_data, list_of_cell_types = create_data_frame_of_enrichment_scores_clinical_data_and_QC_data(path_of_enrichment_data_frame)
+
+        data_frame_of_results = fit_linear_mixed_models(data_frame_of_enrichment_scores_clinical_data_and_QC_data, list_of_cell_types)
+        data_frame_of_results = add_fdr_adjustment(data_frame_of_results)
+
+        data_frame_of_results.sort_values("q value for Sex").to_csv(path_of_mixed_model_results, index = False)
+        data_frame_of_results.query("significant").sort_values("q value for Sex").to_csv(path_of_significant_mixed_model_results, index = False)
+        logger.info("Data frame of all results were saved to %s.", path_of_mixed_model_results)
+        logger.info("Data frame of significant results were saved to %s.", path_of_significant_mixed_model_results)
+
+        logger.info(
+            "%d out of %d cell types were significant at False Discovery Rate 10%%",
+            data_frame_of_results["significant"].sum(),
+            len(data_frame_of_results)
+        )
 
 
 if __name__ == "__main__":
