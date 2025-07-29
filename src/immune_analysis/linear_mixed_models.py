@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 '''
 Usage:
-./miniconda3/envs/ici_sex/bin/python -m src.immune_analysis.linear_mixed_models
+./miniconda3/envs/ici_sex/bin/python -m src.immune_analysis.linear_mixed_models --diagnose
 
 `linear_mixed_models.py` fits for every patient and cell type a linear mixed model of enrichment score vs. categorical predictor sex with values 0 and 1 for female and male, continuous predictor age at clinical record creation, categorical predictor stage at start of ICB therapy, categorical predictor of whether the patient has received ICB therapy with values 0 and 1 for false and true, categorical predictor batch, and logarithm of total number of RNA fragments in a sample. Batch is a label that tags every sample with the corresponding batch of samples that were prepared for sequencing by fragmenting the RNA of the samples. Including batch as a predictor accounts for systematic differences between batches.
 
@@ -13,6 +13,7 @@ Outputs
 2. `mixed_model_results_significant.csv` – a CSV file of rows of `mixed_model_results.csv` where the best linear mixed model for the corresponding cell type with our variables and many samples has a coefficient of Sex that is not 0.
 '''
 
+import argparse
 import logging
 import os
 from pathlib import Path
@@ -82,7 +83,19 @@ def create_data_frame_of_enrichment_scores_clinical_data_and_QC_data(path) -> tu
     return df, list_of_cell_types
 
 
-def fit_linear_mixed_models(df: pd.DataFrame, list_of_cell_types: list[str]) -> pd.DataFrame:
+def fit_linear_mixed_models(
+    df: pd.DataFrame,
+    list_of_cell_types: list[str],
+    diagnose: bool
+) -> pd.DataFrame:
+    '''
+    Fit 1 linear mixed model per cell type.
+    
+    Parameters
+    ----------
+    diagnose: bool -- an indicator of whether to perform diagnostics for each model
+    '''
+    
     list_of_results = []
     for cell_type in list_of_cell_types:
         logger.info(f"A linear mixed model will be fit for cell type {cell_type}.")
@@ -95,33 +108,32 @@ def fit_linear_mixed_models(df: pd.DataFrame, list_of_cell_types: list[str]) -> 
         if data_frame["Sex"].nunique() < 2:
             raise Exception(f"Only sex {data_frame['Sex'].iloc[0]} is present after dropping enrichment scores of NA for cell type {cell_type}.")
 
-        '''
-        # 1. Within-patient replication
-        replication_counts = data_frame.groupby("PATIENT_ID").size()
-        frac_singletons     = (replication_counts <= 1).mean()
-        logger.info(
-            "Diagnostic - %s: %.1f%% of patients contribute only one sample.",
-            cell_type, 100 * frac_singletons
-        )
+        if diagnose:
+            # 1. Within-patient replication
+            replication_counts = data_frame.groupby("PATIENT_ID").size()
+            frac_singletons = (replication_counts <= 1).mean()
+            logger.info(
+                "Diagnostic - %s: %.1f%% of patients contribute only one sample.",
+                cell_type, 100 * frac_singletons
+            )
 
-        # 3. Spread of the response
-        score_std = data_frame["Score"].std(ddof = 0)
-        logger.info("Diagnostic - %s: response std = %.4f", cell_type, score_std)
+            # 3. Spread of the response
+            score_std = data_frame["Score"].std(ddof = 0)
+            logger.info("Diagnostic - %s: response std = %.4f", cell_type, score_std)
 
-        # 4. Categorical level sparsity
-        sparsity_msgs = []
-        for cat in ["STAGE_AT_ICB", "NexusBatch"]:
-            lvl_counts = data_frame[cat].value_counts()
-            rare_lvls  = lvl_counts[lvl_counts < 3]
-            if not rare_lvls.empty:
-                sparsity_msgs.append(f"{cat}: {len(rare_lvls)} sparse levels")
-        if sparsity_msgs:
-            logger.info("Diagnostic - %s: %s", cell_type, "; ".join(sparsity_msgs))
+            # 4. Categorical level sparsity
+            sparsity_msgs = []
+            for cat in ["STAGE_AT_ICB", "NexusBatch"]:
+                lvl_counts = data_frame[cat].value_counts()
+                rare_lvls  = lvl_counts[lvl_counts < 3]
+                if not rare_lvls.empty:
+                    sparsity_msgs.append(f"{cat}: {len(rare_lvls)} sparse levels")
+            if sparsity_msgs:
+                logger.info("Diagnostic - %s: %s", cell_type, "; ".join(sparsity_msgs))
 
-        # 6. Scaling of numeric predictors
-        scale_summary = data_frame[["AgeAtClinicalRecordCreation", "SequencingDepth"]].describe().loc[["mean", "std"]]
-        logger.info("Diagnostic - %s: numeric predictor scale\n%s", cell_type, scale_summary.to_string())
-        '''
+            # 6. Scaling of numeric predictors
+            scale_summary = data_frame[["AgeAtClinicalRecordCreation", "SequencingDepth"]].describe().loc[["mean", "std"]]
+            logger.info("Diagnostic - %s: numeric predictor scale\n%s", cell_type, scale_summary.to_string())
         
         formula = (
             f"Score ~ Sex + AgeAtClinicalRecordCreation + C(STAGE_AT_ICB) + C(HAS_ICB) + C(NexusBatch) + SequencingDepth"
@@ -133,36 +145,32 @@ def fit_linear_mixed_models(df: pd.DataFrame, list_of_cell_types: list[str]) -> 
         )
         mixed_linear_model_results_wrapper = mixed_linear_model.fit(reml = False)
         
-        '''
-        # 2. Random-effect variance & boundary fit indicator
-        try:
-            rand_var = mixed_linear_model_results_wrapper.cov_re.iloc[0, 0]
-        except Exception:
-            rand_var = np.nan
-        logger.info("Diagnostic - %s: random-effect variance = %.6g", cell_type, rand_var)
+        if diagnose:
+            # 2. Random-effect variance & boundary fit indicator
+            try:
+                rand_var = mixed_linear_model_results_wrapper.cov_re.iloc[0, 0]
+            except Exception:
+                rand_var = np.nan
+            logger.info("Diagnostic - %s: random-effect variance = %.6g", cell_type, rand_var)
 
-        # 5. Design-matrix condition number (fixed effects only)
-        try:
+            # 5. Design-matrix condition number (fixed effects only)
             cond_num = matrix_condition_number(mixed_linear_model.exog)
             logger.info("Diagnostic - %s: design-matrix condition number = %.2e", cell_type, cond_num)
-        except Exception as exc:
-            logger.info("Diagnostic - %s: could not compute condition number (%s)", cell_type, exc)
 
-        # 7. AIC comparison with OLS (no random intercept)
-        try:
-            ols_res = smf.ols(formula.replace("Score ~", "Score ~"), data_frame).fit()
-            logger.info(
-                "Diagnostic - %s: AIC (mixed) = %.1f ; AIC (OLS) = %.1f",
-                cell_type, mixed_linear_model_results_wrapper.aic, ols_res.aic
-            )
-        except Exception as exc:
-            logger.info("Diagnostic - %s: could not fit OLS for AIC comparison (%s)", cell_type, exc)
-        '''
+            # 7. AIC comparison with OLS (no random intercept)
+            try:
+                ols_res = smf.ols(formula, data_frame).fit()
+                logger.info(
+                    "Diagnostic - %s: AIC (mixed) = %.1f ; AIC (OLS) = %.1f",
+                    cell_type, mixed_linear_model_results_wrapper.aic, ols_res.aic
+                )
+            except Exception as exc:
+                logger.info("Diagnostic - %s: could not fit OLS for AIC comparison (%s)", cell_type, exc)
         
         parameter_for_Sex = mixed_linear_model_results_wrapper.params["Sex"]
         standard_error_of_parameter_for_Sex = mixed_linear_model_results_wrapper.bse["Sex"]
         p_value_for_Sex = mixed_linear_model_results_wrapper.pvalues["Sex"]
-        number_of_patients = len(data_frame["PATIENT_ID"].unique())
+        number_of_patients = data_frame["PATIENT_ID"].nunique()
         
         list_of_results.append(
             (
@@ -202,6 +210,9 @@ def main():
     
     paths.ensure_dependencies_for_linear_mixed_models_exist()
     
+    parser = argparse.ArgumentParser(description = "Fit linear mixed models of xCell enrichment scores.")
+    parser.add_argument("-d", "--diagnose", action = "store_true", help = "Run additional diagnostics per cell type.")
+    args = parser.parse_args()
     dictionary_of_paths_of_enrichment_data_frames_and_tuples_of_paths_of_mixed_model_results = {
         paths.enrichment_data_frame_per_xCell: (
             paths.mixed_model_results_per_xCell,
@@ -223,7 +234,7 @@ def main():
         
         data_frame_of_enrichment_scores_clinical_data_and_QC_data, list_of_cell_types = create_data_frame_of_enrichment_scores_clinical_data_and_QC_data(path_of_enrichment_data_frame)
 
-        data_frame_of_results = fit_linear_mixed_models(data_frame_of_enrichment_scores_clinical_data_and_QC_data, list_of_cell_types)
+        data_frame_of_results = fit_linear_mixed_models(data_frame_of_enrichment_scores_clinical_data_and_QC_data, list_of_cell_types, args.diagnose)
         data_frame_of_results = add_fdr_adjustment(data_frame_of_results)
 
         data_frame_of_results.sort_values("q value for Sex").to_csv(path_of_mixed_model_results, index = False)
@@ -237,6 +248,52 @@ def main():
             len(data_frame_of_results)
         )
 
+
+def matrix_condition_number(exog: np.ndarray, drop_constant: bool = True) -> float:
+    """
+    Compute the 2-norm (spectral-norm) condition number of the fixed-effects
+    design matrix.
+
+    Parameters
+    ----------
+    exog : array-like (n_obs × n_params)
+        The design matrix returned by `model.exog` in statsmodels.
+    drop_constant : bool, default True
+        If True, columns with zero variance (e.g. the intercept) are removed
+        before computing the condition number—otherwise an all-ones column
+        makes the result explode.
+
+    Returns
+    -------
+    float
+        κ(X) = σ_max / σ_min  (ratio of largest to smallest non-zero singular
+        values).  Returns ``np.inf`` if the matrix is rank-deficient, and
+        ``np.nan`` if no columns remain after dropping constants.
+    """
+    X = np.asarray(exog, dtype=float)
+
+    if drop_constant:
+        # keep only columns whose sample variance is non-zero
+        keep = X.std(axis=0) > 0
+        X = X[:, keep]
+        if X.size == 0:
+            return np.nan                          # all columns were constant
+
+    # handle rank deficiency / numerical underflow robustly
+    try:
+        # full_matrices=False gives economy-size SVD (faster, less memory)
+        _, sing_vals, _ = np.linalg.svd(X, full_matrices=False)
+    except np.linalg.LinAlgError:
+        return np.inf                              # SVD failed ⇒ treat as ill-conditioned
+
+    # discard tiny singular values below numeric tolerance
+    tol = np.finfo(float).eps * max(X.shape) * sing_vals[0]
+    sing_vals = sing_vals[sing_vals > tol]
+    if sing_vals.size == 0:
+        return np.inf                              # effectively rank-deficient
+
+    return float(sing_vals[0] / sing_vals[-1])
+    
 
 if __name__ == "__main__":
     main()
