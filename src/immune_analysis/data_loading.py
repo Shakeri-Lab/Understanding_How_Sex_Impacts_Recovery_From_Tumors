@@ -445,7 +445,17 @@ def load_RNA_sequencing_data_for_melanoma_samples():
         len(list_of_melanoma_SLIDs_in_expression_matrix),
         len(list_of_melanoma_SLIDs)
     )
-    assert False
+    sample_counts = (
+        pd.Series(list_of_melanoma_SLIDs_in_expression_matrix, name = "SLID")
+        .map(sample_to_patient)
+        .value_counts()
+    )
+    patients_with_multiple_samples = (sample_counts > 1).sum()
+    logger.info(
+        "%d patients out of %d have more than 1 RNA-seq sample.",
+        patients_with_multiple_samples,
+        sample_counts.size
+    )
     
     expr_matrix_filtered = expr_matrix[list_of_melanoma_SLIDs_in_expression_matrix]
     logger.info(f"Expression matrix was filtered to {len(list_of_melanoma_SLIDs_in_expression_matrix)} melanoma samples.")
