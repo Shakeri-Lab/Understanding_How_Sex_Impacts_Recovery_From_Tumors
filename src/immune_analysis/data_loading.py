@@ -132,10 +132,10 @@ def identify_melanoma_samples(clinical_data):
     logger.info(f"Path of surgery biopsy data is {paths.surgery_biopsy_data}.")
 
     # Load dataframes
-    qc_df = pd.read_csv(paths.QC_data).rename(columns = {"ORIENAvatarKey": "PATIENT_ID"})
+    qc_df = pd.read_csv(paths.QC_data).rename(columns = {"ORIENAvatarKey": "PATIENT_ID"}).query("QCCheck.str.casefold() == 'pass'", engine = "python")
     biopsy_df = pd.read_csv(paths.surgery_biopsy_data).rename(columns = {"AvatarKey": "PATIENT_ID"})
 
-    logger.info(f"Columns of data frame of QC data are {qc_df.columns.tolist()}.")
+    logger.info(f"Data frame of QC data has shape {qc_df.shape}.")
     logger.info(f"Columns of data frame of surgery biopsy data are {biopsy_df.columns.tolist()}.")
 
     # Get unique melanoma patient IDs from clinical_data
@@ -439,6 +439,14 @@ def load_RNA_sequencing_data_for_melanoma_samples():
     list_of_melanoma_SLIDs_in_expression_matrix = [column for column in expr_matrix.columns if column in list_of_melanoma_SLIDs]
     if not list_of_melanoma_SLIDs_in_expression_matrix:
         raise Exception("List of melanoma SLIDs in expression matrix is None or empty.")
+    
+    logger.info(
+        "%d of %d QC-pass melanoma samples have corresponding '.genes.results' files.",
+        len(list_of_melanoma_SLIDs_in_expression_matrix),
+        len(list_of_melanoma_SLIDs)
+    )
+    assert False
+    
     expr_matrix_filtered = expr_matrix[list_of_melanoma_SLIDs_in_expression_matrix]
     logger.info(f"Expression matrix was filtered to {len(list_of_melanoma_SLIDs_in_expression_matrix)} melanoma samples.")
     
@@ -471,6 +479,7 @@ def load_rnaseq_data():
         )
         .assign(gene_id = lambda df: df["gene_id"].str.replace(r"\.\d+$", "", regex = True))
         .drop_duplicates("gene_id")
+        .query("gene_id != ''")
         .query("gene_symbol != ''")
         .set_index("gene_id")["gene_symbol"]
     )
