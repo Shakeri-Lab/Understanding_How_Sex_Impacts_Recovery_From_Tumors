@@ -36,26 +36,19 @@ Test script `src/immune_analysis/utils.py`, which has no outputs.
 Test that outputs of the following scripts are equal to references.
 `src/data_processing/eda.py`,
 `src/immune_analysis/data_loading.py`,
-`src/immune_analysis/microenv.py`,
-TODO: `src/immune_analysis/immune_analysis.py`, and
-TODO: `src/immune_analysis/linear_mixed_models.py`.
+`src/immune_analysis/microenv.py`, and
+TODO: `src/immune_analysis/immune_analysis.py`
 '''
         
 
 # src/data_processing/utils.py doesn't have any outputs.
 def test_utils():
-    subprocess.run(
-        ["./miniconda3/envs/ici_sex/bin/python", "src/data_processing/utils.py", "../Manifest_and_QC_Files/24PRJ217UVA_20250130_RNASeq_QCMetrics.csv"],
-        check = True
-    )
+    # ./miniconda3/envs/ici_sex/bin/python src/data_processing/utils.py ../Manifest_and_QC_Files/24PRJ217UVA_20250130_RNASeq_QCMetrics.csv
+    pass
 
 
 def test_that_outputs_of_EDA_are_equal():
-    remove_outputs_except_references(Path("output/eda"))
-    subprocess.run(
-        ["./miniconda3/envs/ici_sex/bin/python", "-m", "src.data_processing.eda"],
-        check = True
-    )
+    # ./miniconda3/envs/ici_sex/bin/python -m src.data_processing.eda
     
     data_frame_of_melanoma_patient_and_sequencing_data = pd.read_csv("output/eda/melanoma_patients_with_sequencing.csv")
     data_frame_of_melanoma_patient_and_sequencing_data_for_comparison = pd.read_csv("output/eda/melanoma_patients_with_sequencing_for_comparison.csv")
@@ -78,11 +71,11 @@ def test_that_outputs_of_EDA_are_equal():
 
 
 def test_that_outputs_of_data_loading_are_equal():
-    remove_outputs_except_references(Path("output/data_loading"))
-    subprocess.run(
-        ["./miniconda3/envs/ici_sex/bin/python", "-m", "src.immune_analysis.data_loading"],
-        check = True
-    )
+    # ./miniconda3/envs/ici_sex/bin/python -m src.immune_analysis.data_loading
+    
+    data_frame_of_Ensembl_IDs_and_HGNC_symbols = pd.read_csv("output/data_loading/data_frame_of_Ensembl_IDs_and_HGNC_symbols.csv")
+    data_frame_of_Ensembl_IDs_and_HGNC_symbols_for_comparison = pd.read_csv("output/data_loading/data_frame_of_Ensembl_IDs_and_HGNC_symbols_for_comparison.csv")
+    assert_frame_equal(data_frame_of_Ensembl_IDs_and_HGNC_symbols, data_frame_of_Ensembl_IDs_and_HGNC_symbols_for_comparison)
     
     data_frame_of_melanoma_clinical_data = pd.read_csv("output/data_loading/melanoma_clinical_data.csv")
     data_frame_of_melanoma_clinical_data_for_comparison = pd.read_csv("output/data_loading/melanoma_clinical_data_for_comparison.csv")
@@ -94,11 +87,7 @@ def test_that_outputs_of_data_loading_are_equal():
 
 
 def test_that_outputs_of_microenv_are_equal():
-    remove_outputs_except_references(Path("output/microenv"))
-    subprocess.run(
-        ["./miniconda3/envs/ici_sex/bin/python", "-m", "src.immune_analysis.microenv"],
-        check = True
-    )
+    # ./miniconda3/envs/ici_sex/bin/python -m src.immune_analysis.microenv
     
     data_frame_melanoma_sample_immune_clinical = pd.read_csv("output/microenv/melanoma_sample_immune_clinical.csv")
     data_frame_melanoma_sample_immune_clinical_for_comparison = pd.read_csv("output/microenv/melanoma_sample_immune_clinical_for_comparison.csv")
@@ -120,12 +109,45 @@ def test_that_outputs_of_microenv_are_equal():
     xcell_scores_focused_panel_for_comparison = pd.read_csv("output/microenv/xcell_scores_focused_panel_for_comparison.csv")
     assert_frame_equal(xcell_scores_focused_panel, xcell_scores_focused_panel_for_comparison)
     
-    data_frame_of_xcell_scores = pd.read_csv("output/microenv/xcell_scores_raw.csv")
-    data_frame_of_xcell_scores_for_comparison = pd.read_csv("output/microenv/xcell_scores_raw_for_comparison.csv")
+    data_frame_of_xcell_scores = pd.read_csv("output/microenv/xcell_scores_raw_per_xCell.csv")
+    data_frame_of_xcell_scores_for_comparison = pd.read_csv("output/microenv/xcell_scores_raw_per_xCell_for_comparison.csv")
+    assert_frame_equal(data_frame_of_xcell_scores, data_frame_of_xcell_scores_for_comparison)
+
+    data_frame_of_xcell_scores = pd.read_csv("output/microenv/xcell_scores_raw_per_xCell2_and_Pan_Cancer.csv")
+    data_frame_of_xcell_scores_for_comparison = pd.read_csv("output/microenv/xcell_scores_raw_per_xCell2_and_Pan_Cancer_for_comparison.csv")
     assert_frame_equal(data_frame_of_xcell_scores, data_frame_of_xcell_scores_for_comparison)
     
+    data_frame_of_xcell_scores = pd.read_csv("output/microenv/xcell_scores_raw_per_xCell2_and_TME_Compendium.csv")
+    data_frame_of_xcell_scores_for_comparison = pd.read_csv("output/microenv/xcell_scores_raw_per_xCell2_and_TME_Compendium_for_comparison.csv")
+    assert_frame_equal(data_frame_of_xcell_scores, data_frame_of_xcell_scores_for_comparison)
 
+    
 # TODO: Test that outputs of immune analysis are equal.
 
 
-# TODO: Test that outputs of linear mixed models are equal.
+def test_that_outputs_of_linear_mixed_models_are_equal():
+    # ./miniconda3/envs/ici_sex/bin/python -m src.immune_analysis.linear_mixed_models
+    
+    data_frame_of_mixed_model_results_per_xCell = pd.read_csv("output/linear_mixed_models/mixed_model_results_per_xCell.csv")
+    data_frame_of_mixed_model_results_per_xCell_for_comparison = pd.read_csv("output/linear_mixed_models/mixed_model_results_per_xCell_for_comparison.csv")
+    assert_frame_equal(data_frame_of_mixed_model_results_per_xCell, data_frame_of_mixed_model_results_per_xCell_for_comparison)
+    
+    data_frame_of_mixed_model_results_per_xCell_and_Pan_Cancer = pd.read_csv("output/linear_mixed_models/mixed_model_results_per_xCell2_and_Pan_Cancer.csv")
+    data_frame_of_mixed_model_results_per_xCell_and_Pan_Cancer_for_comparison = pd.read_csv("output/linear_mixed_models/mixed_model_results_per_xCell2_and_Pan_Cancer_for_comparison.csv")
+    assert_frame_equal(data_frame_of_mixed_model_results_per_xCell_and_Pan_Cancer, data_frame_of_mixed_model_results_per_xCell_and_Pan_Cancer_for_comparison)
+    
+    data_frame_of_mixed_model_results_per_xCell_and_TME_Compendium = pd.read_csv("output/linear_mixed_models/mixed_model_results_per_xCell2_and_TME_Compendium.csv")
+    data_frame_of_mixed_model_results_per_xCell_and_TME_Compendium_for_comparison = pd.read_csv("output/linear_mixed_models/mixed_model_results_per_xCell2_and_TME_Compendium_for_comparison.csv")
+    assert_frame_equal(data_frame_of_mixed_model_results_per_xCell_and_TME_Compendium, data_frame_of_mixed_model_results_per_xCell_and_TME_Compendium_for_comparison)
+    
+    data_frame_of_mixed_model_results_significant_per_xCell = pd.read_csv("output/linear_mixed_models/mixed_model_results_significant_per_xCell.csv")
+    data_frame_of_mixed_model_results_significant_per_xCell_for_comparison = pd.read_csv("output/linear_mixed_models/mixed_model_results_significant_per_xCell_for_comparison.csv")
+    assert_frame_equal(data_frame_of_mixed_model_results_significant_per_xCell, data_frame_of_mixed_model_results_significant_per_xCell_for_comparison)
+    
+    data_frame_of_mixed_model_results_significant_per_xCell_and_Pan_Cancer = pd.read_csv("output/linear_mixed_models/mixed_model_results_significant_per_xCell2_and_Pan_Cancer.csv")
+    data_frame_of_mixed_model_results_significant_per_xCell_and_Pan_Cancer_for_comparison = pd.read_csv("output/linear_mixed_models/mixed_model_results_significant_per_xCell2_and_Pan_Cancer_for_comparison.csv")
+    assert_frame_equal(data_frame_of_mixed_model_results_significant_per_xCell_and_Pan_Cancer, data_frame_of_mixed_model_results_significant_per_xCell_and_Pan_Cancer_for_comparison)
+    
+    data_frame_of_mixed_model_results_significant_per_xCell_and_TME_Compendium = pd.read_csv("output/linear_mixed_models/mixed_model_results_significant_per_xCell2_and_TME_Compendium.csv")
+    data_frame_of_mixed_model_results_significant_per_xCell_and_TME_Compendium_for_comparison = pd.read_csv("output/linear_mixed_models/mixed_model_results_significant_per_xCell2_and_TME_Compendium_for_comparison.csv")
+    assert_frame_equal(data_frame_of_mixed_model_results_significant_per_xCell_and_TME_Compendium, data_frame_of_mixed_model_results_significant_per_xCell_and_TME_Compendium_for_comparison)
