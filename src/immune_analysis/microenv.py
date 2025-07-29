@@ -234,7 +234,9 @@ def process_melanoma_immune_data(clinical_data):
 
 def run_xcell_analysis(expr_df: pd.DataFrame, clinical_df: pd.DataFrame) -> bool:
     '''
-    Run xCell on a gene-by-sample matrix and write `xcell_scores_raw.csv` and `xcell_scores_focused_panel.csv`.
+    Run xCell on a gene-by-sample matrix.
+    Remove cell types that are not present in any sample based on significance analysis.
+    Write enrichment matrices.
     '''
 
     expr_df = clean_expression_df(expr_df)
@@ -244,7 +246,6 @@ def run_xcell_analysis(expr_df: pd.DataFrame, clinical_df: pd.DataFrame) -> bool
         expr_df.shape[0],
         expr_df.shape[1]
     )
-    
     logger.info("The matrix of gene and sample information will be converted to R.")
 
     with localconverter(ro.default_converter + pandas2ri.converter):
@@ -276,16 +277,13 @@ def run_xcell_analysis(expr_df: pd.DataFrame, clinical_df: pd.DataFrame) -> bool
         
     ro.r("library(xCell)")
     ro.r("data(xCell.data)")
-    cell_types_per_xCell = [
+    list_of_cell_types_per_xCell = [
         str(numpy_string_representing_cell_type)
         for numpy_string_representing_cell_type
         in ro.r("rownames(xCell.data$spill$K)")
     ] # See https://genomebiology.biomedcentral.com/articles/10.1186/s13059-017-1349-1#Sec24 .
-    cell_types_per_xCell = cell_types_per_xCell + [
-        "ImmuneScore",
-        "StromaScore",
-        "MicroenvironmentScore"
-    ] # See line 219 of https://github.com/dviraran/xCell/blob/master/R/xCell.R .
+    list_of_composite_scores = ["ImmuneScore", "StromaScore", "MicroenvironmentScore"]
+    list_of_cell_types_and_composite_scores_per_xCell = list_of_cell_types_per_xCell + list_of_composite_scores # See line 219 of https://github.com/dviraran/xCell/blob/master/R/xCell.R .
     
     function_get_signatures = ro.r('xCell2::getSignatures')
     function_names = ro.r['names']
@@ -317,20 +315,39 @@ def run_xcell_analysis(expr_df: pd.DataFrame, clinical_df: pd.DataFrame) -> bool
 
     data_frame_of_enrichment_scores_per_xCell = data_frame_of_enrichment_scores_per_xCell.T
     data_frame_of_enrichment_scores_per_xCell.index.name = "SampleID"
+    data_frame_of_enrichment_scores_per_xCell.columns = list_of_cell_types_and_composite_scores_per_xCell
     data_frame_of_enrichment_scores_per_xCell2_and_reference_Pan_Cancer = data_frame_of_enrichment_scores_per_xCell2_and_reference_Pan_Cancer.T
     data_frame_of_enrichment_scores_per_xCell2_and_reference_Pan_Cancer.index.name = "SampleID"
+    data_frame_of_enrichment_scores_per_xCell2_and_reference_Pan_Cancer.columns = list_of_cell_types_per_xCell2_and_Pan_Cancer
     data_frame_of_enrichment_scores_per_xCell2_and_reference_TME_Compendium = data_frame_of_enrichment_scores_per_xCell2_and_reference_TME_Compendium.T
     data_frame_of_enrichment_scores_per_xCell2_and_reference_TME_Compendium.index.name = "SampleID"
+    data_frame_of_enrichment_scores_per_xCell2_and_reference_TME_Compendium.columns = list_of_cell_types_per_xCell2_and_TME_Compendium
 
-    data_frame_of_enrichment_scores_per_xCell.columns = cell_types_per_xCell
-    data_frame_of_enrichment_scores_per_xCell.to_csv(paths.enrichment_data_frame_per_xCell)
+    data_frame_of_enrichment_scores_per_xCell_without_composite_scores = data_frame_of_enrichment_scores_per_xCell[list_of_cell_types_per_xCell]
+    with localconverter(ro.default_converter + pandas2ri.converter):
+        r_data_frame_of_enrichment_scores_per_xCell_without_composite_scores = ro.conversion.py2rpy(data_frame_of_enrichment_scores_per_xCell_without_composite_scores.T)
     
-    data_frame_of_enrichment_scores_per_xCell2_and_reference_Pan_Cancer.columns = list_of_cell_types_per_xCell2_and_Pan_Cancer
+    significance_function = xCell.xCellSignifcanceBetaDist
+    p_values = significance_function(r_data_frame_of_enrichment_scores_per_xCell_without_composite_scores)
+    r_data_frame_of_p_values = ro.r('as.data.frame')(p_values)
+    with localconverter(ro.default_converter + pandas2ri.converter):
+        data_frame_of_p_values = ro.conversion.rpy2py(r_data_frame_of_p_values)
+    data_frame_of_p_values.index = list_of_cell_types_per_xCell
+    data_frame_of_p_values.columns = expr_df.columns
+    significance_level = 0.05
+    list_of_detected_columns = data_frame_of_p_values.index[(data_frame_of_p_values < significance_level).any(axis = 1)].tolist()
+
+    list_of_columns_to_keep = list_of_detected_columns + list_of_composite_scores
+    list_of_columns_to_drop = sorted(set(data_frame_of_enrichment_scores_per_xCell.columns) - set(list_of_columns_to_keep))
+    if list_of_columns_to_drop:
+        logger.info("%d cell types not detected in any sample will be removed from the list [%s]", len(list_of_columns_to_drop), ", ".join(list_of_columns_to_drop))
+    
+    data_frame_of_enrichment_scores_per_xCell = data_frame_of_enrichment_scores_per_xCell[list_of_columns_to_keep]
+
+    data_frame_of_enrichment_scores_per_xCell.to_csv(paths.enrichment_data_frame_per_xCell)
     data_frame_of_enrichment_scores_per_xCell2_and_reference_Pan_Cancer.to_csv(
         paths.enrichment_data_frame_per_xCell2_and_Pan_Cancer
     )
-    
-    data_frame_of_enrichment_scores_per_xCell2_and_reference_TME_Compendium.columns = list_of_cell_types_per_xCell2_and_TME_Compendium
     data_frame_of_enrichment_scores_per_xCell2_and_reference_TME_Compendium.to_csv(
         paths.enrichment_data_frame_per_xCell2_and_TME_Compendium
     )
