@@ -36,7 +36,11 @@ logger = logging.getLogger(__name__)
 def create_data_frame_of_enrichment_scores_clinical_data_and_QC_data(path) -> tuple[pd.DataFrame, list[str]]:
     
     data_frame_of_enrichment_scores = pd.read_csv(path)
-    list_of_cell_types = data_frame_of_enrichment_scores.columns.tolist()[1:-3]
+    list_of_cell_types = [
+        name_of_column
+        for name_of_column in data_frame_of_enrichment_scores.columns
+        if name_of_column not in ["SampleID", "ImmuneScore", "StromaScore", "MicroenvironmentScore"]
+    ]
     logger.info(f"Data frame of sample IDs, cell types, and enrichment scores has {len(data_frame_of_enrichment_scores)} sample IDs and {len(list_of_cell_types)} cell types.")
     
     data_frame_of_sample_IDs_and_clinical_data = pd.read_csv(paths.melanoma_sample_immune_clinical_data).rename(columns = {"SLID": "SampleID"})
