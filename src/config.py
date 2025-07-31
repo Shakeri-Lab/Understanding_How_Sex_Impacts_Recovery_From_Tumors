@@ -107,12 +107,12 @@ class Paths():
         # src/immune_analysis/linear_mixed_models.py
         # dependencies
         self.outputs_of_linear_mixed_models = self.root / "output/linear_mixed_models"
+        # -----
         # self.enrichment_data_frame_per_xCell, which is defined above
         # self.enrichment_data_frame_per_xCell2_and_Pan_Cancer, which is defined above
         # self.enrichment_data_frame_per_xCell2_and_TME_Compendium, which is defined above
         # self.melanoma_sample_immune_clinical_data, which is defined above
         # self.QC_data, which is defined above
-        # -----
         # outputs
         self.mixed_model_results_per_xCell = self.outputs_of_linear_mixed_models / "mixed_model_results_per_xCell.csv"
         self.mixed_model_results_significant_per_xCell = self.outputs_of_linear_mixed_models / "mixed_model_results_significant_per_xCell.csv"
@@ -120,6 +120,24 @@ class Paths():
         self.mixed_model_results_significant_per_xCell2_and_Pan_Cancer = self.outputs_of_linear_mixed_models / "mixed_model_results_significant_per_xCell2_and_Pan_Cancer.csv"
         self.mixed_model_results_per_xCell2_and_TME_Compendium = self.outputs_of_linear_mixed_models / "mixed_model_results_per_xCell2_and_TME_Compendium.csv"
         self.mixed_model_results_significant_per_xCell2_and_TME_Compendium = self.outputs_of_linear_mixed_models / "mixed_model_results_significant_per_xCell2_and_TME_Compendium.csv"
+        
+        # src/immune_analysis/compare_enrichment_scores.py
+        # dependencies
+        self.outputs_of_compare_enrichment_scores = self.root / "output/compare_enrichment_scores"
+        # -----
+        # self.enrichment_data_frame_per_xCell, which is defined above
+        # self.enrichment_data_frame_per_xCell2_and_Pan_Cancer, which is defined above
+        # self.enrichment_data_frame_per_xCell2_and_TME_Compendium, which is defined above
+        # outputs
+        self.comparisons_for_females_and_males_and_xCell = self.outputs_of_compare_enrichment_scores / "comparisons_for_females_and_males_and_xCell.csv"
+        self.comparisons_for_ICB_naive_and_experienced_samples_of_females_and_xCell = self.outputs_of_compare_enrichment_scores / "comparisons_for_ICB_naive_and_experienced_samples_of_females_and_xCell.csv"
+        self.comparisons_for_ICB_naive_and_experienced_samples_of_males_and_xCell = self.outputs_of_compare_enrichment_scores / "comparisons_for_ICB_naive_and_experienced_samples_of_males_and_xCell.csv"
+        self.comparisons_for_females_and_males_and_xCell2_and_Pan_Cancer = self.outputs_of_compare_enrichment_scores / "comparisons_for_females_and_males_and_xCell2_and_Pan_Cancer.csv"
+        self.comparisons_for_ICB_naive_and_experienced_samples_of_females_and_xCell2_and_Pan_Cancer = self.outputs_of_compare_enrichment_scores / "comparisons_for_ICB_naive_and_experienced_samples_of_females_and_xCell2_and_Pan_Cancer.csv"
+        self.comparisons_for_ICB_naive_and_experienced_samples_of_males_and_xCell2_and_Pan_Cancer = self.outputs_of_compare_enrichment_scores / "comparisons_for_ICB_naive_and_experienced_samples_of_males_and_xCell2_and_Pan_Cancer.csv"
+        self.comparisons_for_females_and_males_and_xCell2_and_TME_Compendium = self.outputs_of_compare_enrichment_scores / "comparisons_for_females_and_males_and_xCell2_and_TME_Compendium.csv"
+        self.comparisons_for_ICB_naive_and_experienced_samples_of_females_and_xCell2_and_TME_Compendium = self.outputs_of_compare_enrichment_scores / "comparisons_for_ICB_naive_and_experienced_samples_of_females_and_xCell2_and_TME_Compendium.csv"
+        self.comparisons_for_ICB_naive_and_experienced_samples_of_males_and_xCell2_and_TME_Compendium = self.outputs_of_compare_enrichment_scores / "comparisons_for_ICB_naive_and_experienced_samples_of_males_and_xCell2_and_TME_Compendium.csv"       
         
         # src/immune_analysis/treatment_analysis.py
         # dependencies
@@ -183,6 +201,16 @@ class Paths():
             self.QC_data
         ]:
             assert os.path.exists(path), f"The dependency of `src/immune_analysis/linear_mixed_models.py` `{path}` does not exist."
+
+
+    def ensure_dependencies_for_compare_enrichment_scores_exist(self):
+        os.makedirs(self.outputs_of_compare_enrichment_scores, exist_ok = True)
+        for path in [
+            self.enrichment_data_frame_per_xCell,
+            self.enrichment_data_frame_per_xCell2_and_Pan_Cancer,
+            self.enrichment_data_frame_per_xCell2_and_TME_Compendium
+        ]:
+            assert os.path.exists(path), f"The dependency of `src/immune_analysis/compare_enrichment_scores.py` `{path}` does not exist."
 
 
 paths = Paths()

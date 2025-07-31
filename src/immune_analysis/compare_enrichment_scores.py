@@ -191,6 +191,8 @@ def main():
     Compare enrichment scores for females by experience of ICB therapy.
     Compare enrichment scores for males by experience of ICB therapy.
     '''
+    paths.ensure_dependencies_for_compare_enrichment_scores_exist()
+    
     parser = argparse.ArgumentParser(
         description = "Compare enrichment scores by family and cell type."
     )
@@ -201,14 +203,30 @@ def main():
     )
     args = parser.parse_args()
 
-    dictionary_of_engines_and_paths_of_enrichment_data = {
-        "xCell": paths.enrichment_data_frame_per_xCell,
-        "xCell2_and_Pan_Cancer": paths.enrichment_data_frame_per_xCell2_and_Pan_Cancer,
-        "xCell2_and_TME_Compendium": paths.enrichment_data_frame_per_xCell2_and_TME_Compendium
+    dictionary_of_paths = {
+        paths.enrichment_data_frame_per_xCell: (
+            paths.comparisons_for_females_and_males_and_xCell,
+            paths.comparisons_for_ICB_naive_and_experienced_samples_of_females_and_xCell,
+            paths.comparisons_for_ICB_naive_and_experienced_samples_of_males_and_xCell
+        ),
+        paths.enrichment_data_frame_per_xCell2_and_Pan_Cancer: (
+            paths.comparisons_for_females_and_males_and_xCell2_and_Pan_Cancer,
+            paths.comparisons_for_ICB_naive_and_experienced_samples_of_females_and_xCell2_and_Pan_Cancer,
+            paths.comparisons_for_ICB_naive_and_experienced_samples_of_males_and_xCell2_and_Pan_Cancer
+        ),
+        paths.enrichment_data_frame_per_xCell2_and_TME_Compendium: (
+            paths.comparisons_for_females_and_males_and_xCell2_and_TME_Compendium,
+            paths.comparisons_for_ICB_naive_and_experienced_samples_of_females_and_xCell2_and_TME_Compendium,
+            paths.comparisons_for_ICB_naive_and_experienced_samples_of_males_and_xCell2_and_TME_Compendium
+        )
     }
     
-    for engine, path_to_enrichment_data in dictionary_of_engines_and_paths_of_enrichment_data.items():
+    for path_to_enrichment_data, tuple_of_paths_to_comparisons in dictionary_of_paths.items():
         logger.info(f"Enrichment scores in {path_to_enrichment_data} will be compared.")
+        
+        path_to_comparisons_for_females_and_males = tuple_of_paths_to_comparisons[0]
+        path_to_comparisons_for_ICB_naive_and_experienced_samples_of_females = tuple_of_paths_to_comparisons[1]
+        path_to_comparisons_for_ICB_naive_and_experienced_samples_of_males = tuple_of_paths_to_comparisons[2]
     
         df, cell_types = create_data_frame_of_enrichment_scores_clinical_data_and_QC_data(
             path_to_enrichment_data
@@ -230,11 +248,11 @@ def main():
             group_b = 1,
             adjust_covariates = args.adjust_covariates
         ).rename(columns = {"n_a": "n_F", "n_b": "n_M"})
-        make_result_table(sex_tbl, "Sex F vs M", Path(f"sex_wilcoxon_{engine}.csv"))
+        make_result_table(sex_tbl, "Sex F vs M", path_to_comparisons_for_females_and_males)
 
         out_map = {
-            0: Path(f"icb_wilcoxon_female_{engine}.csv"),
-            1: Path(f"icb_wilcoxon_male_{engine}.csv"),
+            0: path_to_comparisons_for_ICB_naive_and_experienced_samples_of_females,
+            1: path_to_comparisons_for_ICB_naive_and_experienced_samples_of_males,
         }
         for sex_code, out_path in out_map.items():
             sex_df = df[df["Sex"] == sex_code]
