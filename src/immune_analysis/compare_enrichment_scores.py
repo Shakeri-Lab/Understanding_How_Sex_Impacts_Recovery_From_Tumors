@@ -3,41 +3,52 @@
 This script compares enrichment scores produced by xCell or xCell2 for
 - tumors of females (0) and males (1),
 - ICB-naive tumors (0) and ICB-experienced (1) tumors of females, and
-- ICB-naive tumors and ICB-experienced tumors of males and
-various cell types.
+- ICB-naive tumors and ICB-experienced tumors of males
+across various cell types.
 This script for each family of tumors and cell type
 performs a 2 sided Mann-Whitney U Test / Wilcoxon Rank Sum Test.
 
 This script optionally removes variability due to age at clinical record creation and stage at start of ICB therapy before comparing.
-This script optionally isolates differences between samples of patients with different sexes or
-between samples for patients of a certain sex with different experiences with ICB therapy
-by discounting age at clinical record creation and stage at start of ICB therapy.
 
-A Mann-Whitney U Test / Wilcoxon Rank Sum Test tests a null hypothesis that
-2 independent samples come from the same continuous distribution.
-The test compares ranks.
-TODO: What does it mean for 2 independent samples to come from the same continuous distribution?
-TODO: What is a rank?
-The test provides a U test statistic equal to
-the number of times a value in a group A precedes a value in a group B
-when all observations are ranked together.
-TODO: What does "precedes" mean?
-TODO: What does "ranked" mean?
-The test also provides a p value associated with the U statistic.
-This script adjusts p values into False Discovery Rates with the Benjamini-Hochberg procedure.
-A Benjamini-Hochberg adjusted False Discovery Rate is a p value multiple by a number of hypotheses, divided by the index of the p value in ascending list of p values, clipped to 1, and "monotone-decreasingly corrected".
-TODO: What does "monotone-decreasingly corrected" mean?
+Enrichment scores from group A (e.g., samples of females) and group B (e.g., samples of males)
+may be combined in a list.
+The list may be sorted from smallest to largest.
+A rank is the position of an enrichment score in the sorted list.
+If multiple enrichment scores are equal, their ranks are averaged and
+assigned to each equal enrichment score.
+When an enrichment score precedes another enrichment score,
+the former occurs earlier in the sorted list.
 
-This script outputs 1 CSV filer per comparison that flags sigificant and suggestive cell types.
+A Mann-Whitney U Test / Wilcoxon Rank Sum Test tests a null hypothesis that every enrichment score in either group A or B is drawn from the same population distribution of enrichment scores.
+The U test statistic of a Mann-Whitney U Test / Wilcoxon Rank Sum Test is
+the number of pairs of enrichment scores in which
+the enrichment score for group A precedes the enrichment score for group B.
+For a given U test statistic, the p value associated with that U statistic is
+the probability, when assuming the null hypothesis is true,
+of observing a U statistic at least as extreme as the calculated U statistic.
+Smaller p values provide stronger evidence against the null hypothesis.
 
-TODO: What is a p value?
-TODO: What does significant mean?
-TODO: What does suggestive mean?
+This script adjusts p values into False Discovery Rates (FDRs) with the Benjamini-Hochberg procedure.
+p values p_i and any associated information are sorted in ascending order.
+Each p value p_i is multiplied by the number of p values, divided by i, and clipped to 1.
+The resulting series is corrected so that each value is at least as large as the preceding value.
+The resulting series contains FDRs and may be added as a column next to the p values.
+
+A cell type is significant if the FDR associated with that cell type is less than or equal to 0.05.
+A cell type being significant indicates that enrichment scores for group A and that cell type
+were not drawn from the same population distribution as
+enrichment scores for group B and that cell type.
+A cell type is suggestive if the FDR associated with that cell type is greater than 0.05 and
+less than or equal to 0.20.
+A cell type being suggestive suggests that enrichment scores for group A and that cell type
+were not drawn from the same population distribution as
+enrichment scores for group B and that cell type.
+
 
 Usage
 -----
 conda activate ici_sex
-./miniconda3/envs/ici_sex/bin/python -m src.immune_analysis.compare_enrichment_scores --adjust-covariates --matrix xCell
+./miniconda3/envs/ici_sex/bin/python -m src.immune_analysis.compare_enrichment_scores --adjust-covariates
 
 Pass flag `--adjust-covariates` to remove variability due to age at clinical record creation and stage at start of ICB therapy before comparing.
 Otherwise raw enrichment scores are used.
@@ -54,9 +65,9 @@ Each file contains one row per cell type with columns
       numbers of ICB-naive and ICB-experienced samples,
     - U-stat containing U statistics,
     - p value containing p values,
-    - FDR containing Benjamini Hochberg adjusted p values / False Discovery Rates,
-    - significant containing indicators of significance / FDR less than or equal to 0.05, and
-    - suggestive containing indicators of suggestiveness / FDR between 0.05 and 0.20.
+    - FDR containing False Discovery Rates,
+    - significant containing indicators of significance, and
+    - suggestive containing indicators of suggestiveness.
 '''
 
 from pathlib import Path
@@ -142,11 +153,13 @@ def wilcoxon_table(
     - p value.
     '''
     rows = []
-    mask = df[group_var].isin([group_a, group_b]).copy()
+    mask = df[group_var].isin([group_a, group_b])
     for ct in list_cell_types:
         sub = df.loc[mask, [ct, group_var]].dropna()
         if adjust_covariates:
             sub_for_lm = df.loc[mask, [ct, "AgeAtClinicalRecordCreation", "STAGE_AT_ICB"]].dropna()
+            if not (sub_for_lm.index == sub.index).all():
+                raise ValueError("sub_for_lm has fewer rows than sub.")
             model = smf.ols(f"{ct} ~ AgeAtClinicalRecordCreation + C(STAGE_AT_ICB)", data = sub_for_lm).fit()
             residuals = model.resid
             sub = sub.assign(resid = residuals.loc[sub.index]).dropna(subset = ["resid"])
@@ -201,7 +214,13 @@ def main():
             path_to_enrichment_data
         )
         df = df.rename(columns = lambda cell_type: cell_type.replace(' ', '_').replace('-', '_').replace('+', "plus").replace(',', ''))
+        dupes = df.columns[df.columns.duplicated()]
+        if len(dupes):
+            raise ValueError(f"Duplicate column names after cleaning: {sorted(dupes)}")
         cell_types = [cell_type.replace(' ', '_').replace('-', '_').replace('+', "plus").replace(',', '') for cell_type in cell_types]
+        set_of_cell_types = set(cell_types)
+        if len(set_of_cell_types) != len(cell_types):
+            raise ValueError("Set and list of cell types are different.")
 
         sex_tbl = wilcoxon_table(
             df,
