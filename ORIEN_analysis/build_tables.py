@@ -161,6 +161,7 @@ def main():
     PATH_TO_NORMALIZED_FILES = Path("../../Clinical_Data/24PRJ217UVA_NormalizedFiles")
     PATH_TO_CLINICAL_MOLECULAR_LINKAGE_DATA = PATH_TO_NORMALIZED_FILES / "24PRJ217UVA_20241112_ClinicalMolLinkage_V4.csv"
     PATH_TO_PATIENT_DATA = PATH_TO_NORMALIZED_FILES / "24PRJ217UVA_20241112_PatientMaster_V4.csv"
+    PATH_TO_PATIENT_DATA_WITH_EMILY_NINMERS_ETHNICITIES = "24PRJ217UVA_20241112_PatientMaster_V4_Ethnicity.csv"
     PATH_TO_TUMOR_MARKER_DATA = PATH_TO_NORMALIZED_FILES / "24PRJ217UVA_20241112_TumorMarker_V4.csv"
     PATH_TO_OUTPUT_OF_PIPELINE_FOR_PAIRING_CLINICAL_DATA_AND_STAGES_OF_TUMORS = "../pair_clinical_data_and_stages_of_tumors/output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors.csv"
     PATH_TO_MEDICATIONS_DATA = PATH_TO_NORMALIZED_FILES / "24PRJ217UVA_20241112_Medications_V4.csv"
@@ -168,6 +169,7 @@ def main():
     
     clinical_molecular_linkage_data = pd.read_csv(PATH_TO_CLINICAL_MOLECULAR_LINKAGE_DATA, dtype = str)
     patient_data = pd.read_csv(PATH_TO_PATIENT_DATA, dtype = str)
+    patient_data_with_Emily_Ninmers_ethnicities = pd.read_csv(PATH_TO_PATIENT_DATA_WITH_EMILY_NINMERS_ETHNICITIES, dtype = str)
     tumor_marker_data = pd.read_csv(PATH_TO_TUMOR_MARKER_DATA, dtype = str)
     output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors = pd.read_csv(PATH_TO_OUTPUT_OF_PIPELINE_FOR_PAIRING_CLINICAL_DATA_AND_STAGES_OF_TUMORS, dtype = str)
     output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors["index_of_row_of_diagnosis_data_paired_with_specimen"] = pd.to_numeric(
@@ -380,6 +382,14 @@ def main():
         how = "left"
     ).drop(columns = "AvatarKey")
     tumor_data["Sex"] = tumor_data["Sex"].str.title()
+    
+    tumor_data = tumor_data.merge(
+        patient_data_with_Emily_Ninmers_ethnicities[["AvatarKey", "EthnicityEKN"]],
+        left_on = "ORIENAvatarKey",
+        right_on = "AvatarKey",
+        how = "left"
+    ).drop(columns = "AvatarKey")
+    tumor_data["EthnicityEKN"] = tumor_data["EthnicityEKN"].fillna("Unknown")
 
     print(f"The number of rows in tumor data after merging patient data is {len(tumor_data)}.")
 
@@ -639,19 +649,14 @@ def main():
             {
                 "Characteristic": ethnicity,
                 **summarize(
-                    tumor_data["Ethnicity"].str.contains(ethnicity, regex = False),
+                    tumor_data["EthnicityEKN"] == ethnicity,
                     tumor_data
                 )
             }
             for ethnicity in [
-                "Hispanic, NOS",
-                "Latino, NOS",
-                "Mexican (includes Chicano)",
+                "Hispanic",
                 "Non-Hispanic",
-                "Non-Spanish",
-                "South or Central American (except Brazil)",
-                "Spanish, NOS",
-                "Unknown/Not Reported"
+                "Unknown"
             ]
         )
     ]
