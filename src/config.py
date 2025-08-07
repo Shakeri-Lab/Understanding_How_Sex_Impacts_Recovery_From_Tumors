@@ -100,6 +100,7 @@ class Paths():
         # outputs
         self.correlation_matrix_focused = self.outputs_of_immune_analysis / "correlation_matrix_focused.png"
         self.data_frame_of_specimen_sites_by_metastatic_status = self.outputs_of_immune_analysis / "specimen_sites_by_metastatic_status.csv"
+        self.data_frame_of_statistics_for_cell_types_and_sexes = self.outputs_of_immune_analysis / "data_frame_of_statistics_for_cell_types_and_sexes.csv"
         self.specimen_sites_plot = self.outputs_of_immune_analysis / "specimen_sites_plot.png"
         self.data_frame_of_metastatic_vs_primary_results = self.outputs_of_immune_analysis / "metastatic_vs_primary_results.csv"
         self.metastatic_vs_primary_heatmap = self.outputs_of_immune_analysis / "metastatic_vs_primary_heatmap.png"

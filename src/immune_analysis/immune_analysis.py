@@ -31,15 +31,13 @@ class ImmuneAnalysis:
     
     def __init__(self):
 
-        # Initialize a data frame of melanoma sample immune clinical data and focused scores by sample and cell type.
+        # Initialize data frames of melanoma sample immune clinical data and focused enrichment scores by sample and cell type.
         self.melanoma_sample_immune_clinical_data = pd.read_csv(paths.melanoma_sample_immune_clinical_data)
         
-        logger.info(f"Data was successfully loaded from {paths.melanoma_sample_immune_clinical_data}.")
-        
-        self.focused_data_frame_of_scores_by_sample_and_cell_type = pd.read_csv(paths.focused_data_frame_of_scores_by_sample_and_cell_type)
+        self.focused_enrichment_data_frame = pd.read_csv(paths.focused_enrichment_data_frame)
         
         self.melanoma_sample_immune_clinical_data_and_scores = self.melanoma_sample_immune_clinical_data.merge(
-            self.focused_data_frame_of_scores_by_sample_and_cell_type,
+            self.focused_enrichment_data_frame,
             left_on = "SLID",
             right_on = "SampleID",
             how = "left"
@@ -49,9 +47,10 @@ class ImmuneAnalysis:
         self.n_tests = len(FOCUSED_XCELL_PANEL)
         if self.n_tests > 0:
             self.bonferroni_threshold = 0.05 / self.n_tests
-            logger.info(f"The Bonferroni-corrected p-value threshold for {self.n_tests} tests is {self.bonferroni_threshold:.3e}.")
         else:
              self.bonferroni_threshold = 0.05
+        
+        logger.info(f"The Bonferroni-corrected p-value threshold for {self.n_tests} tests is {self.bonferroni_threshold:.3e}.")
         self.dictionary_of_categories_of_cell_types_and_dictionaries_of_short_cell_types_and_long_cell_types = {
             'Innate': {
                 'cDC': 'Conventional Dendritic Cells',
@@ -86,6 +85,7 @@ class ImmuneAnalysis:
                     self.dictionary_of_short_cell_types_and_long_cell_types[short_cell_type] = long_cell_type
                     self.dictionary_of_short_cell_types_and_categories_of_cell_types[short_cell_type] = category
     
+    
     def make_cell_type_readable(self, cell_type):
         readable_cell_type = self.dictionary_of_short_cell_types_and_long_cell_types.get(cell_type, None)
         if readable_cell_type is None:
@@ -98,40 +98,42 @@ class ImmuneAnalysis:
     
     def compare_abundance_of_cells_of_type_between_groups(self, cell_type, group_col, test = "mann-whitney"):
         '''
-        Compare abundance of cells of a provided type between groups.
-        '''            
+        Compare abundance of cells of a provided type between groups
+        (e.g., Female and Male as values of Sex).
+        '''
         groups = self.melanoma_sample_immune_clinical_data_and_scores[group_col].dropna().unique()
-        
         if len(groups) != 2:
-            raise Exception(f"Grouping column {group_col} does not have exactly 2 unique non-NA values. This column has groups ({groups}).")
-            
-        group1 = self.melanoma_sample_immune_clinical_data_and_scores[
+            raise Exception(f"Grouping column {group_col} does not have exactly 2 unique non-NA values. This column has groups {groups}.")
+        series_of_enrichment_scores_for_cell_type_and_group_1 = self.melanoma_sample_immune_clinical_data_and_scores[
             self.melanoma_sample_immune_clinical_data_and_scores[group_col] == groups[0]
         ][cell_type].dropna()
-        group2 = self.melanoma_sample_immune_clinical_data_and_scores[
+        series_of_enrichment_scores_for_cell_type_and_group_2 = self.melanoma_sample_immune_clinical_data_and_scores[
             self.melanoma_sample_immune_clinical_data_and_scores[group_col] == groups[1]
         ][cell_type].dropna()
-
-        if len(group1) < 3 or len(group2) < 3:
-             raise Exception(f"There are not enough data points for comparison of '{cell_type}' between groups {groups[0]} (n = {len(group1)}) and {groups[1]} (n = {len(group2)}).")
-        
+        if len(series_of_enrichment_scores_for_cell_type_and_group_1) < 3 or len(series_of_enrichment_scores_for_cell_type_and_group_2) < 3:
+             raise Exception(f"There are not enough enrichment scores for cells of type {cell_type} between group {groups[0]} with {len(group1)} scores and group {groups[1]} with {len(group2)} scores.")  
         if test == 'mann-whitney':
-            stat, pval = stats.mannwhitneyu(group1, group2, alternative = "two-sided")
+            stat, pval = stats.mannwhitneyu(series_of_enrichment_scores_for_cell_type_and_group_1, series_of_enrichment_scores_for_cell_type_and_group_2, alternative = "two-sided")
         elif test == 't-test':
-            stat, pval = stats.ttest_ind(group1, group2)
+            stat, pval = stats.ttest_ind(series_of_enrichment_scores_for_cell_type_and_group_1, series_of_enrichment_scores_for_cell_type_and_group_2)
         else:
              raise Exception(f"Test type {test} is unsupported.")
-
         return {
             'groups': groups,
-            'means': [group1.mean(), group2.mean()],
-            'medians': [group1.median(), group2.median()],
+            'means': [
+                series_of_enrichment_scores_for_cell_type_and_group_1.mean(),
+                series_of_enrichment_scores_for_cell_type_and_group_1.mean()
+            ],
+            'medians': [
+                series_of_enrichment_scores_for_cell_type_and_group_1.median(),
+                series_of_enrichment_scores_for_cell_type_and_group_1.median()
+            ],
             'statistic': stat,
             'pvalue': pval
         }
     
     
-    def plot_distribution_of_abundance_of_cells_of_type_by_group(self, cell_type, group_col, plot_type = 'violin'):
+    def plot_distribution_of_abundance_of_cells_of_type_by_group(self, cell_type, group_col, plot_type = "both"):
         '''
         Plot distribution of abundance of cells of a provided type by group.
         ''' 
@@ -173,17 +175,17 @@ class ImmuneAnalysis:
         if dictionary_of_statistics is not None:
             pval = dictionary_of_statistics['pvalue']
             if pval < self.bonferroni_threshold:
-                sig_symbol = '***' # Bonferroni-significant
+                sig_symbol = "Bonferroni significant"
             elif pval < 0.05:
-                sig_symbol = '*' # Nominally significant
+                sig_symbol = "nominally significant"
             else:
-                sig_symbol = 'ns' # Not significant
+                sig_symbol = "not significant"
             ymin, ymax = plt.ylim()
             text_y_pos = max(ymax * 0.95, ymin + (ymax - ymin) * 0.1) 
             plt.text(
                 0.5,
                 text_y_pos, 
-                f'p = {pval:.2e} {sig_symbol}',
+                f"p = {pval:.3e}.\np is {sig_symbol}.",
                 transform = ax.transAxes,
                 horizontalalignment = "center",
                 verticalalignment = "top",
@@ -199,7 +201,7 @@ class ImmuneAnalysis:
         plt.tight_layout()
         output_file = os.path.join(
             paths.distributions_of_abundance_of_cells_of_type_by_group,
-            f'{cell_type.replace(" ", "_").replace("+", "")}_{group_col}_dist.png'
+            f'distribution_of_abundances_of_{cell_type.replace(" ", "_").replace("+", "plus")}_by_{group_col}.png'
         )
         plt.savefig(output_file, bbox_inches = "tight", dpi = 300)
         logger.info(f"Plot was saved to {output_file}.")
@@ -422,30 +424,29 @@ class ImmuneAnalysis:
         
 def main():
     paths.ensure_dependencies_for_immune_analysis_exist()
-    
     analysis = ImmuneAnalysis()
-
     grouping_column = 'Sex'
-    logger.info(f"Abudances of cells of {len(FOCUSED_XCELL_PANEL)} types will be compared by {grouping_column}.")
+    
+    logger.info(f"Abundances of cells of {len(FOCUSED_XCELL_PANEL)} types will be compared by {grouping_column}.")
 
-    all_results = []
+    list_of_dictionaries_of_statistics_for_cell_types_and_sexes = []
     for cell_type in FOCUSED_XCELL_PANEL:
+        
         logger.info(f"Abundances of cells of type {cell_type} will be compared by {grouping_column}.")
         
         result = analysis.compare_abundance_of_cells_of_type_between_groups(cell_type, group_col = grouping_column)
-        
         if result:
             readable_cell_type, category = analysis.make_cell_type_readable(cell_type)
-            all_results.append(
+            list_of_dictionaries_of_statistics_for_cell_types_and_sexes.append(
                 {
                     'cell_type': f"{readable_cell_type} in {category}",
                     'p_value': result['pvalue'],
                     'significant': result['pvalue'] < 0.05,
                     'bonferroni_significant': result['pvalue'] < analysis.bonferroni_threshold,
-                    'mean_group0': result['means'][0],
-                    'mean_group1': result['means'][1],
-                    'median_group0': result['medians'][0],
-                    'median_group1': result['medians'][1]
+                    'mean_enrichment_score_for_cell_type_and_group_0': result['means'][0],
+                    'mean_enrichment_score_for_cell_type_and_group_1': result['means'][1],
+                    'median_enrichment_score_for_cell_type_and_group_0': result['medians'][0],
+                    'median_enrichment_score_for_cell_type_and_group_0': result['medians'][1]
                 }
             )
         else:
@@ -453,26 +454,30 @@ def main():
 
         analysis.plot_distribution_of_abundance_of_cells_of_type_by_group(cell_type, group_col = grouping_column)
 
-    # Save combined results.
-    if all_results:
-        results_df = pd.DataFrame(all_results).sort_values('p_value')
-        output_file = os.path.join(
-            paths.outputs_of_immune_analysis,
-            f"all_focused_results_by_{grouping_column}.csv"
+    if list_of_dictionaries_of_statistics_for_cell_types_and_sexes:
+        data_frame_of_statistics_for_cell_types_and_sexes = pd.DataFrame(
+            list_of_dictionaries_of_statistics_for_cell_types_and_sexes
+        ).sort_values('p_value')
+        data_frame_of_statistics_for_cell_types_and_sexes.to_csv(
+            paths.data_frame_of_statistics_for_cell_types_and_sexes,
+            index = False
         )
-        results_df.to_csv(output_file, index = False)
-        logger.info(f"All comparison results were saved to {output_file}.")
+        logger.info(f"A data frame of statistics for cell types and sexes was saved to {paths.data_frame_of_statistics_for_cell_types_and_sexes}.")
          
-        # Print summary
-        n_sig = results_df['significant'].sum()
-        n_bon_sig = results_df['bonferroni_significant'].sum()
+        # Print summary.
+        n_sig = data_frame_of_statistics_for_cell_types_and_sexes['significant'].sum()
+        n_bon_sig = data_frame_of_statistics_for_cell_types_and_sexes['bonferroni_significant'].sum()
         logger.info(f"Summary for {grouping_column} comparison:")
-        logger.info(f"Total tests: {len(results_df)}")
+        logger.info(f"Total tests: {len(data_frame_of_statistics_for_cell_types_and_sexes)}")
         logger.info(f"Nominally significant (p < 0.05): {n_sig}")
         logger.info(f"Bonferroni significant (p < {analysis.bonferroni_threshold:.3e}): {n_bon_sig}")
         if n_sig > 0:
             logger.info("First rows with nominal significance:")
-            logger.info(results_df[results_df['significant']].head())
+            logger.info(
+                data_frame_of_statistics_for_cell_types_and_sexes[
+                    data_frame_of_statistics_for_cell_types_and_sexes['significant']
+                ].head()
+            )
     else:
          logger.warning("No statistical comparison results were generated.")
 
