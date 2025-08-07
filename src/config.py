@@ -98,7 +98,7 @@ class Paths():
         # self.melanoma_sample_immune_clinical_data, which is defined above
         # self.focused_data_frame_of_scores_by_sample_and_cell_type, which is defined above
         # outputs
-        self.correlation_matrix_focused = self.outputs_of_immune_analysis / "correlation_matrix_focused.png"
+        self.matrix_of_correlations_of_abundances_of_cell_types = self.outputs_of_immune_analysis / "matrix_of_correlations_of_abundances_of_cell_types.png"
         self.data_frame_of_specimen_sites_by_metastatic_status = self.outputs_of_immune_analysis / "specimen_sites_by_metastatic_status.csv"
         self.data_frame_of_statistics_for_cell_types_and_sexes = self.outputs_of_immune_analysis / "data_frame_of_statistics_for_cell_types_and_sexes.csv"
         self.specimen_sites_plot = self.outputs_of_immune_analysis / "specimen_sites_plot.png"

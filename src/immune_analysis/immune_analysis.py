@@ -210,23 +210,23 @@ class ImmuneAnalysis:
         return output_file
     
     
-    def plot_correlation_matrix(self, group_col):
+    def plot_correlation_matrix(self):
         '''
         Plot correlation matrix of the identified immune cell types.
         '''
-        logger.info(f"A correlation matrix for all {len(FOCUSED_XCELL_PANEL)} columns in focused data frame of xCell scores by sample and cell type will be generated.")
-        data = self.melanoma_sample_immune_clinical_data_and_scores[FOCUSED_XCELL_PANEL].copy()
-        title = 'Immune Cell Score Correlations - Focused Panel'
+        logger.info(f"A correlation matrix for all {len(FOCUSED_XCELL_PANEL)} cell types in focused data frame of xCell scores by sample and cell type will be generated.")
+        data_frame_of_sample_IDs_cell_types_and_abundances = self.melanoma_sample_immune_clinical_data_and_scores[FOCUSED_XCELL_PANEL].copy()
+        title = "Matrix Of Correlations Of Abundances Of Cells Types"
         
         list_of_readable_cell_types = []
-        for cell_type in data.columns:
+        for cell_type in data_frame_of_sample_IDs_cell_types_and_abundances.columns:
             readable_cell_type, category = self.make_cell_type_readable(cell_type)
             list_of_readable_cell_types.append(f"{readable_cell_type} in {category}")
-        data.columns = list_of_readable_cell_types
+        data_frame_of_sample_IDs_cell_types_and_abundances.columns = list_of_readable_cell_types
         
-        corr = data.corr()
+        correlation_matrix = data_frame_of_sample_IDs_cell_types_and_abundances.corr()
         
-        if corr.isnull().all().all() or corr.empty:
+        if correlation_matrix.isnull().all().all() or correlation_matrix.empty:
             raise Exception("Correlation matrix is empty or all NaN.")
         
         num_features = len(FOCUSED_XCELL_PANEL)
@@ -234,7 +234,7 @@ class ImmuneAnalysis:
         plt.figure(figsize = (fig_size, fig_size * 0.8))
         
         sns.heatmap(
-            corr,
+            correlation_matrix,
             cmap = 'RdBu_r',
             center = 0,
             xticklabels = True,
@@ -253,11 +253,15 @@ class ImmuneAnalysis:
         plt.yticks(rotation = 0, fontsize = 8)
         plt.title(title)
         
-        plt.savefig(paths.correlation_matrix_focused, bbox_inches = "tight", dpi = 300)
-        logger.info(f"Correlation matrix was saved to {paths.correlation_matrix_focused}.")
+        plt.savefig(
+            paths.matrix_of_correlations_of_abundances_of_cell_types,
+            bbox_inches = "tight",
+            dpi = 300
+        )
+        logger.info(f"Correlation matrix was saved to {paths.matrix_of_correlations_of_abundances_of_cell_types}.")
         plt.close()
         
-        return paths.correlation_matrix_focused
+        return paths.matrix_of_correlations_of_abundances_of_cell_types
 
     
     def compare_metastatic_vs_primary(self):
@@ -481,7 +485,7 @@ def main():
     else:
          logger.warning("No statistical comparison results were generated.")
 
-    analysis.plot_correlation_matrix(group_col = "Sex")
+    analysis.plot_correlation_matrix()
 
     # Compare metastatic and primary sites.
     logger.info("Metastatic and primary sites will be compared.")
