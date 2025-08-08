@@ -402,7 +402,7 @@ class ImmuneAnalysis:
                 if not np.isfinite(L) or L == 0:
                     L = 1e-6
                 annot = sig_results.apply(
-                    lambda row: f"log_2(FC) = {row['log2_fold_change']:.2f}\n(p={row['p_value']:.2g})", axis = 1
+                    lambda row: f"{row['log2_fold_change']:.2f}\n({row['p_value']:.2g})", axis = 1
                 ).to_frame().T
                 plt.figure(figsize = (max(10, 0.6 * len(sig_results)), 2.6))
                 ax = sns.heatmap(
