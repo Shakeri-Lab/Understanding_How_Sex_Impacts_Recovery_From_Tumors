@@ -13,6 +13,7 @@ from pathlib import Path
 import os
 import sys
 import logging
+import matplotlib.patches as mpatches
 
 from src.config import FOCUSED_XCELL_PANEL
 from src.config import paths
@@ -101,17 +102,17 @@ class ImmuneAnalysis:
         Compare abundance of cells of a provided type between groups
         (e.g., Female and Male as values of Sex).
         '''
-        groups = self.melanoma_sample_immune_clinical_data_and_scores[group_col].dropna().unique()
-        if len(groups) != 2:
-            raise Exception(f"Grouping column {group_col} does not have exactly 2 unique non-NA values. This column has groups {groups}.")
-        series_of_enrichment_scores_for_cell_type_and_group_1 = self.melanoma_sample_immune_clinical_data_and_scores[
-            self.melanoma_sample_immune_clinical_data_and_scores[group_col] == groups[0]
-        ][cell_type].dropna()
-        series_of_enrichment_scores_for_cell_type_and_group_2 = self.melanoma_sample_immune_clinical_data_and_scores[
-            self.melanoma_sample_immune_clinical_data_and_scores[group_col] == groups[1]
-        ][cell_type].dropna()
+        col = self.melanoma_sample_immune_clinical_data_and_scores[group_col]
+        group_values = pd.unique(col.dropna())
+        if len(group_values) != 2:
+            raise ValueError(f"2 groups in column {group_col} were expected.")
+        group_order = [False, True] if pd.api.types.is_bool_dtype(col) else sorted(group_values)
+
+        g1, g2 = group_order
+        series_of_enrichment_scores_for_cell_type_and_group_1 = self.melanoma_sample_immune_clinical_data_and_scores.loc[col == g1, cell_type].dropna()
+        series_of_enrichment_scores_for_cell_type_and_group_2 = self.melanoma_sample_immune_clinical_data_and_scores.loc[col == g2, cell_type].dropna()
         if len(series_of_enrichment_scores_for_cell_type_and_group_1) < 3 or len(series_of_enrichment_scores_for_cell_type_and_group_2) < 3:
-             raise Exception(f"There are not enough enrichment scores for cells of type {cell_type} between group {groups[0]} with {len(group1)} scores and group {groups[1]} with {len(group2)} scores.")  
+             raise Exception(f"There are not enough enrichment scores for cells of type {cell_type} between group {g1} with {len(series_of_enrichment_scores_for_cell_type_and_group_1)} scores and group {g2} with {len(series_of_enrichment_scores_for_cell_type_and_group_2)} scores.")  
         if test == 'mann-whitney':
             stat, pval = stats.mannwhitneyu(series_of_enrichment_scores_for_cell_type_and_group_1, series_of_enrichment_scores_for_cell_type_and_group_2, alternative = "two-sided")
         elif test == 't-test':
@@ -119,14 +120,14 @@ class ImmuneAnalysis:
         else:
              raise Exception(f"Test type {test} is unsupported.")
         return {
-            'groups': groups,
+            'groups': [g1, g2],
             'means': [
                 series_of_enrichment_scores_for_cell_type_and_group_1.mean(),
-                series_of_enrichment_scores_for_cell_type_and_group_1.mean()
+                series_of_enrichment_scores_for_cell_type_and_group_2.mean()
             ],
             'medians': [
                 series_of_enrichment_scores_for_cell_type_and_group_1.median(),
-                series_of_enrichment_scores_for_cell_type_and_group_1.median()
+                series_of_enrichment_scores_for_cell_type_and_group_2.median()
             ],
             'statistic': stat,
             'pvalue': pval
@@ -136,33 +137,42 @@ class ImmuneAnalysis:
     def plot_distribution_of_abundance_of_cells_of_type_by_group(self, cell_type, group_col, plot_type = "both"):
         '''
         Plot distribution of abundance of cells of a provided type by group.
-        ''' 
+        '''
+        is_bool = pd.api.types.is_bool_dtype(
+            self.melanoma_sample_immune_clinical_data_and_scores[group_col]
+        )
+        order = [False, True] if is_bool else None
+        
         plt.figure(figsize = (10, 6))
         
         if plot_type == 'violin':
             ax = sns.violinplot(
                 data = self.melanoma_sample_immune_clinical_data_and_scores,
                 x = group_col,
-                y = cell_type
+                y = cell_type,
+                order = order
             )
         elif plot_type == 'box':
             ax = sns.boxplot(
                 data = self.melanoma_sample_immune_clinical_data_and_scores,
                 x = group_col,
-                y = cell_type
+                y = cell_type,
+                order = order
             )
         elif plot_type == 'both':
             ax = sns.violinplot(
                 data = self.melanoma_sample_immune_clinical_data_and_scores,
                 x = group_col,
-                y = cell_type
+                y = cell_type,
+                order = order
             )
             sns.boxplot(
                 data = self.melanoma_sample_immune_clinical_data_and_scores,
                 x = group_col,
                 y = cell_type,
                 width = 0.2,
-                color = 'white'
+                color = 'white',
+                order = order
             )
         else:
              raise Exception(f"Plot type {plot_type} is unsupported.")
@@ -180,15 +190,13 @@ class ImmuneAnalysis:
                 sig_symbol = "nominally significant"
             else:
                 sig_symbol = "not significant"
-            ymin, ymax = plt.ylim()
-            text_y_pos = max(ymax * 0.95, ymin + (ymax - ymin) * 0.1) 
-            plt.text(
+            ax.text(
                 0.5,
-                text_y_pos, 
+                0.95,
                 f"p = {pval:.3e}.\np is {sig_symbol}.",
                 transform = ax.transAxes,
-                horizontalalignment = "center",
-                verticalalignment = "top",
+                ha = "center",
+                va = "top",
                 bbox = {
                     "facecolor": "white",
                     "alpha": 0.8,
@@ -247,7 +255,9 @@ class ImmuneAnalysis:
             cbar_kws = {
                 'shrink': .8,
                 'label': 'Correlation'
-            }
+            },
+            vmin = -1,
+            vmax = 1
         )
         plt.xticks(rotation = 45, ha = 'right', fontsize = 8)
         plt.yticks(rotation = 0, fontsize = 8)
@@ -265,165 +275,173 @@ class ImmuneAnalysis:
 
     
     def compare_metastatic_vs_primary(self):
-        """
+        '''
         Compare immune infiltration between metastatic and primary sites.
-        Requires specimen site information to be available.
         
-        Returns:
-            pd.DataFrame or None: Results of comparison, or None if site information is not available
-        """
+        Returns
+        -------
+        Data frame of statistics for cell types and indicators of metastasis
+        '''
+        g1 = False
+        g2 = True
         if "IsMetastatic" not in self.melanoma_sample_immune_clinical_data_and_scores.columns:
-            logger.warning("Cannot compare metastatic vs primary: No specimen site information available")
-            return None
+            raise Exception("Cannot compare metastatic vs primary: No specimen site information available")
             
-        logger.info("Comparing immune cell infiltration between metastatic and primary sites...")
+        logger.info("Immune cell infiltration between metastatic and primary sites will be compared.")
         
-        # Check if we have both metastatic and primary samples
-        metastatic_samples = self.melanoma_sample_immune_clinical_data_and_scores[self.melanoma_sample_immune_clinical_data_and_scores['IsMetastatic'] == True]
-        primary_samples = self.melanoma_sample_immune_clinical_data_and_scores[self.melanoma_sample_immune_clinical_data_and_scores['IsMetastatic'] == False]
-        
+        metastatic_samples = self.melanoma_sample_immune_clinical_data_and_scores[
+            self.melanoma_sample_immune_clinical_data_and_scores['IsMetastatic'] == True
+        ]
+        primary_samples = self.melanoma_sample_immune_clinical_data_and_scores[
+            self.melanoma_sample_immune_clinical_data_and_scores['IsMetastatic'] == False
+        ]
         if len(metastatic_samples) < 3 or len(primary_samples) < 3:
-            logger.warning(f"Not enough samples for comparison: Metastatic={len(metastatic_samples)}, Primary={len(primary_samples)}")
-            return None
+            raise Exception(f"We don't have enough samples for comparison. The number of metastatic samples is {len(metastatic_samples)}. The number of primary samples is {len(primary_samples)}.")
             
-        logger.info(f"Comparing {len(metastatic_samples)} metastatic samples vs {len(primary_samples)} primary samples")
+        logger.info(f"{len(metastatic_samples)} metastatic samples will be compared with {len(primary_samples)} primary samples.")
         
-        # Generate a detailed report of specimen sites.
-        # Count specimens by site.
-        site_counts = self.melanoma_sample_immune_clinical_data_and_scores.groupby(['IsMetastatic', "SpecimenSite"]).size().reset_index(name='Count')
-        site_counts = site_counts.sort_values('Count', ascending=False)
-
-        # Save site counts to CSV.
-        site_counts.to_csv(paths.data_frame_of_specimen_sites_by_metastatic_status, index = False)
-        logger.info(f"Specimen site counts were saved to {paths.data_frame_of_specimen_sites_by_metastatic_status}.")
-
-        # Create visualization of specimen sites.
-        plt.figure(figsize=(14, 8))
-        # Filter to top 10 sites for readability
-        top_sites = site_counts.groupby("SpecimenSite")['Count'].sum().nlargest(10).index
-        filtered_counts = site_counts[site_counts["SpecimenSite"].isin(top_sites)]
-
-        # Create plot with site on x-axis, metastatic status as hue
-        site_plot = sns.barplot(
-            data=filtered_counts,
-            x="SpecimenSite",
-            y='Count',
-            hue='IsMetastatic',
-            palette={np.True_: 'red', np.False_: 'blue'},
-            alpha=0.7
+        data_frame_of_indicators_of_metastasis_types_of_specimens_and_numbers_of_specimens = self.melanoma_sample_immune_clinical_data_and_scores.groupby(
+            ['IsMetastatic', "SpecimenSite"]
+        ).size().reset_index(name = 'Count')
+        data_frame_of_indicators_of_metastasis_types_of_specimens_and_numbers_of_specimens = data_frame_of_indicators_of_metastasis_types_of_specimens_and_numbers_of_specimens.sort_values(
+            "Count",
+            ascending = False
         )
+        data_frame_of_indicators_of_metastasis_types_of_specimens_and_numbers_of_specimens.to_csv(
+            paths.data_frame_of_indicators_of_metastasis_types_of_specimens_and_numbers_of_specimens,
+            index = False
+        )
+        logger.info(f"A data frame of indicators of metastasis, types of specimens, and numbers of specimens was saved to {paths.data_frame_of_indicators_of_metastasis_types_of_specimens_and_numbers_of_specimens}.")
 
-        plt.title('Sample Counts by Specimen Site and Metastatic Status')
+        plt.figure(figsize = (14, 8))
+        #top_sites_by_number_of_specimens = data_frame_of_indicators_of_metastasis_types_of_specimens_and_numbers_of_specimens.groupby("SpecimenSite")['Count'].sum().nlargest(10).index
+        #filtered_data_frame = data_frame_of_indicators_of_metastasis_types_of_specimens_and_numbers_of_specimens[
+            #data_frame_of_indicators_of_metastasis_types_of_specimens_and_numbers_of_specimens["SpecimenSite"].isin(top_sites_by_number_of_specimens)
+        #]
+
+        palette = {True: "red", False: "blue"}
+        site_plot = sns.barplot(
+            data = data_frame_of_indicators_of_metastasis_types_of_specimens_and_numbers_of_specimens,
+            x = "SpecimenSite",
+            y = "Count",
+            hue = "IsMetastatic",
+            palette = palette#,
+            #order = list(top_sites_by_number_of_specimens)
+        )
+        plt.title('Numbers of Samples by Specimen Site and Metastatic Status')
         plt.xlabel('Specimen Site')
         plt.ylabel('Number of Samples')
-        plt.xticks(rotation=45, ha='right')
-        plt.legend(title='Metastatic Status', labels=['Primary', 'Metastatic'])
+        plt.xticks(rotation = 45, ha = 'right')
+        
+        primary_patch = mpatches.Patch(color = "blue", label = "Primary")
+        metastatic_patch = mpatches.Patch(color = "red",  label = "Metastatic")
+        site_plot.legend(
+            handles = [primary_patch, metastatic_patch],
+            title = "Metastatic Status",
+            loc = "best"
+        )
         plt.tight_layout()
 
-        plt.savefig(paths.specimen_sites_plot, dpi = 300, bbox_inches = "tight")
+        plt.savefig(
+            paths.plot_of_numbers_of_samples_by_specimen_site_and_metastatic_status,
+            dpi = 300,
+            bbox_inches = "tight"
+        )
         plt.close()
-        logger.info(f"Specimen site visualization was saved to {paths.specimen_sites_plot}.")
+        logger.info(f"Plot of numbers of samples by specimen site and metastatic status was saved to {paths.plot_of_numbers_of_samples_by_specimen_site_and_metastatic_status}.")
         
-        # Run comparison for each immune cell type
-        all_results = []
+        list_of_dictionaries_of_statistics_for_cell_types_and_indicators_of_metastasis = []
         for cell_type in FOCUSED_XCELL_PANEL:
-            # Compare groups using 'IsMetastatic' as the grouping column
-            result = self.compare_abundance_of_cells_of_type_between_groups(cell_type, group_col = "IsMetastatic")
-            if result:
-                # Ensure we're associating the right groups with metastatic/primary
-                # result['groups'] contains [False, True] or [True, False] 
-                is_metastatic_first = result['groups'][0] == True
+            dictionary_of_statistics = self.compare_abundance_of_cells_of_type_between_groups(cell_type, group_col = "IsMetastatic")
+            groups = dictionary_of_statistics["groups"]
+            means = dictionary_of_statistics["means"]
+            medians = dictionary_of_statistics["medians"]
+            mean_by_group = dict(zip(groups, means))
+            median_by_group = dict(zip(groups, medians))
+            primary_mean = mean_by_group[False]
+            metastatic_mean = mean_by_group[True]
+            primary_median = median_by_group[False]
+            metastatic_median = median_by_group[True]
+            readable_cell_type, category = self.make_cell_type_readable(cell_type)
+            dictionary_of_statistics_for_cell_types_and_indicators_of_metastasis = {
+                'cell_type': readable_cell_type,
+                'category': category,
+                'p_value': dictionary_of_statistics['pvalue'],
+                'significant': dictionary_of_statistics['pvalue'] < 0.05,
+                'bonferroni_significant': dictionary_of_statistics['pvalue'] < self.bonferroni_threshold,
+                'mean_primary': primary_mean,
+                'mean_metastatic': metastatic_mean,
+                'median_primary': primary_median,
+                'median_metastatic': metastatic_median
+            }
+            dictionary_of_statistics_for_cell_types_and_indicators_of_metastasis["fold_change"] = (metastatic_mean / primary_mean) if primary_mean > 0 else (float("inf") if metastatic_mean > 0 else np.nan)
+            list_of_dictionaries_of_statistics_for_cell_types_and_indicators_of_metastasis.append(
+                dictionary_of_statistics_for_cell_types_and_indicators_of_metastasis
+            )
                 
-                readable_cell_type, category = self.make_cell_type_readable(cell_type)
-                all_results.append({
-                    'cell_type': readable_cell_type,
-                    'category': category,
-                    'p_value': result['pvalue'],
-                    'significant': result['pvalue'] < 0.05,
-                    'bonferroni_significant': result['pvalue'] < self.bonferroni_threshold,
-                    'mean_primary': result['means'][0] if not is_metastatic_first else result['means'][1],
-                    'mean_metastatic': result['means'][1] if is_metastatic_first else result['means'][0],
-                    'median_primary': result['medians'][0] if not is_metastatic_first else result['medians'][1],
-                    'median_metastatic': result['medians'][1] if is_metastatic_first else result['medians'][0]
-                })
-                
-                # Calculate fold change, handling potential division by zero
-                primary_mean = result['means'][0] if not is_metastatic_first else result['means'][1]
-                metastatic_mean = result['means'][1] if is_metastatic_first else result['means'][0]
-                
-                if primary_mean > 0:
-                    all_results[-1]['fold_change'] = metastatic_mean / primary_mean
-                else:
-                    all_results[-1]['fold_change'] = float('inf') if metastatic_mean > 0 else np.nan
-                
-                # Create plot for this comparison
-                self.plot_distribution_of_abundance_of_cells_of_type_by_group(cell_type, group_col='IsMetastatic')
+            self.plot_distribution_of_abundance_of_cells_of_type_by_group(cell_type, group_col = 'IsMetastatic')
             
-        # Create summary DataFrame
-        if all_results:
-            results_df = pd.DataFrame(all_results).sort_values('p_value')
+        if list_of_dictionaries_of_statistics_for_cell_types_and_indicators_of_metastasis:
+            data_frame_of_statistics_for_cell_types_and_indicators_of_metastasis = pd.DataFrame(list_of_dictionaries_of_statistics_for_cell_types_and_indicators_of_metastasis).sort_values('p_value')
+            data_frame_of_statistics_for_cell_types_and_indicators_of_metastasis.to_csv(
+                paths.data_frame_of_statistics_for_cell_types_and_indicators_of_metastasis,
+                index = False
+            )
+            logger.info(f"A data frame of statistics for cell types and indicators of metastasis was saved to {paths.data_frame_of_statistics_for_cell_types_and_indicators_of_metastasis}.")
             
-            # Save results.
-            results_df.to_csv(paths.data_frame_of_metastatic_vs_primary_results, index = False)
-            logger.info(f"Saved metastatic vs primary comparison results to {paths.data_frame_of_metastatic_vs_primary_results}")
-            
-            # Generate heatmap of significant differences
-
-            # Filter to significant results
-            sig_results = results_df[results_df['significant']].copy()
+            # Generate heatmap of significant differences.
+            sig_results = data_frame_of_statistics_for_cell_types_and_indicators_of_metastasis[
+                data_frame_of_statistics_for_cell_types_and_indicators_of_metastasis['significant']
+            ].copy()
             if len(sig_results) > 0:
-                # Create a pivot table for the heatmap
-                pivot_data = pd.DataFrame({
-                    'cell_type': sig_results['cell_type'],
-                    'fold_change': sig_results['fold_change'],
-                    'p_value': sig_results['p_value'],
-                    'sig_level': sig_results['p_value'].apply(
-                        lambda p: '***' if p < self.bonferroni_threshold else 
-                                ('**' if p < 0.01 else '*')
-                    )
-                })
-
-                # Sort by fold change
-                pivot_data = pivot_data.sort_values('fold_change', ascending=False)
-
-                # Create heatmap
-                plt.figure(figsize=(10, len(pivot_data) * 0.4 + 2))
+                #sig_results = sig_results.sort_values("fold_change", ascending = False)
+                sig_results = sig_results.replace([np.inf, -np.inf], np.nan).dropna(subset = ["fold_change"])
+                sig_results["log2_fold_change"] = np.log2(sig_results["fold_change"])
+                mat = sig_results.set_index("cell_type")[["log2_fold_change"]].T
+                L = float(np.nanmax(np.abs(mat.values)))
+                if not np.isfinite(L) or L == 0:
+                    L = 1e-6
+                annot = sig_results.apply(
+                    lambda row: f"log_2(FC) = {row['log2_fold_change']:.2f}\n(p={row['p_value']:.2g})", axis = 1
+                ).to_frame().T
+                plt.figure(figsize = (max(10, 0.6 * len(sig_results)), 2.6))
                 ax = sns.heatmap(
-                    pd.DataFrame(pivot_data['fold_change']).T,
-                    annot=pd.DataFrame(pivot_data['sig_level']).T,
-                    cmap='RdBu_r',
-                    center=1,
-                    fmt='',
-                    cbar_kws={'label': 'Fold Change (Metastatic/Primary)'}
+                    mat,
+                    cmap = 'RdBu_r',
+                    center = 0,
+                    vmin = -L,
+                    vmax = L,
+                    annot = annot,
+                    fmt = '',
+                    cbar_kws = {'label': 'log_2(FC)\n(M/P)'},
+                    linewidths = 0.5
                 )
-                ax.set_xticklabels(pivot_data['cell_type'], rotation=45, ha='right')
-                plt.title('Significant Differences in Immune Cell Infiltration\n(Metastatic vs Primary Sites)')
+                ax.set_xticklabels(sig_results["cell_type"], rotation = 45, ha = "right")
+                ax.set_yticklabels([''], rotation = 0)
+                plt.title("Fold changes in immune infiltration (Metastatic vs. Primary)")
                 plt.tight_layout()
-
-                # Save heatmap.
                 plt.savefig(paths.metastatic_vs_primary_heatmap, dpi = 300, bbox_inches = "tight")
                 plt.close()
                 logger.info(f"Heatmap of significant differences was saved to {paths.metastatic_vs_primary_heatmap}.")
             
-            # Log summary statistics
-            n_sig = results_df['significant'].sum()
-            n_bon_sig = results_df['bonferroni_significant'].sum()
+            # Log summary statistics.
+            n_sig = data_frame_of_statistics_for_cell_types_and_indicators_of_metastasis['significant'].sum()
+            n_bon_sig = data_frame_of_statistics_for_cell_types_and_indicators_of_metastasis['bonferroni_significant'].sum()
             logger.info(f"Metastatic vs primary comparison results:")
-            logger.info(f"Total tests: {len(results_df)}")
+            logger.info(f"Total tests: {len(data_frame_of_statistics_for_cell_types_and_indicators_of_metastasis)}")
             logger.info(f"Nominally significant (p < 0.05): {n_sig}")
             logger.info(f"Bonferroni significant (p < {self.bonferroni_threshold:.3e}): {n_bon_sig}")
             
-            # Log top significant results
+            # Log top significant results.
             if n_sig > 0:
-                top_sig = results_df[results_df['significant']].head(5)
+                top_sig = data_frame_of_statistics_for_cell_types_and_indicators_of_metastasis[
+                    data_frame_of_statistics_for_cell_types_and_indicators_of_metastasis['significant']
+                ].head(5)
                 logger.info("Top significant differences (metastatic vs primary):")
                 for _, row in top_sig.iterrows():
-                    logger.info(f"  {row['cell_type']}: fold change = {row['fold_change']:.2f}, p = {row['p_value']:.2e}")
+                    logger.info(f"{row['cell_type']}: fold change = {row['fold_change']:.9f}, p = {row['p_value']:.2e}")
             
-            return results_df
-        else:
-            logger.warning("No results generated for metastatic vs primary comparison")
-            return None
+            return data_frame_of_statistics_for_cell_types_and_indicators_of_metastasis
 
         
 def main():
@@ -450,7 +468,7 @@ def main():
                     'mean_enrichment_score_for_cell_type_and_group_0': result['means'][0],
                     'mean_enrichment_score_for_cell_type_and_group_1': result['means'][1],
                     'median_enrichment_score_for_cell_type_and_group_0': result['medians'][0],
-                    'median_enrichment_score_for_cell_type_and_group_0': result['medians'][1]
+                    'median_enrichment_score_for_cell_type_and_group_1': result['medians'][1]
                 }
             )
         else:

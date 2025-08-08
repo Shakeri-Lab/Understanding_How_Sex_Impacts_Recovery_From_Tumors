@@ -99,10 +99,10 @@ class Paths():
         # self.focused_data_frame_of_scores_by_sample_and_cell_type, which is defined above
         # outputs
         self.matrix_of_correlations_of_abundances_of_cell_types = self.outputs_of_immune_analysis / "matrix_of_correlations_of_abundances_of_cell_types.png"
-        self.data_frame_of_specimen_sites_by_metastatic_status = self.outputs_of_immune_analysis / "specimen_sites_by_metastatic_status.csv"
+        self.data_frame_of_indicators_of_metastasis_types_of_specimens_and_numbers_of_specimens = self.outputs_of_immune_analysis / "data_frame_of_indicators_of_metastasis_types_of_specimens_and_numbers_of_specimens.csv"
         self.data_frame_of_statistics_for_cell_types_and_sexes = self.outputs_of_immune_analysis / "data_frame_of_statistics_for_cell_types_and_sexes.csv"
-        self.specimen_sites_plot = self.outputs_of_immune_analysis / "specimen_sites_plot.png"
-        self.data_frame_of_metastatic_vs_primary_results = self.outputs_of_immune_analysis / "metastatic_vs_primary_results.csv"
+        self.plot_of_numbers_of_samples_by_specimen_site_and_metastatic_status = self.outputs_of_immune_analysis / "plot_of_numbers_of_samples_by_specimen_site_and_metastatic_status.png"
+        self.data_frame_of_statistics_for_cell_types_and_indicators_of_metastasis = self.outputs_of_immune_analysis / "data_frame_of_statistics_for_cell_types_and_indicators_of_metastasis.csv"
         self.metastatic_vs_primary_heatmap = self.outputs_of_immune_analysis / "metastatic_vs_primary_heatmap.png"
         
         # src/immune_analysis/linear_mixed_models.py
