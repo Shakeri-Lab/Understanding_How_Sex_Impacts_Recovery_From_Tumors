@@ -180,19 +180,26 @@ def process_melanoma_immune_data(clinical_data):
     )
     
     immune_clinical = immune_clinical.reset_index()
-    dupes = immune_clinical[
-        immune_clinical["SLID"].duplicated(keep = False)
-    ]
-    logger.info(dupes.sort_values("SLID"))
+    dupe_mask = immune_clinical["SLID"].duplicated(keep = False)
+    if dupe_mask.any():
+        duplicate_rows = immune_clinical.loc[dupe_mask].copy()
+        n_groups = duplicate_rows["SLID"].nunique()
+        n_all_germline = duplicate_rows.groupby("SLID")["Primary/Met"].apply(
+            lambda s: all(metastatic_from_primary_met(v) is None for v in s)
+        ).sum()
+        logger.info("Found %d SLIDs with multiple clinical matches; %d groups are all germline/NA.", n_groups, n_all_germline)
+        immune_clinical["keep_rank"] = immune_clinical["Primary/Met"].apply(
+            lambda v: 0 if metastatic_from_primary_met(v) is not None else 1
+        )
+        immune_clinical = (
+            immune_clinical
+            .sort_values(["SLID", "keep_rank"])
+            .drop_duplicates(subset = ["SLID"], keep = "first")
+            .drop(columns = "keep_rank")
+        )
+    else:
+        logger.info("No duplicate SLIDs after merge.")
     immune_clinical = immune_clinical.set_index("SLID")
-    
-    # All groups of duplicate rows have equal values in all fields.
-    immune_clinical = (
-        immune_clinical
-            .reset_index()
-            .drop_duplicates("SLID", keep = "first")
-            .set_index("SLID")
-    )
 
     immune_clinical.to_csv(paths.melanoma_sample_immune_clinical_data)
     
