@@ -159,6 +159,16 @@ class Paths():
         self.sex_differences = self.outputs_of_treatment_analysis / "sex_differences.csv"
         self.data_frame_of_T_cell_phenotypes = self.outputs_of_treatment_analysis / "data_frame_of_T_cell_phenotypes.csv"
         self.mediation_results_2 = self.outputs_of_treatment_analysis / "mediation_results_2.csv"
+        
+        # src/cd8_analysis/cd8_analysis.py
+        # dependencies
+        self.outputs_of_cd8_analysis = self.root / "output/cd8_analysis"
+        self.cd8_analysis_plots = self.outputs_of_cd8_analysis / "plots"
+        # outputs
+        self.cd8_by_diagnosis = self.outputs_of_cd8_analysis / "cd8_by_diagnosis.csv"
+        self.cd8_by_sex = self.outputs_of_cd8_analysis / "cd8_by_sex.csv"
+        self.cd8_by_sex_tests = self.outputs_of_cd8_analysis / "cd8_by_sex_tests.csv"
+        self.data_frame_of_cd8_signature_scores = self.outputs_of_cd8_analysis / "data_frame_of_cd8_signature_scores.csv"
     
     
     def ensure_dependencies_for_src_exist(self):
@@ -212,6 +222,11 @@ class Paths():
             self.enrichment_data_frame_per_xCell2_and_TME_Compendium
         ]:
             assert os.path.exists(path), f"The dependency of `src/immune_analysis/compare_enrichment_scores.py` `{path}` does not exist."
+            
+
+    def ensure_dependencies_for_cd8_analysis_exist(self):
+        for path in [self.outputs_of_cd8_analysis, self.cd8_analysis_plots]:
+            os.makedirs(path, exist_ok = True)
 
 
 paths = Paths()

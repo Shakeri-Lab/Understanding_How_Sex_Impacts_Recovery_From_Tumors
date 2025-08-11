@@ -3,7 +3,6 @@ Utils package initialization
 """
 
 from .shared_functions import (
-    load_clinical_data,
     load_rnaseq_data,
     filter_by_diagnosis,
     calculate_survival_months,

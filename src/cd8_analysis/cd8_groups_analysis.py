@@ -21,7 +21,7 @@ from sklearn.metrics import silhouette_score
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from cd8_analysis import CD8Analysis
-from utils.shared_functions import calculate_survival_months, filter_by_diagnosis, filter_by_primary_diagnosis_site, load_clinical_data, load_rnaseq_data, map_sample_ids
+from utils.shared_functions import calculate_survival_months, filter_by_diagnosis, filter_by_primary_diagnosis_site, load_rnaseq_data, map_sample_ids
 
 from pathlib import Path
 
