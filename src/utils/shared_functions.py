@@ -17,12 +17,10 @@ from src.config import paths
 
 def load_rnaseq_data():
     expression_files = list(paths.gene_and_transcript_expression_results.glob("*.genes.results"))
-    print(f"Found {len(expression_files)} expression files")
-
+    print(f"{len(expression_files)} expression files were found.")
     if not expression_files:
-        raise Exception("No RNA-seq expression files found.")
+        raise Exception("No RNA-seq expression files were found.")
 
-    # Create expression matrix
     expr_dfs = []
     for f in expression_files:
         sample_id = os.path.basename(str(f)).split('.')[0]
@@ -57,8 +55,8 @@ def filter_by_diagnosis(merged_data):
     pd.DataFrame
         Filtered data
     """
-    if "DiagnosisID" not in merged_data.columns:
-        raise Exception("Column DiagnosisID was not found.")
+    if "PrimaryDiagnosisSite" not in merged_data.columns:
+        raise Exception("Column PrimaryDiagnosisSite was not found.")
     
     # Sites to exclude
     exclude_sites = ['Prostate gland', 'Vulva, NOS']
@@ -67,7 +65,7 @@ def filter_by_diagnosis(merged_data):
     total_before = len(merged_data)
     
     # Filter out specified sites
-    filtered_data = merged_data[~merged_data['DiagnosisID'].isin(exclude_sites)]
+    filtered_data = merged_data[~merged_data['PrimaryDiagnosisSite'].isin(exclude_sites)]
     
     # Count after filtering
     total_after = len(filtered_data)
@@ -81,11 +79,12 @@ def filter_by_diagnosis(merged_data):
     # Count by excluded site
     if excluded_count > 0:
         for site in exclude_sites:
-            site_count = len(merged_data[merged_data['DiagnosisID'] == site])
+            site_count = len(merged_data[merged_data['PrimaryDiagnosisSite'] == site])
             if site_count > 0:
                 print(f"  - {site}: {site_count} patients")
     
     return filtered_data
+
 
 # TODO: Integrate function `filter_by_primary_diagnosis_site` with function `filter_by_diagnosis`.
 def filter_by_primary_diagnosis_site(merged_data):
@@ -354,7 +353,7 @@ def _clean_id(x: str) -> str:
     x = str(x)
     return x.replace("-RNA", '').replace("FT-", '').replace("SA", "SL")
     
-def map_sample_ids(scores: pd.DataFrame, base_path: str, id_col: str = "SAMPLE_ID") -> pd.DataFrame:
+def map_sample_ids(scores: pd.DataFrame, id_col: str = "SAMPLE_ID") -> pd.DataFrame:
     """
     Map RNA-seq sample IDs to patient IDs
     
@@ -374,9 +373,7 @@ def map_sample_ids(scores: pd.DataFrame, base_path: str, id_col: str = "SAMPLE_I
     try:
         print("\nMapping RNA-seq sample IDs to patient IDs...")
         
-        # Load QC metrics file with correct name
-        qc_file = os.path.join(base_path, "/sfs/gpfs/tardis/project/orien/data/aws/24PRJ217UVA_IORIG/Manifest_and_QC_Files/24PRJ217UVA_20250130_RNASeq_QCMetrics.csv")
-        qc_data = pd.read_csv(qc_file)
+        qc_data = pd.read_csv(paths.QC_data)
         
         # Print sample of QC data
         print("\nQC data sample:")

@@ -8,6 +8,7 @@ Usage
 
 from pathlib import Path
 import argparse
+import logging
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -23,8 +24,15 @@ from sklearn.decomposition import PCA
 from sklearn.metrics import silhouette_score
 
 from src.immune_analysis.immune_analysis import ImmuneAnalysis
-from src.utils.shared_functions import load_rnaseq_data, filter_by_diagnosis
+from src.utils.shared_functions import load_rnaseq_data, filter_by_diagnosis, map_sample_ids
 from src.config import paths
+
+
+logging.basicConfig(
+    level = logging.INFO,
+    format = "%(asctime)s – %(levelname)s – %(message)s"
+)
+logger = logging.getLogger(__name__)
 
 
 class CD8Analysis(ImmuneAnalysis):
@@ -35,16 +43,65 @@ class CD8Analysis(ImmuneAnalysis):
     def __init__(self):
         super().__init__()
         
-        # Define CD8 signatures.
-        self.signatures = {
-            'CD8A': ['CD8A'],
-            'CD8B': ['CD8B'],
-            'CD8_cytotoxic': ['GZMA', 'GZMB', 'GZMH', 'GZMK', 'PRF1', 'NKG7', 'GNLY'],
-            'CD8_activation': ['CD69', 'HLA-DRA', 'HLA-DRB1', 'CD38', 'ICOS', 'CTLA4', 'LAG3', 'PDCD1'],
-            'CD8_exhaustion': ['PDCD1', 'CTLA4', 'LAG3', 'HAVCR2', 'TIGIT', 'BTLA', 'VSIR'],
-            'CD8_memory': ['IL7R', 'CCR7', 'SELL', 'CD27', 'CD28', 'TNFRSF9', 'EOMES'],
-            'CD8_naive': ['CCR7', 'SELL', 'LEF1', 'TCF7', 'IL7R'],
-            'CD8_effector': ['CX3CR1', 'FGFBP2', 'FCGR3A', 'KLRG1', 'GZMB', 'PRF1']
+        self.cd8_groups = {
+            "CD8_A": [
+                "ENSG00000153563", # HGNC gene symbol is CD8A.
+            ],
+            "CD8_B": [
+                "ENSG00000172116", # CD8B
+            ],
+            "CD8_cytotoxic": [
+                "ENSG00000145649", # GZMA
+                "ENSG00000100453", # GZMB
+                "ENSG00000100450", # GZMH
+                "ENSG00000113088", # GZMK
+                "ENSG00000180644", # PRF1
+                "ENSG00000105374", # NKG7
+                "ENSG00000115523" # GNLY
+            ],
+            "CD8_activation": [
+                "ENSG00000110848", # CD69
+                "ENSG00000204287", # HLA-DRA
+                "ENSG00000196126", # HLA-DRB1
+                "ENSG00000004468", # CD38
+                "ENSG00000163600", # ICOS
+                "ENSG00000163599", # CTLA4
+                "ENSG00000089692", # LAG3
+                "ENSG00000188389", # PDCD1
+            ],
+            "CD8_exhaustion": [
+                "ENSG00000188389", # PDCD1
+                "ENSG00000163599", # CTLA4
+                "ENSG00000089692", # LAG3
+                "ENSG00000135077", # HAVCR2
+                "ENSG00000181847", # TIGIT
+                "ENSG00000186265", # BTLA
+                "ENSG00000107738", # VSIR
+            ],
+            "CD8_memory": [
+                "ENSG00000168685", # IL7R
+                "ENSG00000126353", # CCR7
+                "ENSG00000188404", # SELL
+                "ENSG00000139193", # CD27
+                "ENSG00000178562", # CD28
+                "ENSG00000049249", # TNFRSF9
+                "ENSG00000163508" # EOMES
+            ],
+            "CD8_naive": [
+                "ENSG00000126353", # CCR7
+                "ENSG00000188404", # SELL
+                "ENSG00000138795", # LEF1
+                "ENSG00000081059", # TCF7
+                "ENSG00000168685", # IL7R
+            ],
+            "CD8_effector": [
+                "ENSG00000168329", # CX3CR1
+                "ENSG00000137441", # FGFBP2
+                "ENSG00000203747", # FCGR3A
+                "ENSG00000139187", # KLRG1
+                "ENSG00000100453", # GZMB
+                "ENSG00000180644", # PRF1
+            ],
         }
     
     
@@ -52,27 +109,33 @@ class CD8Analysis(ImmuneAnalysis):
         '''
         Calculate CD8 signature scores.
         '''
-        print("\nCalculating CD8 signature scores...")
+        print("CD8 signature scores will be calculated.")
 
-        # Initialize scores DataFrame
-        scores = pd.DataFrame(index = rnaseq_data.columns)
-
-        # Calculate scores for each signature
-        for signature, genes in self.signatures.items():
+        rnaseq = rnaseq_data.copy()
+        if rnaseq.index.astype(str).str.startswith("ENSG").any():
+            rnaseq.index = rnaseq.index.astype(str).str.split(".").str[0]
+            rnaseq = rnaseq.groupby(rnaseq.index).mean()
+        
+        scores = pd.DataFrame(index = rnaseq.columns)
+        
+        # Calculate scores for each signature.
+        for signature, genes in self.cd8_groups.items():
             # Filter to genes in the signature that are present in the data
-            signature_genes = [gene for gene in genes if gene in rnaseq_data.index]
+            signature_genes = [gene for gene in genes if gene in rnaseq.index]
 
-            if len(signature_genes) == 0:
+            if not signature_genes:
                 print(f"Warning: No genes found for signature {signature}")
                 continue
-
+            
             print(f"Calculating {signature} score using {len(signature_genes)} genes")
 
             # Calculate mean expression across genes
-            scores[signature] = rnaseq_data.loc[signature_genes].mean()
+            scores[signature] = rnaseq.loc[signature_genes].mean()
 
+        scores = map_sample_ids(scores)
+            
         # Save scores
-        scores.to_csv(paths.data_frame_of_cd8_signature_scores)
+        scores.to_csv(paths.data_frame_of_patient_IDs_and_CD8_signature_scores)
 
         print(f"Calculated CD8 signature scores for {len(scores)} samples")
 
@@ -85,9 +148,9 @@ class CD8Analysis(ImmuneAnalysis):
         # Merge with clinical data
         merged = clinical_data.merge(
             scores,
-            left_on='PATIENT_ID',
-            right_index=True,
-            how='inner'
+            left_on = "PATIENT_ID",
+            right_index = True,
+            how = "inner"
         )
 
         # Filter by diagnosis
@@ -97,9 +160,9 @@ class CD8Analysis(ImmuneAnalysis):
         summary = []
 
         for sex in ['Male', 'Female']:
-            sex_data = merged[merged['SEX'] == sex]
+            sex_data = merged[merged['Sex'] == sex]
 
-            for signature in self.signatures.keys():
+            for signature in self.cd8_groups.keys():
                 if signature in sex_data.columns:
                     summary.append({
                         'sex': sex,
@@ -114,7 +177,7 @@ class CD8Analysis(ImmuneAnalysis):
         summary_df = pd.DataFrame(summary)
 
         # Save summary
-        summary_df.to_csv(paths.cd8_by_sex, index = False)
+        summary_df.to_csv(paths.data_frame_of_sexes_CD8_signatures_and_statistics, index = False)
 
         # Plot CD8 signatures by sex
         self.plot_signatures_by_sex(summary_df)
@@ -148,8 +211,8 @@ class CD8Analysis(ImmuneAnalysis):
         g.set_titles('{col_name}')
         g.set_xlabels('Sex')
         g.set_ylabels('Mean Score')
-        self._save_fig(g, self.cd8_plots_dir / 'cd8_by_sex.png')
-        logger.info('Saved CD8 by sex plots')
+        self._save_fig(g, paths.plot_of_mean_CD8_signature_scores_by_sex)
+        logger.info("Plot of mean CD8 signature scores by sex were saved.")
     
     
     def test_signatures_by_sex(self, merged):
@@ -159,13 +222,13 @@ class CD8Analysis(ImmuneAnalysis):
             test_results = []
             
             # Test each signature
-            for signature in self.signatures.keys():
+            for signature in self.cd8_groups.keys():
                 if signature not in merged.columns:
                     continue
                 
                 # Get data by sex
-                male = merged[merged['SEX'] == 'Male'][signature]
-                female = merged[merged['SEX'] == 'Female'][signature]
+                male = merged[merged['Sex'] == 'Male'][signature]
+                female = merged[merged['Sex'] == 'Female'][signature]
                 
                 # Skip if not enough samples
                 if len(male) < 10 or len(female) < 10:
@@ -192,7 +255,7 @@ class CD8Analysis(ImmuneAnalysis):
             test_df['significant'] = test_df['p_value'] < 0.05
             
             # Save results
-            test_df.to_csv(paths.cd8_by_sex_tests, index = False)
+            test_df.to_csv(paths.data_frame_of_CD8_signatures_and_statistics, index = False)
             
             print("Performed statistical tests for CD8 signatures by sex")
             
@@ -205,63 +268,58 @@ class CD8Analysis(ImmuneAnalysis):
     
     
     def analyze_signatures_by_diagnosis(self, scores, clinical_data):
-        """Analyze CD8 signatures by diagnosis"""
-        try:
-            print("\nAnalyzing CD8 signatures by diagnosis...")
-            
-            # Merge with clinical data
-            merged = clinical_data.merge(
-                scores,
-                left_on='PATIENT_ID',
-                right_index=True,
-                how='inner'
-            )
-            
-            # Get top diagnoses
-            diagnosis_counts = merged['DiagnosisID'].value_counts()
-            top_diagnoses = diagnosis_counts[diagnosis_counts >= 20].index.tolist()
-            
-            if len(top_diagnoses) == 0:
-                print("Warning: No diagnoses with at least 20 patients")
-                return None
-            
-            # Filter to top diagnoses
-            merged_top = merged[merged['DiagnosisID'].isin(top_diagnoses)]
-            
-            # Create summary statistics by diagnosis
-            summary = []
-            
-            for diagnosis in top_diagnoses:
-                diag_data = merged[merged['DiagnosisID'] == diagnosis]
-                
-                for signature in self.signatures.keys():
-                    if signature in diag_data.columns:
-                        summary.append({
-                            'diagnosis': diagnosis,
-                            'signature': signature,
-                            'mean': diag_data[signature].mean(),
-                            'median': diag_data[signature].median(),
-                            'std': diag_data[signature].std(),
-                            'count': len(diag_data)
-                        })
-            
-            # Create DataFrame
-            summary_df = pd.DataFrame(summary)
-            
-            # Save summary
-            summary_df.to_csv(paths.cd8_by_diagnosis, index = False)
-            
-            # Plot CD8 signatures by diagnosis
-            self.plot_signatures_by_diagnosis(summary_df)
-            
-            print(f"Analyzed CD8 signatures by diagnosis for {len(merged_top)} patients with top diagnoses")
-            
-            return merged_top
-            
-        except Exception as e:
-            print(f"Error analyzing signatures by diagnosis: {e}")
-            print(traceback.format_exc())
-            return None
+        '''
+        Analyze CD8 signatures by diagnosis.
+        '''
+        print("\nAnalyzing CD8 signatures by diagnosis...")
+
+        # Merge with clinical data
+        merged = clinical_data.merge(
+            scores,
+            left_on='PATIENT_ID',
+            right_index=True,
+            how='inner'
+        )
+
+        # Get top diagnoses
+        diagnosis_counts = merged['PrimaryDiagnosisSite'].value_counts()
+        top_diagnoses = diagnosis_counts[diagnosis_counts >= 20].index.tolist()
+
+        if len(top_diagnoses) == 0:
+            raise Exception("There are no diagnoses with at least 20 patients.")
+
+        # Filter to top diagnoses
+        merged_top = merged[merged['PrimaryDiagnosisSite'].isin(top_diagnoses)]
+
+        # Create summary statistics by diagnosis
+        summary = []
+
+        for diagnosis in top_diagnoses:
+            diag_data = merged[merged['PrimaryDiagnosisSite'] == diagnosis]
+
+            for signature in self.cd8_groups.keys():
+                if signature in diag_data.columns:
+                    summary.append({
+                        'diagnosis': diagnosis,
+                        'signature': signature,
+                        'mean': diag_data[signature].mean(),
+                        'median': diag_data[signature].median(),
+                        'std': diag_data[signature].std(),
+                        'count': len(diag_data)
+                    })
+
+        # Create DataFrame
+        summary_df = pd.DataFrame(summary)
+
+        # Save summary
+        summary_df.to_csv(paths.cd8_by_diagnosis, index = False)
+
+        # Plot CD8 signatures by diagnosis
+        self.plot_signatures_by_diagnosis(summary_df)
+
+        print(f"CD8 signatures by diagnosis for {len(merged_top)} patients with top diagnoses were analyzed.")
+
+        return merged_top
     
     
     def plot_signatures_by_diagnosis(self, summary_df):
@@ -276,7 +334,7 @@ class CD8Analysis(ImmuneAnalysis):
         g.set_xticklabels(rotation=45, ha='right')
         g.set_xlabels('Diagnosis')
         g.set_ylabels('Mean Score')
-        self._save_fig(g, self.cd8_plots_dir / 'cd8_by_diagnosis.png')
+        self._save_fig(g, paths.plot_of_cd8_by_diagnosis)
         logger.info('Saved CD8 by diagnosis plots')
     
     
@@ -305,7 +363,7 @@ class CD8Analysis(ImmuneAnalysis):
             merged['event'] = (merged['OS_STATUS'] == 'DECEASED').astype(int)
             
             # Analyze each signature
-            for signature in self.signatures.keys():
+            for signature in self.cd8_groups.keys():
                 if signature not in merged.columns:
                     continue
                 
@@ -372,7 +430,7 @@ class CD8Analysis(ImmuneAnalysis):
             # Save plot
             plt.tight_layout()
             out_name = f'survival_by_{title or group_col}.png'
-            self._save_fig(plt, self.cd8_plots_dir / out_name)
+            self._save_fig(plt, paths.cd8_analysis_plots / out_name)
             
             # Perform log-rank test if there are exactly 2 groups
             if len(merged[group_col].unique()) == 2:
@@ -420,6 +478,7 @@ class CD8Analysis(ImmuneAnalysis):
         scores = self.calculate_signature_scores(rnaseq_data)
 
         clinical_data = pd.read_csv(paths.melanoma_clinical_data)
+        clinical_data = clinical_data[~clinical_data["Primary/Met"].str.contains("germline")]
         
         # Analyze signatures by sex.
         self.analyze_signatures_by_sex(scores, clinical_data)

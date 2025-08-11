@@ -166,9 +166,11 @@ class Paths():
         self.cd8_analysis_plots = self.outputs_of_cd8_analysis / "plots"
         # outputs
         self.cd8_by_diagnosis = self.outputs_of_cd8_analysis / "cd8_by_diagnosis.csv"
-        self.cd8_by_sex = self.outputs_of_cd8_analysis / "cd8_by_sex.csv"
-        self.cd8_by_sex_tests = self.outputs_of_cd8_analysis / "cd8_by_sex_tests.csv"
-        self.data_frame_of_cd8_signature_scores = self.outputs_of_cd8_analysis / "data_frame_of_cd8_signature_scores.csv"
+        self.data_frame_of_sexes_CD8_signatures_and_statistics = self.outputs_of_cd8_analysis / "data_frame_of_sexes_CD8_signatures_and_statistics.csv"
+        self.data_frame_of_CD8_signatures_and_statistics = self.outputs_of_cd8_analysis / "data_frame_of_CD8_signatures_and_statistics.csv"
+        self.data_frame_of_patient_IDs_and_CD8_signature_scores = self.outputs_of_cd8_analysis / "data_frame_of_patient_IDs_and_CD8_signature_scores.csv"
+        self.plot_of_cd8_by_diagnosis = self.cd8_analysis_plots / "plot_of_cd8_by_diagnosis.png"
+        self.plot_of_mean_CD8_signature_scores_by_sex = self.cd8_analysis_plots / "plot_of_mean_CD8_signature_scores_by_sex.png"
     
     
     def ensure_dependencies_for_src_exist(self):
