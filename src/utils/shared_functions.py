@@ -6,11 +6,8 @@ Common utility functions used across multiple modules
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import seaborn as sns
 import os
-from pathlib import Path
 import traceback
-from datetime import datetime
 
 from src.config import paths
 
@@ -41,44 +38,30 @@ def load_rnaseq_data():
     return expr_df  # Return genes x samples
 
 
-def filter_by_diagnosis(merged_data):
-    """
-    Filter out specific cancer types
-    
-    Parameters:
-    -----------
-    merged_data : pd.DataFrame
-        Merged data with clinical information
-        
-    Returns:
-    --------
-    pd.DataFrame
-        Filtered data
-    """
+def filter_by_diagnosis(merged_data: pd.DataFrame):
     if "PrimaryDiagnosisSite" not in merged_data.columns:
         raise Exception("Column PrimaryDiagnosisSite was not found.")
     
-    # Sites to exclude
-    exclude_sites = ['Prostate gland', 'Vulva, NOS']
+    list_of_sites_to_exclude = ['Prostate gland', 'Vulva, NOS']
     
     # Count before filtering
     total_before = len(merged_data)
     
     # Filter out specified sites
-    filtered_data = merged_data[~merged_data['PrimaryDiagnosisSite'].isin(exclude_sites)]
+    filtered_data = merged_data[~merged_data['PrimaryDiagnosisSite'].isin(list_of_sites_to_exclude)]
     
     # Count after filtering
     total_after = len(filtered_data)
     excluded_count = total_before - total_after
     
     print(f"\nFiltering out specific cancer types:")
-    print(f"- Excluded: {exclude_sites}")
+    print(f"- Excluded: {list_of_sites_to_exclude}")
     print(f"- Removed {excluded_count} patients ({excluded_count/total_before:.1%} of cohort)")
     print(f"- Remaining: {total_after} patients")
     
     # Count by excluded site
     if excluded_count > 0:
-        for site in exclude_sites:
+        for site in list_of_sites_to_exclude:
             site_count = len(merged_data[merged_data['PrimaryDiagnosisSite'] == site])
             if site_count > 0:
                 print(f"  - {site}: {site_count} patients")
