@@ -176,7 +176,7 @@ class Paths():
     def ensure_dependencies_for_src_exist(self):
         for path in [self.root, self.manifest_and_QC_files, self.normalized_clinical_data]:
             os.makedirs(path, exist_ok = True)
-        assert os.path.exists(self.QC_data), f"The dependency of `src` `{path}` does not exist."
+        assert os.path.exists(self.QC_data), f"The dependency of `src` `{self.QC_data}` does not exist."
     
     
     def ensure_dependencies_for_eda_exist(self):
