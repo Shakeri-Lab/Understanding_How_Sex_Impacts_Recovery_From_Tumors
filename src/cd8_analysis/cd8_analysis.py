@@ -14,9 +14,10 @@ import os
 from scipy import stats
 import textwrap
 import traceback
+import numpy as np
 
 from src.immune_analysis.immune_analysis import ImmuneAnalysis
-from src.utils.shared_functions import load_rnaseq_data, filter_by_diagnosis, map_sample_ids
+from src.utils.shared_functions import calculate_survival_months, load_rnaseq_data, filter_by_diagnosis, map_sample_ids
 from src.config import paths
 
 
@@ -97,7 +98,7 @@ class CD8Analysis(ImmuneAnalysis):
         }
     
     
-    def calculate_signature_scores(self, rnaseq_data):
+    def calculate_signature_scores(self, rnaseq_data: pd.DataFrame) -> pd.DataFrame:
         '''
         Calculate CD8 signature scores.
         '''
@@ -345,13 +346,36 @@ class CD8Analysis(ImmuneAnalysis):
         
         merged = filter_by_diagnosis(merged)
         
-        # Check if survival data is available
-        if 'OS_MONTHS' not in merged.columns or 'OS_STATUS' not in merged.columns:
-            print("Warning: Survival data not available")
-            return None
+        vital_status_data = pd.read_csv(paths.vital_status_data)
+        merged = merged.merge(
+            vital_status_data,
+            how = "left",
+            left_on = "PATIENT_ID",
+            right_on = "AvatarKey"
+        )
         
-        # Create survival status indicator (1 for death, 0 for censored)
-        merged['event'] = (merged['OS_STATUS'] == 'DECEASED').astype(int)
+        merged = calculate_survival_months(
+            merged,
+            age_at_diagnosis_col = "AgeAtDiagnosis",
+            age_at_last_contact_col = "AgeAtLastContact",
+            age_at_death_col = "AgeAtDeath",
+            vital_status_col = "VitalStatus"
+        )
+        
+        merged = merged.rename(columns = {"survival_months": "OS_MONTHS"})
+        merged["OS_STATUS"] = merged["event"].map({1: "DECEASED", 0: "ALIVE"})
+        
+        merged["OS_MONTHS"] = pd.to_numeric(merged["OS_MONTHS"], errors = "raise")
+        merged["event"] = pd.to_numeric(merged["event"], errors = "raise")
+        
+        valid = merged["OS_MONTHS"].notna() & np.isfinite(merged["OS_MONTHS"]) & (merged["OS_MONTHS"] >= 0) & merged["event"].isin([0, 1])
+        dropped = (~valid).sum()
+        merged = merged.loc[valid].copy()
+        
+        print(
+            f"Calculated survival months for {len(merged)} patients" +
+            (f" (dropped {dropped} invalid rows)" if dropped else "")
+        )
         
         # Analyze each signature
         for signature in self.cd8_groups.keys():
@@ -370,13 +394,26 @@ class CD8Analysis(ImmuneAnalysis):
         return merged
     
     
-    def plot_survival_curves(self, merged, group_col, title = None):
+    def plot_survival_curves(self, merged: pd.DataFrame, group_col: str, title: str | None = None):
         '''
-        Plot Kaplan-Meier survival curves by group
+        Plot Kaplan-Meier survival curves by group.
         '''
         try:
             from lifelines import KaplanMeierFitter
             from lifelines.statistics import logrank_test
+            
+            df = merged.copy()
+            
+            df = df[df[group_col].notna()].copy()
+            df = df.dropna(subset = ["OS_MONTHS", "event"])
+            df = df[np.isfinite(df["OS_MONTHS"])]
+            df = df[df["OS_MONTHS"] >= 0]
+            df = df[df["event"].isin([0, 1])]
+            
+            groups = sorted(df[group_col].unique().tolist())
+            if len(groups) == 0:
+                print(f"[{title or group_col}] No groups after cleaning; skipping plot.")
+                return
             
             # Create figure
             plt.figure(figsize=(10, 6))
@@ -384,71 +421,67 @@ class CD8Analysis(ImmuneAnalysis):
             # Initialize Kaplan-Meier fitter
             kmf = KaplanMeierFitter()
             
-            # Plot survival curve for each group
-            for group in sorted(merged[group_col].unique()):
-                group_data = merged[merged[group_col] == group]
+            # Plot survival curve for each group.
+            plotted_any = False
+            for group in groups:
+                group_data = df[df[group_col] == group]
                 
                 # Skip if not enough samples
                 if len(group_data) < 10:
+                    print(f"[{title or group_col}] Skipping group '{group}' (n={len(group_data)} < 10).")
                     continue
                 
                 # Fit survival curve
                 kmf.fit(
-                    group_data['OS_MONTHS'],
-                    group_data['event'],
-                    label=f'{group} (n={len(group_data)})'
+                    durations = group_data['OS_MONTHS'],
+                    event_observed = group_data['event'],
+                    label = f'{group} (n={len(group_data)})'
                 )
                 
                 # Plot survival curve
                 kmf.plot()
+                plotted_any = True
+            
+            if not plotted_any:
+                print(f"[{title or group_col}] No groups met minimum size; skipping plot.")
+                plt.close()
+                return
             
             # Add labels and title
             plt.xlabel('Months')
             plt.ylabel('Survival Probability')
-            if title:
-                plt.title(f'Kaplan-Meier Survival Curves by {title}')
-            else:
-                plt.title(f'Kaplan-Meier Survival Curves by {group_col}')
-            
-            # Add grid
+            plt.title(f"Kaplan-Meier Survival Curves by {title or group_col}")
             plt.grid(alpha=0.3)
             
             # Save plot
             plt.tight_layout()
             out_name = f'survival_by_{title or group_col}.png'
             plt.savefig(paths.cd8_analysis_plots / out_name, dpi = 300, bbox_inches = "tight")
+            plt.close()
+            print(f"Saved survival curves by {title or group_col}")
             
             # Perform log-rank test if there are exactly 2 groups
-            if len(merged[group_col].unique()) == 2:
-                groups = sorted(merged[group_col].unique())
-                group1_data = merged[merged[group_col] == groups[0]]
-                group2_data = merged[merged[group_col] == groups[1]]
+            if len(groups) == 2:
+                g1, g2 = groups
+                group1_data = df[df[group_col] == g1]
+                group2_data = df[df[group_col] == g2]
+                if len(group1_data) > 0 and len(group2_data) > 0:
+                    results = logrank_test(
+                        group1_data['OS_MONTHS'],
+                        group2_data['OS_MONTHS'],
+                        event_observed_A = group1_data['event'],
+                        event_observed_B = group2_data['event']
+                    )
+                    print(f"[{title or group_col}] Log-rank test p-value: {results.p_value:.4f}")
                 
-                results = logrank_test(
-                    group1_data['OS_MONTHS'],
-                    group2_data['OS_MONTHS'],
-                    group1_data['event'],
-                    group2_data['event']
-                )
-                
-                print(f"Log-rank test p-value: {results.p_value:.4f}")
-                
-                # Save results
-                output_file = os.path.join(paths.outputs_of_cd8_analysis, f'logrank_{group_col}.txt')
-                if title:
-                    output_file = os.path.join(paths.outputs_of_cd8_analysis, f'logrank_{title}.txt')
+                    output_file = os.path.join(paths.outputs_of_cd8_analysis, f'logrank_{title or group_col}.txt')
                     
-                with open(output_file, 'w') as f:
-                    f.write(f"Log-rank test results for {group_col}:\n")
-                    f.write(f"Group 1: {groups[0]} (n={len(group1_data)})\n")
-                    f.write(f"Group 2: {groups[1]} (n={len(group2_data)})\n")
-                    f.write(f"p-value: {results.p_value:.4f}\n")
-            
-            if title:
-                print(f"Saved survival curves by {title}")
-            else:
-                print(f"Saved survival curves by {group_col}")
-            
+                    with open(output_file, 'w') as f:
+                        f.write(f"Log-rank test results for {title or group_col}:\n")
+                        f.write(f"Group 1: {g1} (n={len(group1_data)})\n")
+                        f.write(f"Group 2: {g2} (n={len(group2_data)})\n")
+                        f.write(f"p-value: {results.p_value:.4f}\n")
+        
         except Exception as e:
             print(f"Error plotting survival curves: {e}")
             print(traceback.format_exc())
@@ -461,7 +494,7 @@ class CD8Analysis(ImmuneAnalysis):
         scores = self.calculate_signature_scores(rnaseq_data)
 
         clinical_data = pd.read_csv(paths.melanoma_clinical_data)
-        clinical_data = clinical_data[~clinical_data["Primary/Met"].str.contains("germline")]
+        clinical_data = clinical_data[~clinical_data["Primary/Met"].str.contains("germline", case = False, na = False)]
         
         self.analyze_signatures_by_sex(scores, clinical_data)
         self.analyze_signatures_by_diagnosis(scores, clinical_data)
