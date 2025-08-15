@@ -8,6 +8,7 @@ python -m src.cd8_analysis.cd8_groups_analysis
 
 from pathlib import Path
 import argparse
+import logging
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -18,10 +19,16 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 from sklearn.metrics import silhouette_score
 
-
 from src.cd8_analysis.cd8_analysis import CD8Analysis
-from src.utils.shared_functions import calculate_survival_months, filter_by_primary_diagnosis_site, load_rnaseq_data, map_sample_ids
+from src.utils.shared_functions import calculate_survival_months, filter_by_primary_diagnosis_site, load_expression_matrix, map_sample_IDs_to_patient_IDs
 from src.config import paths
+
+
+logging.basicConfig(
+    level = logging.INFO,
+    format = "%(asctime)s – %(levelname)s – %(message)s"
+)
+logger = logging.getLogger(__name__)
 
 
 class CD8GroupAnalysis(CD8Analysis):
@@ -668,23 +675,19 @@ class CD8GroupAnalysis(CD8Analysis):
         print(f"Saved survival curves by {group_col}")
 
     
-    def run_full_analysis(self):
+    def run(self):
         """Run full CD8 group analysis"""
-        print("\nRunning full CD8 group analysis...")
+        logger.info("\nRunning full CD8 group analysis...")
         
         # Load RNA-seq data
-        rnaseq_data = load_rnaseq_data()
-        if rnaseq_data is None:
-            raise Exception("RNA sequencing data is None.")
+        expression_matrix = load_expression_matrix()
         
         # Calculate CD8 group scores
-        scores = self.calculate_group_scores(rnaseq_data)
-        if scores is None:
-            raise Exception("Scores is None.")
+        scores = self.calculate_group_scores(expression_matrix)
         
         # Cluster samples
         scores_with_clusters = self.cluster_samples(scores)
-        scores_with_clusters = map_sample_ids(scores_with_clusters)
+        scores_with_clusters = map_sample_IDs_to_patient_IDs(scores_with_clusters)
         if scores_with_clusters is None:
             raise Exception("Scores with clusters in None.")
         
@@ -736,4 +739,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     analysis = CD8GroupAnalysis(args.base_path)
-    analysis.run_full_analysis() 
+    analysis.run() 

@@ -17,7 +17,7 @@ import traceback
 import numpy as np
 
 from src.immune_analysis.immune_analysis import ImmuneAnalysis
-from src.utils.shared_functions import calculate_survival_months, load_rnaseq_data, filter_by_diagnosis, map_sample_ids
+from src.utils.shared_functions import calculate_survival_months, filter_by_primary_diagnosis_site, load_expression_matrix, map_sample_IDs_to_patient_IDs
 from src.config import paths
 
 
@@ -36,7 +36,7 @@ class CD8Analysis(ImmuneAnalysis):
     def __init__(self):
         super().__init__()
         
-        self.cd8_groups = {
+        self.dictionary_of_CD8_signatures_and_lists_of_IDs_of_genes = {
             "CD8_A": [
                 "ENSG00000153563", # HGNC gene symbol is CD8A.
             ],
@@ -94,241 +94,228 @@ class CD8Analysis(ImmuneAnalysis):
                 "ENSG00000139187", # KLRG1
                 "ENSG00000100453", # GZMB
                 "ENSG00000180644", # PRF1
-            ],
+            ]
         }
     
     
-    def calculate_signature_scores(self, rnaseq_data: pd.DataFrame) -> pd.DataFrame:
-        '''
-        Calculate CD8 signature scores.
-        '''
-        print("CD8 signature scores will be calculated.")
+    def create_data_frame_of_patient_IDs_CD8_signatures_and_scores(self, expression_matrix: pd.DataFrame) -> pd.DataFrame:
 
-        rnaseq = rnaseq_data.copy()
-        if rnaseq.index.astype(str).str.startswith("ENSG").any():
-            rnaseq.index = rnaseq.index.astype(str).str.split(".").str[0]
-            rnaseq = rnaseq.groupby(rnaseq.index).mean()
-        
-        scores = pd.DataFrame(index = rnaseq.columns)
-        
-        # Calculate scores for each signature.
-        for signature, genes in self.cd8_groups.items():
-            # Filter to genes in the signature that are present in the data
-            signature_genes = [gene for gene in genes if gene in rnaseq.index]
+        logger.info("Data frame of patient IDs, CD8 signatures, and scores will be created.")
 
-            if not signature_genes:
-                print(f"Warning: No genes found for signature {signature}")
-                continue
+        data_frame_of_genes_and_samples = expression_matrix.copy()
+        # We assume that each element of the index is an Ensembl gene ID.
+        data_frame_of_genes_and_samples.index = data_frame_of_genes_and_samples.index.astype(str).str.split(".").str[0]
+        data_frame_of_genes_and_samples = data_frame_of_genes_and_samples.groupby(data_frame_of_genes_and_samples.index).mean()
+        data_frame_of_sample_IDs_CD8_signatures_and_scores = pd.DataFrame(index = data_frame_of_genes_and_samples.columns)
+        for CD8_signature, list_of_genes_of_CD8_signature in self.dictionary_of_CD8_signatures_and_lists_of_IDs_of_genes.items():
+            list_of_genes_of_CD8_signature_in_expression_matrix = [
+                gene
+                for gene in list_of_genes_of_CD8_signature
+                if gene in data_frame_of_genes_and_samples.index
+            ]
             
-            print(f"Calculating {signature} score using {len(signature_genes)} genes")
+            logger.info(f"Scores for column {CD8_signature} will be determined.")
 
-            # Calculate mean expression across genes
-            scores[signature] = rnaseq.loc[signature_genes].mean()
-
-        scores = map_sample_ids(scores)
-            
-        # Save scores
-        scores.to_csv(paths.data_frame_of_patient_IDs_and_CD8_signature_scores)
-
-        print(f"Calculated CD8 signature scores for {len(scores)} samples")
-
-        return scores
-    
-    
-    def analyze_signatures_by_sex(self, scores, clinical_data):
-        print(
-            "CD8 signatures will be analyzed by sex.\n" +
-            f"The shape of scores is {scores.shape}.\n" +
-            f"The shape of clinical data is {clinical_data.shape}."
+            data_frame_of_sample_IDs_CD8_signatures_and_scores[CD8_signature] = data_frame_of_genes_and_samples.loc[
+                list_of_genes_of_CD8_signature_in_expression_matrix
+            ].mean()
+        data_frame_of_patient_IDs_CD8_signatures_and_scores = map_sample_IDs_to_patient_IDs(
+            data_frame_of_sample_IDs_CD8_signatures_and_scores
         )
+        data_frame_of_patient_IDs_CD8_signatures_and_scores.to_csv(paths.data_frame_of_patient_IDs_and_CD8_signature_scores)
 
-        # Merge with clinical data
-        merged = clinical_data.merge(
-            scores,
+        logger.info(f"Data frame of patient IDs and CD8 signature scores has shape {data_frame_of_patient_IDs_CD8_signatures_and_scores.shape}.")
+
+        return data_frame_of_patient_IDs_CD8_signatures_and_scores
+    
+    
+    def analyze_signatures_by_sex(self, data_frame_of_patient_IDs_CD8_signatures_and_scores, clinical_data):
+        
+        logger.info("CD8 signatures by sex will be analyzed.")
+        logger.info(f"The shape of data frame of patient IDs, CD8 signatures, and scores is {data_frame_of_patient_IDs_CD8_signatures_and_scores.shape}.")
+        logger.info(f"The shape of clinical data is {clinical_data.shape}.")
+
+        list_of_CD8_signatures = data_frame_of_patient_IDs_CD8_signatures_and_scores.columns.tolist()
+        list_of_columns = ["PATIENT_ID", "Sex", "PrimaryDiagnosisSite"] + list_of_CD8_signatures
+        data_frame_of_clinical_data_and_CD8_signature_scores = clinical_data.merge(
+            data_frame_of_patient_IDs_CD8_signatures_and_scores,
+            left_on = "PATIENT_ID",
+            right_index = True,
+            how = "inner"
+        )[list_of_columns]
+
+        logger.info(f"Data frame of clinical data and CD8 signature scores is {data_frame_of_clinical_data_and_CD8_signature_scores.shape}.")
+
+        data_frame_of_clinical_data_and_CD8_signature_scores = filter_by_primary_diagnosis_site(data_frame_of_clinical_data_and_CD8_signature_scores)
+        list_of_dictionaries_of_sexes_CD8_signatures_and_statistics = []
+        for sex in ["Male", "Female"]:
+            data_frame_of_clinical_data_and_CD8_signature_scores_for_sex = data_frame_of_clinical_data_and_CD8_signature_scores[
+                data_frame_of_clinical_data_and_CD8_signature_scores["Sex"] == sex
+            ]
+            for CD8_signature in self.dictionary_of_CD8_signatures_and_lists_of_IDs_of_genes.keys():
+                if CD8_signature in data_frame_of_clinical_data_and_CD8_signature_scores_for_sex.columns:
+                    list_of_dictionaries_of_sexes_CD8_signatures_and_statistics.append(
+                        {
+                            'sex': sex,
+                            'signature': CD8_signature,
+                            'mean': data_frame_of_clinical_data_and_CD8_signature_scores_for_sex[CD8_signature].mean(),
+                            'median': data_frame_of_clinical_data_and_CD8_signature_scores_for_sex[CD8_signature].median(),
+                            'std': data_frame_of_clinical_data_and_CD8_signature_scores_for_sex[CD8_signature].std(),
+                            'count': len(data_frame_of_clinical_data_and_CD8_signature_scores_for_sex)
+                        }
+                    )
+        data_frame_of_sexes_CD8_signatures_and_statistics = pd.DataFrame(list_of_dictionaries_of_sexes_CD8_signatures_and_statistics)
+        
+        logger.info("Data frame of sexes, CD8 signatures, and statistics will be saved.")
+        
+        data_frame_of_sexes_CD8_signatures_and_statistics.to_csv(paths.data_frame_of_sexes_CD8_signatures_and_statistics, index = False)
+        self.plot_mean_CD8_signature_scores_by_sex(data_frame_of_sexes_CD8_signatures_and_statistics)
+        self.perform_statistical_tests_for_CD8_signatures_by_sex(data_frame_of_clinical_data_and_CD8_signature_scores)
+
+        logger.info(f"CD8 signatures by sex for {len(data_frame_of_clinical_data_and_CD8_signature_scores)} patients were analyzed.")
+
+        return data_frame_of_clinical_data_and_CD8_signature_scores
+    
+    
+    def plot_mean_CD8_signature_scores_by_sex(self, data_frame_of_sexes_CD8_signatures_and_statistics):
+        graph = sns.catplot(
+            data = data_frame_of_sexes_CD8_signatures_and_statistics,
+            x = "sex",
+            y = "mean",
+            col = "signature",
+            kind = "bar"
+        )
+        graph.set_titles("{col_name}")
+        graph.set_xlabels("Sex")
+        graph.set_ylabels("Mean CD8 Signature Score")
+        graph.figure.savefig(paths.plot_of_mean_CD8_signature_scores_by_sex)
+        plt.close(graph.figure)
+        logger.info("Plot of mean CD8 signature scores by sex was saved.")
+    
+    
+    def perform_statistical_tests_for_CD8_signatures_by_sex(self, data_frame_of_clinical_data_and_CD8_signature_scores):
+        list_of_dictionaries_of_CD8_signatures_and_statistics = []
+        for CD8_signature in self.dictionary_of_CD8_signatures_and_lists_of_IDs_of_genes.keys():
+            series_of_CD8_signature_scores_of_males = data_frame_of_clinical_data_and_CD8_signature_scores[
+                data_frame_of_clinical_data_and_CD8_signature_scores["Sex"] == "Male"
+            ][CD8_signature]
+            series_of_CD8_signature_scores_of_females = data_frame_of_clinical_data_and_CD8_signature_scores[
+                data_frame_of_clinical_data_and_CD8_signature_scores["Sex"] == "Female"
+            ][CD8_signature]
+            if len(series_of_CD8_signature_scores_of_males) < 10 or len(series_of_CD8_signature_scores_of_females) < 10:
+                raise Exception(f"There are not enough samples for signature {signature}.")
+            test_statistic, p_value = stats.ttest_ind(
+                series_of_CD8_signature_scores_of_males,
+                series_of_CD8_signature_scores_of_females,
+                equal_var = False
+            )
+            list_of_dictionaries_of_CD8_signatures_and_statistics.append(
+                {
+                    'signature': CD8_signature,
+                    'male_mean': series_of_CD8_signature_scores_of_males.mean(),
+                    'female_mean': series_of_CD8_signature_scores_of_females.mean(),
+                    'male_count': len(series_of_CD8_signature_scores_of_males),
+                    'female_count': len(series_of_CD8_signature_scores_of_females),
+                    't_stat': test_statistic,
+                    'p_value': p_value
+                }
+            )
+        data_frame_of_CD8_signatures_and_statistics = pd.DataFrame(list_of_dictionaries_of_CD8_signatures_and_statistics)
+        data_frame_of_CD8_signatures_and_statistics['significant'] = data_frame_of_CD8_signatures_and_statistics['p_value'] < 0.05
+        data_frame_of_CD8_signatures_and_statistics.to_csv(paths.data_frame_of_CD8_signatures_and_statistics, index = False)
+        
+        logger.info("Statistical tests for CD8 signatures by sex were performed.")
+        
+        return data_frame_of_CD8_signatures_and_statistics
+    
+    
+    def analyze_CD8_signatures_by_diagnosis(self, data_frame_of_patient_IDs_CD8_signatures_and_scores, clinical_data):
+
+        logger.info("CD8 signatures by diagnosis will be analyzed.")
+
+        data_frame_of_clinical_data_and_CD8_signature_scores = clinical_data.merge(
+            data_frame_of_patient_IDs_CD8_signatures_and_scores,
             left_on = "PATIENT_ID",
             right_index = True,
             how = "inner"
         )
-
-        print(f"The shape of clinical data inner joined with scores is {merged.shape}.")
-
-        merged = filter_by_diagnosis(merged)
-
-        # Create summary statistics by sex
-        summary = []
-
-        for sex in ['Male', 'Female']:
-            sex_data = merged[merged['Sex'] == sex]
-
-            for signature in self.cd8_groups.keys():
-                if signature in sex_data.columns:
-                    summary.append({
-                        'sex': sex,
-                        'signature': signature,
-                        'mean': sex_data[signature].mean(),
-                        'median': sex_data[signature].median(),
-                        'std': sex_data[signature].std(),
-                        'count': len(sex_data)
-                    })
-
-        summary_df = pd.DataFrame(summary)
-        print("Data frame of sexes, CD8 signatures, and statistics will be saved.")
-        summary_df.to_csv(paths.data_frame_of_sexes_CD8_signatures_and_statistics, index = False)
-
-        self.plot_signatures_by_sex(summary_df)
-        self.test_signatures_by_sex(merged)
-
-        print(f"Analyzed CD8 signatures by sex for {len(merged)} patients")
-
-        return merged
-    
-    
-    def plot_signatures_by_sex(self, summary_df):
-        '''
-        Plot mean CD8 signatures by sex.
-        '''
-        g = sns.catplot(
-            data = summary_df,
-            x = "sex",
-            y = "mean",
-            col = "signature",
-            kind = "bar",
-            col_wrap = 3,
-            height = 3,
-            aspect = 1
-        )
-        g.set_titles('{col_name}')
-        g.set_xlabels('Sex')
-        g.set_ylabels('Mean Score')
-        g.figure.savefig(paths.plot_of_mean_CD8_signature_scores_by_sex, dpi = 300, bbox_inches = "tight")
-        plt.close(g.figure)
-        logger.info("Plot of mean CD8 signature scores by sex was saved.")
-    
-    
-    def test_signatures_by_sex(self, merged):
-        '''
-        Perform statistical tests for CD8 signatures by sex.
-        '''
-        test_results = []
-        
-        # Test each signature.
-        for signature in self.cd8_groups.keys():
-            if signature not in merged.columns:
-                raise Exception(f"Signature {signature} is not a label of a column.")
-            
-            # Get data by sex.
-            male = merged[merged['Sex'] == 'Male'][signature]
-            female = merged[merged['Sex'] == 'Female'][signature]
-            
-            if len(male) < 10 or len(female) < 10:
-                raise Exception(f"There are not enough samples for signature {signature}.")
-            
-            # Perform t-test
-            t_stat, p_val = stats.ttest_ind(male, female, equal_var = False)
-            
-            # Add to results
-            test_results.append(
-                {
-                    'signature': signature,
-                    'male_mean': male.mean(),
-                    'female_mean': female.mean(),
-                    'male_count': len(male),
-                    'female_count': len(female),
-                    't_stat': t_stat,
-                    'p_value': p_val
-                }
+        series_of_diagnoses_and_numbers_of_patients = data_frame_of_clinical_data_and_CD8_signature_scores["PrimaryDiagnosisSite"].value_counts()
+        series_of_diagnoses_with_at_least_20_patients = series_of_diagnoses_and_numbers_of_patients[series_of_diagnoses_and_numbers_of_patients >= 20].index.tolist()
+        data_frame_of_clinical_data_and_CD8_signature_scores_of_patients_with_diagnoses_with_at_least_20_patients = data_frame_of_clinical_data_and_CD8_signature_scores[
+            data_frame_of_clinical_data_and_CD8_signature_scores["PrimaryDiagnosisSite"].isin(
+                series_of_diagnoses_with_at_least_20_patients
             )
-        
-        test_df = pd.DataFrame(test_results)
-        test_df['significant'] = test_df['p_value'] < 0.05
-        test_df.to_csv(paths.data_frame_of_CD8_signatures_and_statistics, index = False)
-        
-        print("Statistical tests for CD8 signatures by sex were performed.")
-        
-        return test_df
-    
-    
-    def analyze_signatures_by_diagnosis(self, scores, clinical_data):
-        '''
-        Analyze CD8 signatures by diagnosis.
-        '''
-        print("\nAnalyzing CD8 signatures by diagnosis...")
-
-        merged = clinical_data.merge(
-            scores,
-            left_on = 'PATIENT_ID',
-            right_index = True,
-            how = 'inner'
+        ]
+        list_of_diagnoses = (
+            data_frame_of_clinical_data_and_CD8_signature_scores_of_patients_with_diagnoses_with_at_least_20_patients[
+                "PrimaryDiagnosisSite"
+            ].value_counts()
+            .sort_values(ascending = False)
+            .index
+            .tolist()
         )
-
-        diagnosis_counts = merged['PrimaryDiagnosisSite'].value_counts()
-        top_diagnoses = diagnosis_counts[diagnosis_counts >= 20].index.tolist()
-
-        if len(top_diagnoses) == 0:
-            raise Exception("There are no diagnoses with at least 20 patients.")
-
-        merged_top = merged[merged['PrimaryDiagnosisSite'].isin(top_diagnoses)].copy()
-        diagnosis_order = merged_top["PrimaryDiagnosisSite"].value_counts().sort_values(ascending = False).index.tolist()
-
-        summary_rows = []
-
-        for diagnosis in diagnosis_order:
-            diag_data = merged_top[merged_top["PrimaryDiagnosisSite"] == diagnosis]
-            for signature in self.cd8_groups.keys():
-                if signature in diag_data.columns:
-                    summary_rows.append(
+        list_of_dictionaries_of_diagnoses_CD8_signatures_and_statistics = []
+        for diagnosis in list_of_diagnoses:
+            data_frame_of_clinical_data_and_CD8_signature_scores_of_patients_with_diagnosis = data_frame_of_clinical_data_and_CD8_signature_scores_of_patients_with_diagnoses_with_at_least_20_patients[
+                data_frame_of_clinical_data_and_CD8_signature_scores_of_patients_with_diagnoses_with_at_least_20_patients[
+                    "PrimaryDiagnosisSite"
+                ] == diagnosis
+            ]
+            for CD8_signature in self.dictionary_of_CD8_signatures_and_lists_of_IDs_of_genes.keys():
+                if CD8_signature in data_frame_of_clinical_data_and_CD8_signature_scores_of_patients_with_diagnosis.columns:
+                    list_of_dictionaries_of_diagnoses_CD8_signatures_and_statistics.append(
                         {
-                            'diagnosis': diagnosis,
-                            'signature': signature,
-                            'mean': diag_data[signature].mean(),
-                            'median': diag_data[signature].median(),
-                            'std': diag_data[signature].std(),
-                            'count': len(diag_data)
+                            "diagnosis": diagnosis,
+                            "signature": CD8_signature,
+                            "mean": data_frame_of_clinical_data_and_CD8_signature_scores_of_patients_with_diagnosis[CD8_signature].mean(),
+                            "median": data_frame_of_clinical_data_and_CD8_signature_scores_of_patients_with_diagnosis[CD8_signature].median(),
+                            "std": data_frame_of_clinical_data_and_CD8_signature_scores_of_patients_with_diagnosis[CD8_signature].std(),
+                            "count": len(data_frame_of_clinical_data_and_CD8_signature_scores_of_patients_with_diagnosis)
                         }
                     )
+        data_frame_of_diagnoses_CD8_signatures_and_statistics = pd.DataFrame(
+            list_of_dictionaries_of_diagnoses_CD8_signatures_and_statistics
+        )
+        data_frame_of_diagnoses_CD8_signatures_and_statistics.to_csv(
+            paths.data_frame_of_top_diagnoses_CD8_signatures_and_statistics,
+            index = False
+        )
+        list_of_wrapped_diagnoses = [textwrap.fill(str(diagnosis), width = 10) for diagnosis in list_of_diagnoses]
+        dictionary_of_diagnoses_and_wrapped_diagnoses = dict(zip(list_of_diagnoses, list_of_wrapped_diagnoses))
+        data_frame_of_diagnoses_CD8_signatures_and_statistics["diagnosis_wrapped"] = data_frame_of_diagnoses_CD8_signatures_and_statistics["diagnosis"].map(dictionary_of_diagnoses_and_wrapped_diagnoses)
+        data_frame_of_diagnoses_CD8_signatures_and_statistics["diagnosis_wrapped"] = pd.Categorical(
+            data_frame_of_diagnoses_CD8_signatures_and_statistics["diagnosis_wrapped"],
+            categories = list_of_wrapped_diagnoses,
+            ordered = True
+        )
+        self.plot_CD8_signature_scores_by_diagnosis(data_frame_of_diagnoses_CD8_signatures_and_statistics)
 
-        summary_df = pd.DataFrame(summary_rows)
-        summary_df.to_csv(paths.data_frame_of_top_diagnoses_CD8_signatures_and_statistics, index = False)
+        logger.info(f"CD8 signatures by diagnosis for {len(data_frame_of_clinical_data_and_CD8_signature_scores_of_patients_with_diagnoses_with_at_least_20_patients)} patients with diagnoses with at least 20 patients were analyzed.")
 
-        wrapped = [textwrap.fill(str(d), width = 18) for d in diagnosis_order]
-        wrap_map = dict(zip(diagnosis_order, wrapped))
-        summary_df["diagnosis_wrapped"] = summary_df["diagnosis"].map(wrap_map)
-        summary_df["diagnosis_wrapped"] = pd.Categorical(summary_df["diagnosis_wrapped"], categories = wrapped, ordered = True)
-        self.plot_signatures_by_diagnosis(summary_df)
-
-        print(f"CD8 signatures by diagnosis for {len(merged_top)} patients with top diagnoses were analyzed.")
-
-        return merged_top
+        return data_frame_of_clinical_data_and_CD8_signature_scores_of_patients_with_diagnoses_with_at_least_20_patients
     
     
-    def plot_signatures_by_diagnosis(self, summary_df):
-        '''
-        Plot CD8 signatures by diagnosis.
-        '''
-        g = sns.catplot(
-            data = summary_df,
+    def plot_CD8_signature_scores_by_diagnosis(self, data_frame_of_diagnoses_CD8_signatures_and_statistics):
+        graph = sns.catplot(
+            data = data_frame_of_diagnoses_CD8_signatures_and_statistics,
             x = "diagnosis_wrapped",
             y = "mean",
             col = "signature",
             kind = "bar",
-            order = list(summary_df["diagnosis_wrapped"].cat.categories),
-            col_wrap = 3,
-            height = 3.2,
-            aspect = 1.5,
-            errorbar = None,
-            sharex = False
+            order = list(data_frame_of_diagnoses_CD8_signatures_and_statistics["diagnosis_wrapped"].cat.categories)
         )
-        g.set_titles("{col_name}")
-        for ax in g.axes.flatten():
-            ax.set_xlabel("Diagnosis")
-            ax.set_ylabel("Mean Score")
-            for label in ax.get_xticklabels():
+        graph.set_titles("{col_name}")
+        for axis in graph.axes.flatten():
+            axis.set_xlabel("Diagnosis")
+            axis.set_ylabel("Mean Score")
+            for label in axis.get_xticklabels():
                 label.set_rotation(0)
                 label.set_ha("center")
-        g.figure.subplots_adjust(bottom = 0.25, top = 0.9)
-        g.figure.savefig(paths.plot_of_mean_CD8_signature_scores_by_diagnosis, dpi = 300, bbox_inches = "tight")
-        plt.close(g.figure)
-        logger.info('Plot of mean CD8 signature scores by diagnosis was saved.')
+        graph.figure.subplots_adjust(bottom = 0.25, top = 0.9)
+        graph.figure.savefig(paths.plot_of_mean_CD8_signature_scores_by_diagnosis)
+        plt.close(graph.figure)
+        
+        logger.info("Plot of mean CD8 signature scores by diagnosis was saved.")
     
     
     def analyze_survival_by_signature(self, scores, clinical_data):
@@ -344,7 +331,7 @@ class CD8Analysis(ImmuneAnalysis):
             how = 'inner'
         )
         
-        merged = filter_by_diagnosis(merged)
+        merged = filter_by_primary_diagnosis_site(merged)
         
         vital_status_data = pd.read_csv(paths.vital_status_data)
         merged = merged.merge(
@@ -378,7 +365,7 @@ class CD8Analysis(ImmuneAnalysis):
         )
         
         # Analyze each signature
-        for signature in self.cd8_groups.keys():
+        for signature in self.dictionary_of_CD8_signatures_and_lists_of_IDs_of_genes.keys():
             if signature not in merged.columns:
                 continue
             
@@ -487,24 +474,23 @@ class CD8Analysis(ImmuneAnalysis):
             print(traceback.format_exc())
     
     
-    def run_full_analysis(self):
-        print("\nFull CD8 analysis will be run.")
+    def run(self):
+        
+        logger.info("CD8 analysis will be run.")
 
-        rnaseq_data = load_rnaseq_data()
-        scores = self.calculate_signature_scores(rnaseq_data)
-
+        expression_matrix = load_expression_matrix()
+        data_frame_of_patient_IDs_CD8_signatures_and_scores = self.create_data_frame_of_patient_IDs_CD8_signatures_and_scores(expression_matrix)
         clinical_data = pd.read_csv(paths.melanoma_clinical_data)
         clinical_data = clinical_data[~clinical_data["Primary/Met"].str.contains("germline", case = False, na = False)]
-        
-        self.analyze_signatures_by_sex(scores, clinical_data)
-        self.analyze_signatures_by_diagnosis(scores, clinical_data)
-        self.analyze_survival_by_signature(scores, clinical_data)
+        self.analyze_signatures_by_sex(data_frame_of_patient_IDs_CD8_signatures_and_scores, clinical_data)
+        self.analyze_CD8_signatures_by_diagnosis(data_frame_of_patient_IDs_CD8_signatures_and_scores, clinical_data)
+        self.analyze_survival_by_signature(data_frame_of_patient_IDs_CD8_signatures_and_scores, clinical_data)
 
         print("\nCD8 analysis complete!")
         print(f"Results were saved to {paths.outputs_of_cd8_analysis}")
         print(f"Plots were saved to {paths.cd8_analysis_plots}")
 
-        return scores
+        return data_frame_of_patient_IDs_CD8_signatures_and_scores
 
 
 if __name__ == "__main__":
@@ -512,4 +498,4 @@ if __name__ == "__main__":
     paths.ensure_dependencies_for_cd8_analysis_exist()
     
     analysis = CD8Analysis()
-    analysis.run_full_analysis()
+    analysis.run()

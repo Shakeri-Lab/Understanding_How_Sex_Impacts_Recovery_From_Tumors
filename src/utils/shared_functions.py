@@ -3,6 +3,7 @@ Shared Functions Module
 Common utility functions used across multiple modules
 """
 
+import logging
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -12,108 +13,55 @@ import traceback
 from src.config import paths
 
 
-def load_rnaseq_data():
-    expression_files = list(paths.gene_and_transcript_expression_results.glob("*.genes.results"))
-    print(f"{len(expression_files)} expression files were found.")
-    if not expression_files:
-        raise Exception("No RNA-seq expression files were found.")
-
-    expr_dfs = []
-    for f in expression_files:
-        sample_id = os.path.basename(str(f)).split('.')[0]
-        df = pd.read_csv(f, sep='\t')
-        expr_dfs.append(df[['gene_id', 'TPM']].set_index('gene_id')['TPM'].rename(sample_id))
-
-    expr_df = pd.concat(expr_dfs, axis=1)
-
-    # Quality control
-    print(f"\nInitial expression matrix shape: {expr_df.shape}")
-
-    # Filter lowly expressed genes
-    min_samples = 0.2 * expr_df.shape[1] # At least 20% of samples
-    expr_df = expr_df.loc[(expr_df > 1).sum(axis=1) >= min_samples]
-
-    print(f"Expression matrix after filtering: {expr_df.shape}")
-
-    return expr_df  # Return genes x samples
+logging.basicConfig(
+    level = logging.INFO,
+    format = "%(asctime)s – %(levelname)s – %(message)s"
+)
+logger = logging.getLogger(__name__)
 
 
-def filter_by_diagnosis(merged_data: pd.DataFrame):
-    if "PrimaryDiagnosisSite" not in merged_data.columns:
-        raise Exception("Column PrimaryDiagnosisSite was not found.")
+def load_expression_matrix():
+    list_of_paths_of_expression_data = list(paths.gene_and_transcript_expression_results.glob("*.genes.results"))
     
-    list_of_sites_to_exclude = ['Prostate gland', 'Vulva, NOS']
-    
-    # Count before filtering
-    total_before = len(merged_data)
-    
-    # Filter out specified sites
-    filtered_data = merged_data[~merged_data['PrimaryDiagnosisSite'].isin(list_of_sites_to_exclude)]
-    
-    # Count after filtering
-    total_after = len(filtered_data)
-    excluded_count = total_before - total_after
-    
-    print(f"\nFiltering out specific cancer types:")
-    print(f"- Excluded: {list_of_sites_to_exclude}")
-    print(f"- Removed {excluded_count} patients ({excluded_count/total_before:.1%} of cohort)")
-    print(f"- Remaining: {total_after} patients")
-    
-    # Count by excluded site
-    if excluded_count > 0:
-        for site in list_of_sites_to_exclude:
-            site_count = len(merged_data[merged_data['PrimaryDiagnosisSite'] == site])
-            if site_count > 0:
-                print(f"  - {site}: {site_count} patients")
-    
-    return filtered_data
+    logger.info(f"{len(list_of_paths_of_expression_data)} expression files were found.")
+
+    list_of_expression_data_frames = []
+    for path_of_expression_data in list_of_paths_of_expression_data:
+        sample_id = os.path.basename(str(path_of_expression_data)).split('.')[0]
+        expression_data_frame = pd.read_csv(path_of_expression_data, sep = '\t')
+        list_of_expression_data_frames.append(
+            expression_data_frame[['gene_id', 'TPM']]
+            .set_index('gene_id')['TPM']
+            .rename(sample_id)
+        )
+    # Expression data frame has rows corresponding to genes and columns corresponding to samples.
+    expression_matrix = pd.concat(list_of_expression_data_frames, axis = 1)
+
+    logger.info(f"Expression matrix has shape {expression_matrix.shape}.")
+
+    twenty_percent_of_number_of_samples = 0.2 * expression_matrix.shape[1]
+    expression_matrix = expression_matrix.loc[
+        (expression_matrix > 1).sum(axis = 1) >= twenty_percent_of_number_of_samples
+    ]
+
+    logger.info(f"Expression matrix after filtering has shape {expression_matrix.shape}.")
+
+    return expression_matrix
 
 
-# TODO: Integrate function `filter_by_primary_diagnosis_site` with function `filter_by_diagnosis`.
-def filter_by_primary_diagnosis_site(merged_data):
-    """
-    Filter out specific cancer types
+def filter_by_primary_diagnosis_site(data_frame_of_clinical_data_and_CD8_signature_scores):
+    list_of_sites_to_exclude = ["Prostate gland", "Vulva, NOS"]
+    initial_number_of_rows = len(data_frame_of_clinical_data_and_CD8_signature_scores)
+    filtered_data_frame = data_frame_of_clinical_data_and_CD8_signature_scores[
+        ~data_frame_of_clinical_data_and_CD8_signature_scores["PrimaryDiagnosisSite"].isin(list_of_sites_to_exclude)
+    ]
+    final_number_of_rows = len(filtered_data_frame)
+    number_of_excluded_rows = initial_number_of_rows - final_number_of_rows
     
-    Parameters:
-    -----------
-    merged_data : pd.DataFrame
-        Merged data with clinical information
-        
-    Returns:
-    --------
-    pd.DataFrame
-        Filtered data
-    """
-    if 'PrimaryDiagnosisSite' not in merged_data.columns:
-        print("Warning: Cannot filter by diagnosis - PrimaryDiagnosisSite column not found")
-        return merged_data
+    logger.info(f"Rows of data frame of clinical data and CD8 signatures scores with specific primary diagnosis sites will be filtered out.")
     
-    # Sites to exclude
-    exclude_sites = ['Prostate gland', 'Vulva, NOS']
-    
-    # Count before filtering
-    total_before = len(merged_data)
-    
-    # Filter out specified sites
-    filtered_data = merged_data[~merged_data['PrimaryDiagnosisSite'].isin(exclude_sites)]
-    
-    # Count after filtering
-    total_after = len(filtered_data)
-    excluded_count = total_before - total_after
-    
-    print(f"\nFiltering out specific cancer types:")
-    print(f"- Excluded: {exclude_sites}")
-    print(f"- Removed {excluded_count} patients ({excluded_count/total_before:.1%} of cohort)")
-    print(f"- Remaining: {total_after} patients")
-    
-    # Count by excluded site
-    if excluded_count > 0:
-        for site in exclude_sites:
-            site_count = len(merged_data[merged_data['PrimaryDiagnosisSite'] == site])
-            if site_count > 0:
-                print(f"  - {site}: {site_count} patients")
-    
-    return filtered_data
+    return filtered_data_frame
+
 
 def calculate_survival_months(df, age_at_diagnosis_col='AGE_AT_DIAGNOSIS', 
                              age_at_last_contact_col='AGE_AT_LAST_CONTACT',
@@ -174,6 +122,7 @@ def calculate_survival_months(df, age_at_diagnosis_col='AGE_AT_DIAGNOSIS',
         print(traceback.format_exc())
         return df
 
+
 def normalize_gene_expression(expr_data, method='log2'):
     """Normalize gene expression data"""
     try:
@@ -207,6 +156,7 @@ def normalize_gene_expression(expr_data, method='log2'):
         print(traceback.format_exc())
         return expr_data
 
+
 def save_results(df, output_dir, filename, index=True):
     """Save results to CSV file"""
     try:
@@ -226,6 +176,7 @@ def save_results(df, output_dir, filename, index=True):
         print(f"Error saving results: {e}")
         print(traceback.format_exc())
         return False
+
 
 def load_gene_signatures(signature_file):
     """Load gene signatures from file"""
@@ -269,6 +220,7 @@ def load_gene_signatures(signature_file):
         print(traceback.format_exc())
         return None
 
+
 def save_plot(fig, filename, output_dir):
     """
     Save a matplotlib figure to the specified output directory
@@ -295,6 +247,7 @@ def save_plot(fig, filename, output_dir):
     except Exception as e:
         print(f"Error saving plot: {e}")
         print(traceback.format_exc())
+
 
 def create_id_mapping(base_path):
     """
@@ -329,81 +282,23 @@ def create_id_mapping(base_path):
         print(traceback.format_exc())
         return {}
 
-def _clean_id(x: str) -> str:
-    '''
-    Remove run-specific affixes and standardize lab IDs.
-    '''
-    x = str(x)
-    return x.replace("-RNA", '').replace("FT-", '').replace("SA", "SL")
+
+def clean_ID(ID: str) -> str:
+    ID = str(ID)
+    return ID.replace("-RNA", "").replace("FT-", "").replace("SA", "SL")
+
+
+def map_sample_IDs_to_patient_IDs(data_frame_of_sample_IDs_CD8_signatures_and_scores: pd.DataFrame) -> pd.DataFrame:
     
-def map_sample_ids(scores: pd.DataFrame, id_col: str = "SAMPLE_ID") -> pd.DataFrame:
-    """
-    Map RNA-seq sample IDs to patient IDs
-    
-    Parameters:
-    -----------
-    scores : pd.DataFrame
-        DataFrame with RNA-seq sample IDs as index
-    base_path : str
-        Base path to the project directory
-        
-    Returns:
-    --------
-    pd.DataFrame
-        DataFrame with patient IDs as index
-    """
-    
-    try:
-        print("\nMapping RNA-seq sample IDs to patient IDs...")
-        
-        qc_data = pd.read_csv(paths.QC_data)
-        
-        # Print sample of QC data
-        print("\nQC data sample:")
-        print(qc_data[['SLID', 'ORIENAvatarKey']].head())
-        
-        # Create mapping dictionary
-        id_map = {_clean_id(row["SLID"]): row["ORIENAvatarKey"] for _, row in qc_data.iterrows()}
-        
-        # Print sample of mapping
-        print("\nSample ID mappings:")
-        for k, v in list(id_map.items())[:5]:
-            print(f"  {k} -> {v}")
-        
-        # Clean score IDs
-        orig_ids = scores.index.copy()
-        scores.index = scores.index.map(_clean_id)
-        
-        # Map to patient IDs
-        scores.index = scores.index.map(lambda x: id_map.get(x, x))
-        
-        # Print mapping results
-        print("\nID mapping results:")
-        print("Original IDs:", orig_ids[:5].tolist())
-        print("Mapped IDs:", scores.index[:5].tolist())
-        print(f"Total unique patients: {len(scores.index.unique())}")
-        
-        # Check for unmapped IDs
-        unmapped = [x for x in scores.index if x not in id_map.values()]
-        if unmapped:
-            print(f"\nWarning: {len(unmapped)} IDs could not be mapped:")
-            print(unmapped[:5])
-        
-        # Try additional ID formats
-        for orig_id in unmapped:
-            # Try without -RNA
-            clean_id = orig_id.replace('-RNA', '')
-            if clean_id in id_map:
-                scores.index = scores.index.map(lambda x: id_map.get(clean_id) if x == orig_id else x)
-                unmapped.remove(orig_id)
-        
-        if unmapped:
-            print("\nChecking QC file for unmapped IDs:")
-            print(qc_data[qc_data['SLID'].str.contains('|'.join(unmapped), na=False)])
-        
-        return scores
-        
-    except Exception as e:
-        print(f"Error mapping sample IDs: {e}")
-        print(traceback.format_exc())
-        return scores 
+    logger.info("Sample IDs will be mapped to patient IDs.")
+
+    QC_data = pd.read_csv(paths.QC_data)
+    dictionary_of_sample_IDs_and_patient_IDs = {
+        clean_ID(row["SLID"]): row["ORIENAvatarKey"] for _, row in QC_data.iterrows()
+    }
+    index_of_sample_IDs = data_frame_of_sample_IDs_CD8_signatures_and_scores.index
+    data_frame_of_sample_IDs_CD8_signatures_and_scores.index = data_frame_of_sample_IDs_CD8_signatures_and_scores.index.map(clean_ID)
+    data_frame_of_sample_IDs_CD8_signatures_and_scores.index = data_frame_of_sample_IDs_CD8_signatures_and_scores.index.map(
+        lambda sample_ID: dictionary_of_sample_IDs_and_patient_IDs.get(sample_ID, sample_ID)
+    )
+    return data_frame_of_sample_IDs_CD8_signatures_and_scores
