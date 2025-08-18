@@ -69,67 +69,42 @@ def filter_by_primary_diagnosis_site(data_frame_of_clinical_data_and_CD8_signatu
     return filtered_data_frame
 
 
-def calculate_survival_months(df, age_at_diagnosis_col='AGE_AT_DIAGNOSIS', 
-                             age_at_last_contact_col='AGE_AT_LAST_CONTACT',
-                             age_at_death_col='AGE_AT_DEATH',
-                             vital_status_col='VITAL_STATUS'):
+def numericize_age(string_representation_of_age):
+    if string_representation_of_age == "Age 90 or older":
+        return 90.0
+    elif string_representation_of_age == "Unknown/Not Applicable":
+        return np.nan
+    else:
+        return float(string_representation_of_age)
+
+
+def calculate_survival_months(data_frame_of_clinical_data_and_CD8_signature_scores):
     '''
-    Calculate survival months from age column
+    Calculate numbers of months patients survive.
     This function is used by `src/cd8_analysis/cd8_analysis.py`.
     '''
-    try:
-        # Make a copy to avoid modifying the original
-        result_df = df.copy()
-        
-        # Check if required columns exist
-        required_cols = [age_at_diagnosis_col, vital_status_col]
-        missing_cols = [col for col in required_cols if col not in result_df.columns]
-        
-        if missing_cols:
-            print(f"Warning: Missing required columns for survival calculation: {missing_cols}")
-            return result_df
-        
-        # Calculate survival months
-        for col in [age_at_diagnosis_col, age_at_last_contact_col, age_at_death_col]:
-            if col in result_df.columns:
-                result_df[col] = pd.to_numeric(result_df[col], errors = "coerce")
-                
-        if vital_status_col in result_df.columns:
-            result_df[vital_status_col] = result_df[vital_status_col].astype(str).str.strip().str.capitalize()
-        
-        result_df['survival_months'] = np.nan
-        
-        # For deceased patients
-        deceased_mask = result_df[vital_status_col] == 'Dead'
-        if age_at_death_col in result_df.columns:
-            result_df.loc[deceased_mask, 'survival_months'] = (
-                result_df.loc[deceased_mask, age_at_death_col] - 
-                result_df.loc[deceased_mask, age_at_diagnosis_col]
-            ) * 12
-        
-        # For living patients
-        living_mask = result_df[vital_status_col] == 'Alive'
-        if age_at_last_contact_col in result_df.columns:
-            result_df.loc[living_mask, 'survival_months'] = (
-                result_df.loc[living_mask, age_at_last_contact_col] - 
-                result_df.loc[living_mask, age_at_diagnosis_col]
-            ) * 12
-        
-        # Add event indicator (1 for death, 0 for censored)
-        result_df['event'] = (result_df[vital_status_col] == 'Dead').astype(int)
+    result_df = data_frame_of_clinical_data_and_CD8_signature_scores.copy()
+    for name_of_column in ["AgeAtDiagnosis", "AgeAtLastContact", "AgeAtDeath"]:
+        result_df[name_of_column] = result_df[name_of_column].apply(numericize_age)
+        result_df["VitalStatus"] = result_df["VitalStatus"].astype(str).str.strip().str.capitalize()
+    result_df["survival_months"] = np.nan
+    series_of_indicators_that_patients_are_dead = result_df["VitalStatus"] == "Dead"
+    result_df.loc[series_of_indicators_that_patients_are_dead, "survival_months"] = (
+        result_df.loc[series_of_indicators_that_patients_are_dead, "AgeAtDeath"] - 
+        result_df.loc[series_of_indicators_that_patients_are_dead, "AgeAtDiagnosis"]
+    ) * 12
+    series_of_indicators_that_patients_are_alive = result_df["VitalStatus"] == "Alive"
+    result_df.loc[series_of_indicators_that_patients_are_alive, "survival_months"] = (
+        result_df.loc[series_of_indicators_that_patients_are_alive, "AgeAtLastContact"] - 
+        result_df.loc[series_of_indicators_that_patients_are_alive, "AgeAtDiagnosis"]
+    ) * 12
+    result_df["event"] = (result_df["VitalStatus"] == "Dead").astype(int)
+    result_df.loc[result_df["survival_months"] <= 0, "survival_months"] = np.nan
+    number_of_patients_with_survival_data = result_df["survival_months"].notna().sum()
+    
+    logger.info(f"Numbers of months patients survived for {number_of_patients_with_survival_data} patients were calculated.")
 
-        result_df.loc[result_df["survival_months"] <= 0, "survival_months"] = np.nan
-        
-        # Count patients with usable survival data
-        survival_count = result_df['survival_months'].notna().sum()
-        print(f"Calculated survival months for {survival_count} patients")
-        
-        return result_df
-        
-    except Exception as e:
-        print(f"Error calculating survival months: {e}")
-        print(traceback.format_exc())
-        return df
+    return result_df
 
 
 def normalize_gene_expression(expr_data, method='log2'):

@@ -704,13 +704,7 @@ class CD8GroupAnalysis(CD8Analysis):
             right_on = "AvatarKey"
         )
         
-        clinical_data = calculate_survival_months(
-            clinical_data,
-            age_at_diagnosis_col = "AgeAtDiagnosis",
-            age_at_last_contact_col = "AgeAtLastContact",
-            age_at_death_col = "AgeAtDeath",
-            vital_status_col = "VitalStatus"
-        )
+        clinical_data = calculate_survival_months(clinical_data)
         
         clinical_data = clinical_data.rename(columns = {"survival_months": "OS_MONTHS"})
         clinical_data["OS_STATUS"] = clinical_data["event"].map({1: "DECEASED", 0: "ALIVE"})

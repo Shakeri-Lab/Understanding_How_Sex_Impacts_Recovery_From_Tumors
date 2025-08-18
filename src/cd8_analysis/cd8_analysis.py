@@ -15,6 +15,8 @@ from scipy import stats
 import textwrap
 import traceback
 import numpy as np
+from lifelines import KaplanMeierFitter
+from lifelines.statistics import logrank_test
 
 from src.immune_analysis.immune_analysis import ImmuneAnalysis
 from src.utils.shared_functions import calculate_survival_months, filter_by_primary_diagnosis_site, load_expression_matrix, map_sample_IDs_to_patient_IDs
@@ -336,132 +338,76 @@ class CD8Analysis(ImmuneAnalysis):
             left_on = "PATIENT_ID",
             right_on = "AvatarKey"
         )
-        data_frame_of_clinical_data_and_CD8_signature_scores = calculate_survival_months(
-            data_frame_of_clinical_data_and_CD8_signature_scores,
-            age_at_diagnosis_col = "AgeAtDiagnosis",
-            age_at_last_contact_col = "AgeAtLastContact",
-            age_at_death_col = "AgeAtDeath",
-            vital_status_col = "VitalStatus"
-        )
+        data_frame_of_clinical_data_and_CD8_signature_scores = calculate_survival_months(data_frame_of_clinical_data_and_CD8_signature_scores)
         data_frame_of_clinical_data_and_CD8_signature_scores = data_frame_of_clinical_data_and_CD8_signature_scores.rename(columns = {"survival_months": "OS_MONTHS"})
         data_frame_of_clinical_data_and_CD8_signature_scores["OS_STATUS"] = data_frame_of_clinical_data_and_CD8_signature_scores["event"].map({1: "DECEASED", 0: "ALIVE"})
-        data_frame_of_clinical_data_and_CD8_signature_scores["OS_MONTHS"] = pd.to_numeric(data_frame_of_clinical_data_and_CD8_signature_scores["OS_MONTHS"], errors = "raise")
-        data_frame_of_clinical_data_and_CD8_signature_scores["event"] = pd.to_numeric(data_frame_of_clinical_data_and_CD8_signature_scores["event"], errors = "raise")
         series_of_indicators_that_survival_data_is_valid = (
             data_frame_of_clinical_data_and_CD8_signature_scores["OS_MONTHS"].notna() &
-            np.isfinite(data_frame_of_clinical_data_and_CD8_signature_scores["OS_MONTHS"]) &
-            (data_frame_of_clinical_data_and_CD8_signature_scores["OS_MONTHS"] >= 0) &
-            data_frame_of_clinical_data_and_CD8_signature_scores["event"].isin([0, 1])
+            np.isfinite(data_frame_of_clinical_data_and_CD8_signature_scores["OS_MONTHS"])
         )
-        data_frame_of_clinical_data_and_CD8_signature_scores = data_frame_of_clinical_data_and_CD8_signature_scores.loc[series_of_indicators_that_survival_data_is_valid].copy()
+        data_frame_of_clinical_data_and_CD8_signature_scores = data_frame_of_clinical_data_and_CD8_signature_scores.loc[series_of_indicators_that_survival_data_is_valid]
         number_of_rows_of_survival_data_dropped = (~series_of_indicators_that_survival_data_is_valid).sum()
         
-        logger.info(f"Numbers of months patients survived for {len(data_frame_of_clinical_data_and_CD8_signature_scores)} patients were calculated.")
         logger.info(f"{number_of_rows_of_survival_data_dropped} rows of survival data were dropped.")
         
         for CD8_signature in self.dictionary_of_CD8_signatures_and_lists_of_IDs_of_genes.keys():
-            if CD8_signature not in data_frame_of_clinical_data_and_CD8_signature_scores.columns:
-                raise Exception
             median_CD8_signature_score = data_frame_of_clinical_data_and_CD8_signature_scores[CD8_signature].median()
-            data_frame_of_clinical_data_and_CD8_signature_scores[f"{CD8_signature}_group"] = (data_frame_of_clinical_data_and_CD8_signature_scores[CD8_signature] > median_CD8_signature_score).map({True: 'High', False: 'Low'})
-            self.plot_survival_curves(data_frame_of_clinical_data_and_CD8_signature_scores, f"{CD8_signature}_group", CD8_signature)
+            data_frame_of_clinical_data_and_CD8_signature_scores[f"group_for_CD8_signature_{CD8_signature}"] = (data_frame_of_clinical_data_and_CD8_signature_scores[CD8_signature] > median_CD8_signature_score).map({True: "High", False: "Low"})
+            self.plot_survival_curves(data_frame_of_clinical_data_and_CD8_signature_scores, f"group_for_CD8_signature_{CD8_signature}", CD8_signature)
         
         logger.info(f"Survival by CD8 signature for {len(data_frame_of_clinical_data_and_CD8_signature_scores)} patients was analyzed.")
         
         return data_frame_of_clinical_data_and_CD8_signature_scores
     
     
-    def plot_survival_curves(self, merged: pd.DataFrame, group_col: str, title: str | None = None):
+    def plot_survival_curves(self, data_frame_of_clinical_data_and_CD8_signature_scores: pd.DataFrame, group_for_CD8_signature: str, title: str):
         '''
         Plot Kaplan-Meier survival curves by group.
-        '''
-        try:
-            from lifelines import KaplanMeierFitter
-            from lifelines.statistics import logrank_test
-            
-            df = merged.copy()
-            
-            df = df[df[group_col].notna()].copy()
-            df = df.dropna(subset = ["OS_MONTHS", "event"])
-            df = df[np.isfinite(df["OS_MONTHS"])]
-            df = df[df["OS_MONTHS"] >= 0]
-            df = df[df["event"].isin([0, 1])]
-            
-            groups = sorted(df[group_col].unique().tolist())
-            if len(groups) == 0:
-                print(f"[{title or group_col}] No groups after cleaning; skipping plot.")
-                return
-            
-            # Create figure
-            plt.figure(figsize=(10, 6))
-            
-            # Initialize Kaplan-Meier fitter
-            kmf = KaplanMeierFitter()
-            
-            # Plot survival curve for each group.
-            plotted_any = False
-            for group in groups:
-                group_data = df[df[group_col] == group]
-                
-                # Skip if not enough samples
-                if len(group_data) < 10:
-                    print(f"[{title or group_col}] Skipping group '{group}' (n={len(group_data)} < 10).")
-                    continue
-                
-                # Fit survival curve
-                kmf.fit(
-                    durations = group_data['OS_MONTHS'],
-                    event_observed = group_data['event'],
-                    label = f'{group} (n={len(group_data)})'
+        '''            
+        df = data_frame_of_clinical_data_and_CD8_signature_scores[
+            data_frame_of_clinical_data_and_CD8_signature_scores[group_for_CD8_signature].notna()
+        ].copy()
+        df = df.dropna(subset = ["event"])
+        list_of_groups_for_CD8_signature = sorted(df[group_for_CD8_signature].unique().tolist())
+        Kaplan_Meier_fitter = KaplanMeierFitter()
+        for group in list_of_groups_for_CD8_signature:
+            slice_of_data_frame_corresponding_to_group = df[df[group_for_CD8_signature] == group]
+            Kaplan_Meier_fitter.fit(
+                durations = slice_of_data_frame_corresponding_to_group["OS_MONTHS"],
+                event_observed = slice_of_data_frame_corresponding_to_group["event"],
+                label = f"{group} (n = {len(slice_of_data_frame_corresponding_to_group)})"
+            )
+            Kaplan_Meier_fitter.plot()
+        plt.xlabel("Months")
+        plt.ylabel("Survival Probability")
+        plt.title(f"Kaplan-Meier Survival Curves by {title}")
+        plt.grid(alpha = 0.3)
+        out_name = f"survival_by_{title}.png"
+        plt.savefig(paths.cd8_analysis_plots / out_name, dpi = 300, bbox_inches = "tight")
+        plt.close()
+        
+        logger.info(f"Plot of survival curves by {title} was saved.")
+        
+        if len(list_of_groups_for_CD8_signature) == 2:
+            g1, g2 = list_of_groups_for_CD8_signature
+            slice_of_data_frame_corresponding_to_group_1 = df[df[group_for_CD8_signature] == g1]
+            slice_of_data_frame_corresponding_to_group_2 = df[df[group_for_CD8_signature] == g2]
+            if len(slice_of_data_frame_corresponding_to_group_1) > 0 and len(slice_of_data_frame_corresponding_to_group_2) > 0:
+                results = logrank_test(
+                    slice_of_data_frame_corresponding_to_group_1["OS_MONTHS"],
+                    slice_of_data_frame_corresponding_to_group_2["OS_MONTHS"],
+                    event_observed_for_patient_in_group_1 = slice_of_data_frame_corresponding_to_group_1["event"],
+                    event_observed_for_patient_in_group_2 = slice_of_data_frame_corresponding_to_group_2["event"]
                 )
                 
-                # Plot survival curve
-                kmf.plot()
-                plotted_any = True
-            
-            if not plotted_any:
-                print(f"[{title or group_col}] No groups met minimum size; skipping plot.")
-                plt.close()
-                return
-            
-            # Add labels and title
-            plt.xlabel('Months')
-            plt.ylabel('Survival Probability')
-            plt.title(f"Kaplan-Meier Survival Curves by {title or group_col}")
-            plt.grid(alpha=0.3)
-            
-            # Save plot
-            plt.tight_layout()
-            out_name = f'survival_by_{title or group_col}.png'
-            plt.savefig(paths.cd8_analysis_plots / out_name, dpi = 300, bbox_inches = "tight")
-            plt.close()
-            print(f"Saved survival curves by {title or group_col}")
-            
-            # Perform log-rank test if there are exactly 2 groups
-            if len(groups) == 2:
-                g1, g2 = groups
-                group1_data = df[df[group_col] == g1]
-                group2_data = df[df[group_col] == g2]
-                if len(group1_data) > 0 and len(group2_data) > 0:
-                    results = logrank_test(
-                        group1_data['OS_MONTHS'],
-                        group2_data['OS_MONTHS'],
-                        event_observed_A = group1_data['event'],
-                        event_observed_B = group2_data['event']
-                    )
-                    print(f"[{title or group_col}] Log-rank test p-value: {results.p_value:.4f}")
-                
-                    output_file = os.path.join(paths.outputs_of_cd8_analysis, f'logrank_{title or group_col}.txt')
-                    
-                    with open(output_file, 'w') as f:
-                        f.write(f"Log-rank test results for {title or group_col}:\n")
-                        f.write(f"Group 1: {g1} (n={len(group1_data)})\n")
-                        f.write(f"Group 2: {g2} (n={len(group2_data)})\n")
-                        f.write(f"p-value: {results.p_value:.4f}\n")
-        
-        except Exception as e:
-            print(f"Error plotting survival curves: {e}")
-            print(traceback.format_exc())
+                logger.info(f"p value for log rank test for CD8 signature {title} is {results.p_value:.4f}.")
+
+                path_to_results_of_log_rank_test = os.path.join(paths.outputs_of_cd8_analysis, f"results_of_log_rank_test_for_{title}.txt")
+                with open(path_to_results_of_log_rank_test, 'w') as file:
+                    file.write(f"results of log rank test for CD8 signature {title}:\n")
+                    file.write(f"Group 1: {g1} (n = {len(slice_of_data_frame_corresponding_to_group_1)})\n")
+                    file.write(f"Group 2: {g2} (n = {len(slice_of_data_frame_corresponding_to_group_2)})\n")
+                    file.write(f"p value: {results.p_value:.4f}")
     
     
     def run(self):
@@ -476,9 +422,9 @@ class CD8Analysis(ImmuneAnalysis):
         self.analyze_CD8_signatures_by_diagnosis(data_frame_of_patient_IDs_CD8_signatures_and_scores, clinical_data)
         self.analyze_survival_by_CD8_signature(data_frame_of_patient_IDs_CD8_signatures_and_scores, clinical_data)
 
-        print("\nCD8 analysis complete!")
-        print(f"Results were saved to {paths.outputs_of_cd8_analysis}")
-        print(f"Plots were saved to {paths.cd8_analysis_plots}")
+        print("CD8 analysis is complete.")
+        print(f"Results were saved to `{paths.outputs_of_cd8_analysis}`.")
+        print(f"Plots were saved to `{paths.cd8_analysis_plots}`.")
 
         return data_frame_of_patient_IDs_CD8_signatures_and_scores
 
