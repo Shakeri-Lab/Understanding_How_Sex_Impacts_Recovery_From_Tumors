@@ -21,6 +21,9 @@ logger = logging.getLogger(__name__)
 
 
 def load_expression_matrix():
+    '''
+    This function is used by `src/cd8_analysis/cd8_analysis.py`.
+    '''
     list_of_paths_of_expression_data = list(paths.gene_and_transcript_expression_results.glob("*.genes.results"))
     
     logger.info(f"{len(list_of_paths_of_expression_data)} expression files were found.")
@@ -50,6 +53,9 @@ def load_expression_matrix():
 
 
 def filter_by_primary_diagnosis_site(data_frame_of_clinical_data_and_CD8_signature_scores):
+    '''
+    This function is used by `src/cd8_analysis/cd8_analysis.py`.
+    '''
     list_of_sites_to_exclude = ["Prostate gland", "Vulva, NOS"]
     initial_number_of_rows = len(data_frame_of_clinical_data_and_CD8_signature_scores)
     filtered_data_frame = data_frame_of_clinical_data_and_CD8_signature_scores[
@@ -58,7 +64,7 @@ def filter_by_primary_diagnosis_site(data_frame_of_clinical_data_and_CD8_signatu
     final_number_of_rows = len(filtered_data_frame)
     number_of_excluded_rows = initial_number_of_rows - final_number_of_rows
     
-    logger.info(f"Rows of data frame of clinical data and CD8 signatures scores with specific primary diagnosis sites will be filtered out.")
+    logger.info(f"Rows of data frame of clinical data and CD8 signature scores with specific primary diagnosis sites will be filtered out.")
     
     return filtered_data_frame
 
@@ -67,7 +73,10 @@ def calculate_survival_months(df, age_at_diagnosis_col='AGE_AT_DIAGNOSIS',
                              age_at_last_contact_col='AGE_AT_LAST_CONTACT',
                              age_at_death_col='AGE_AT_DEATH',
                              vital_status_col='VITAL_STATUS'):
-    """Calculate survival months from age columns"""
+    '''
+    Calculate survival months from age column
+    This function is used by `src/cd8_analysis/cd8_analysis.py`.
+    '''
     try:
         # Make a copy to avoid modifying the original
         result_df = df.copy()
@@ -284,11 +293,17 @@ def create_id_mapping(base_path):
 
 
 def clean_ID(ID: str) -> str:
+    '''
+    This function is used by function `map_sample_IDs_to_patient_IDs`.
+    '''
     ID = str(ID)
     return ID.replace("-RNA", "").replace("FT-", "").replace("SA", "SL")
 
 
 def map_sample_IDs_to_patient_IDs(data_frame_of_sample_IDs_CD8_signatures_and_scores: pd.DataFrame) -> pd.DataFrame:
+    '''
+    This function is used by `src/cd8_analysis/cd8_analysis.py`.
+    '''
     
     logger.info("Sample IDs will be mapped to patient IDs.")
 

@@ -318,67 +318,57 @@ class CD8Analysis(ImmuneAnalysis):
         logger.info("Plot of mean CD8 signature scores by diagnosis was saved.")
     
     
-    def analyze_survival_by_signature(self, scores, clinical_data):
-        '''
-        Analyze survival by CD8 signature.
-        '''
-        print("Analyzing survival by CD8 signature...")
+    def analyze_survival_by_CD8_signature(self, data_frame_of_patient_IDs_CD8_signatures_and_scores, clinical_data):
         
-        merged = clinical_data.merge(
-            scores,
-            left_on = 'PATIENT_ID',
+        logger.info("Survival by CD8 signature will be analyzed.")
+        
+        data_frame_of_clinical_data_and_CD8_signature_scores = clinical_data.merge(
+            data_frame_of_patient_IDs_CD8_signatures_and_scores,
+            left_on = "PATIENT_ID",
             right_index = True,
-            how = 'inner'
+            how = "inner"
         )
-        
-        merged = filter_by_primary_diagnosis_site(merged)
-        
+        data_frame_of_clinical_data_and_CD8_signature_scores = filter_by_primary_diagnosis_site(data_frame_of_clinical_data_and_CD8_signature_scores)
         vital_status_data = pd.read_csv(paths.vital_status_data)
-        merged = merged.merge(
+        data_frame_of_clinical_data_and_CD8_signature_scores = data_frame_of_clinical_data_and_CD8_signature_scores.merge(
             vital_status_data,
             how = "left",
             left_on = "PATIENT_ID",
             right_on = "AvatarKey"
         )
-        
-        merged = calculate_survival_months(
-            merged,
+        data_frame_of_clinical_data_and_CD8_signature_scores = calculate_survival_months(
+            data_frame_of_clinical_data_and_CD8_signature_scores,
             age_at_diagnosis_col = "AgeAtDiagnosis",
             age_at_last_contact_col = "AgeAtLastContact",
             age_at_death_col = "AgeAtDeath",
             vital_status_col = "VitalStatus"
         )
-        
-        merged = merged.rename(columns = {"survival_months": "OS_MONTHS"})
-        merged["OS_STATUS"] = merged["event"].map({1: "DECEASED", 0: "ALIVE"})
-        
-        merged["OS_MONTHS"] = pd.to_numeric(merged["OS_MONTHS"], errors = "raise")
-        merged["event"] = pd.to_numeric(merged["event"], errors = "raise")
-        
-        valid = merged["OS_MONTHS"].notna() & np.isfinite(merged["OS_MONTHS"]) & (merged["OS_MONTHS"] >= 0) & merged["event"].isin([0, 1])
-        dropped = (~valid).sum()
-        merged = merged.loc[valid].copy()
-        
-        print(
-            f"Calculated survival months for {len(merged)} patients" +
-            (f" (dropped {dropped} invalid rows)" if dropped else "")
+        data_frame_of_clinical_data_and_CD8_signature_scores = data_frame_of_clinical_data_and_CD8_signature_scores.rename(columns = {"survival_months": "OS_MONTHS"})
+        data_frame_of_clinical_data_and_CD8_signature_scores["OS_STATUS"] = data_frame_of_clinical_data_and_CD8_signature_scores["event"].map({1: "DECEASED", 0: "ALIVE"})
+        data_frame_of_clinical_data_and_CD8_signature_scores["OS_MONTHS"] = pd.to_numeric(data_frame_of_clinical_data_and_CD8_signature_scores["OS_MONTHS"], errors = "raise")
+        data_frame_of_clinical_data_and_CD8_signature_scores["event"] = pd.to_numeric(data_frame_of_clinical_data_and_CD8_signature_scores["event"], errors = "raise")
+        series_of_indicators_that_survival_data_is_valid = (
+            data_frame_of_clinical_data_and_CD8_signature_scores["OS_MONTHS"].notna() &
+            np.isfinite(data_frame_of_clinical_data_and_CD8_signature_scores["OS_MONTHS"]) &
+            (data_frame_of_clinical_data_and_CD8_signature_scores["OS_MONTHS"] >= 0) &
+            data_frame_of_clinical_data_and_CD8_signature_scores["event"].isin([0, 1])
         )
+        data_frame_of_clinical_data_and_CD8_signature_scores = data_frame_of_clinical_data_and_CD8_signature_scores.loc[series_of_indicators_that_survival_data_is_valid].copy()
+        number_of_rows_of_survival_data_dropped = (~series_of_indicators_that_survival_data_is_valid).sum()
         
-        # Analyze each signature
-        for signature in self.dictionary_of_CD8_signatures_and_lists_of_IDs_of_genes.keys():
-            if signature not in merged.columns:
-                continue
-            
-            # Group by median
-            median = merged[signature].median()
-            merged[f'{signature}_group'] = (merged[signature] > median).map({True: 'High', False: 'Low'})
-            
-            # Plot Kaplan-Meier curves
-            self.plot_survival_curves(merged, f'{signature}_group', signature)
+        logger.info(f"Numbers of months patients survived for {len(data_frame_of_clinical_data_and_CD8_signature_scores)} patients were calculated.")
+        logger.info(f"{number_of_rows_of_survival_data_dropped} rows of survival data were dropped.")
         
-        print(f"Analyzed survival by CD8 signature for {len(merged)} patients")
+        for CD8_signature in self.dictionary_of_CD8_signatures_and_lists_of_IDs_of_genes.keys():
+            if CD8_signature not in data_frame_of_clinical_data_and_CD8_signature_scores.columns:
+                raise Exception
+            median_CD8_signature_score = data_frame_of_clinical_data_and_CD8_signature_scores[CD8_signature].median()
+            data_frame_of_clinical_data_and_CD8_signature_scores[f"{CD8_signature}_group"] = (data_frame_of_clinical_data_and_CD8_signature_scores[CD8_signature] > median_CD8_signature_score).map({True: 'High', False: 'Low'})
+            self.plot_survival_curves(data_frame_of_clinical_data_and_CD8_signature_scores, f"{CD8_signature}_group", CD8_signature)
         
-        return merged
+        logger.info(f"Survival by CD8 signature for {len(data_frame_of_clinical_data_and_CD8_signature_scores)} patients was analyzed.")
+        
+        return data_frame_of_clinical_data_and_CD8_signature_scores
     
     
     def plot_survival_curves(self, merged: pd.DataFrame, group_col: str, title: str | None = None):
@@ -484,7 +474,7 @@ class CD8Analysis(ImmuneAnalysis):
         clinical_data = clinical_data[~clinical_data["Primary/Met"].str.contains("germline", case = False, na = False)]
         self.analyze_signatures_by_sex(data_frame_of_patient_IDs_CD8_signatures_and_scores, clinical_data)
         self.analyze_CD8_signatures_by_diagnosis(data_frame_of_patient_IDs_CD8_signatures_and_scores, clinical_data)
-        self.analyze_survival_by_signature(data_frame_of_patient_IDs_CD8_signatures_and_scores, clinical_data)
+        self.analyze_survival_by_CD8_signature(data_frame_of_patient_IDs_CD8_signatures_and_scores, clinical_data)
 
         print("\nCD8 analysis complete!")
         print(f"Results were saved to {paths.outputs_of_cd8_analysis}")
