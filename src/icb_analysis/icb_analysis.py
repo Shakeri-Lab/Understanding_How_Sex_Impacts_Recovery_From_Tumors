@@ -1,7 +1,10 @@
-"""
+'''
 ICB Analysis
 Analyzes ICB medications and their relationship with CD8+ T cell signatures
-"""
+
+Usage:
+./miniconda3/envs/ici_sex/bin/python -m src.icb_analysis.icb_analysis
+'''
 
 import pandas as pd
 import numpy as np
@@ -13,7 +16,7 @@ import traceback
 from datetime import datetime
 from scipy import stats
 from lifelines import KaplanMeierFitter, CoxPHFitter
-from lifelines.statistics import logrank_test  # Correct import for logrank_test
+from lifelines.statistics import logrank_test
 from lifelines.plotting import add_at_risk_counts
 from lifelines.exceptions import ConvergenceError
 from sklearn.linear_model import LogisticRegression
@@ -24,6 +27,11 @@ import matplotlib.gridspec as gridspec
 import warnings
 import glob
 
+from src.cd8_analysis.cd8_groups_analysis import CD8GroupAnalysis
+from src.utils.shared_functions import calculate_survival_months, filter_by_primary_diagnosis_site, numericize_age
+from src.config import paths
+
+
 def _clean_design_matrix(df, duration_col, event_col):
     X = df.drop([duration_col, event_col], axis = 1)
     X = X.loc[:, X.apply(pd.Series.nunique) > 1]
@@ -33,14 +41,11 @@ def _clean_design_matrix(df, duration_col, event_col):
     X = X.drop(columns = cols_to_drop)
     return pd.concat([df[[duration_col, event_col]], X], axis = 1)
 
-# Add parent directory to path to allow imports from other modules
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from cd8_analysis.cd8_groups_analysis import CD8GroupAnalysis
-from utils.shared_functions import calculate_survival_months, filter_by_diagnosis, load_clinical_data, load_rnaseq_data
 
 class PropensityScore:
-    """Class for propensity score matching to balance confounders between groups"""
+    '''
+    Class for propensity score matching to balance confounders between groups
+    '''
     
     def __init__(self, data, treatment_col, confounders):
         """Initialize the propensity score matching
@@ -65,6 +70,7 @@ class PropensityScore:
         
         # Initialize propensity scores to None
         self.propensity_scores = None
+        
         
     def estimate_propensity_scores(self):
         """Estimate propensity scores using logistic regression
@@ -91,6 +97,7 @@ class PropensityScore:
         self.propensity_scores = model.predict_proba(X)[:, 1]
         
         return self.propensity_scores
+    
     
     def match(self, method='nearest', caliper=None, ratio=1):
         """Match treated and control units based on propensity scores
@@ -133,6 +140,7 @@ class PropensityScore:
             
         return matched_data
 
+    
 class ICBAnalysis:
     """Analyzes ICB medications and their relationship with CD8+ T cell signatures"""
     
@@ -271,8 +279,9 @@ class ICBAnalysis:
             print(traceback.format_exc())
             return pd.DataFrame(columns=['PATIENT_ID', 'Medication', 'AgeAtMedStart', 'AgeAtMedStop', 'MedContinuing'])
     
-    def load_clinical_data(self, clinical_file=None):
-        """
+    
+    def load_clinical_data(self):
+        '''
         Load clinical data from file
 
         Args:
@@ -280,56 +289,31 @@ class ICBAnalysis:
 
         Returns:
             pandas.DataFrame: Clinical data
-        """
-        try:
-            # If no specific file is provided, try standard locations
-            if clinical_file is None:
-                potential_paths = [
-                    os.path.join(self.base_path, "processed_data/processed_clinical_molecular.csv"),
-                    os.path.join(self.base_path, "processed_data/processed_clinical.csv"),
-                    os.path.join(os.path.dirname(self.base_path), "processed_data/processed_clinical_molecular.csv"),
-                    os.path.join(os.path.dirname(self.base_path), "processed_data/processed_clinical.csv")
-                ]
-                
-                for path in potential_paths:
-                    print(f"Attempting to load clinical data from: {path}")
-                    if os.path.exists(path):
-                        clinical_file = path
-                        break
-                
-                if clinical_file is None:
-                    raise FileNotFoundError("No clinical data file found in standard locations")
-            
-            # Load the clinical data
-            print(f"\nLoading clinical data from {clinical_file}")
-            clinical_data = pd.read_csv(clinical_file)
-            
-            # Print summary information
-            print(f"Loaded clinical data for {len(clinical_data)} patients")
-            
-            # Check if PATIENT_ID column exists
-            if 'PATIENT_ID' not in clinical_data.columns:
-                # Try to find alternative column for patient ID
-                id_cols = [col for col in clinical_data.columns if 'patient' in col.lower() or 'avatar' in col.lower() or 'id' in col.lower()]
-                if id_cols:
-                    print(f"Using {id_cols[0]} as PATIENT_ID")
-                    clinical_data = clinical_data.rename(columns={id_cols[0]: 'PATIENT_ID'})
-                else:
-                    print("WARNING: No PATIENT_ID column found in clinical data")
-                    # Create a sequential PATIENT_ID if one doesn't exist
-                    clinical_data['PATIENT_ID'] = [f'P{i:06d}' for i in range(len(clinical_data))]
-            
-            # Store for later use
-            self.clinical_data = clinical_data
-            
-            return clinical_data
-            
-        except Exception as e:
-            print(f"Error loading clinical data: {e}")
-            import traceback
-            traceback.print_exc()
-            # Return an empty DataFrame with PATIENT_ID column
-            return pd.DataFrame({'PATIENT_ID': [f'P{i:06d}' for i in range(100)]})
+        '''
+        # Load the clinical data
+        print(f"\nLoading clinical data from {paths.melanoma_clinical_data}")
+        clinical_data = pd.read_csv(paths.melanoma_clinical_data)
+
+        # Print summary information
+        print(f"Loaded clinical data for {len(clinical_data)} patients")
+
+        # Check if PATIENT_ID column exists
+        if 'PATIENT_ID' not in clinical_data.columns:
+            # Try to find alternative column for patient ID
+            id_cols = [col for col in clinical_data.columns if 'patient' in col.lower() or 'avatar' in col.lower() or 'id' in col.lower()]
+            if id_cols:
+                print(f"Using {id_cols[0]} as PATIENT_ID")
+                clinical_data = clinical_data.rename(columns={id_cols[0]: 'PATIENT_ID'})
+            else:
+                print("WARNING: No PATIENT_ID column found in clinical data")
+                # Create a sequential PATIENT_ID if one doesn't exist
+                clinical_data['PATIENT_ID'] = [f'P{i:06d}' for i in range(len(clinical_data))]
+
+        # Store for later use
+        self.clinical_data = clinical_data
+
+        return clinical_data
+
     
     def identify_icb_treatments(self, medication_data, include_details=False):
         """
@@ -403,13 +387,13 @@ class ICBAnalysis:
             
             # Get ICB start age if available
             if 'AgeAtMedStart' in icb_meds.columns:
-                icb_meds['ICB_start_age'] = pd.to_numeric(icb_meds['AgeAtMedStart'], errors='coerce')
+                icb_meds['ICB_start_age'] = icb_meds["AgeAtMedStart"].apply(numericize_age)
             else:
                 age_cols = [col for col in icb_meds.columns if 'age' in col.lower() and 'start' in col.lower()]
                 if age_cols:
-                    icb_meds['ICB_start_age'] = pd.to_numeric(icb_meds[age_cols[0]], errors='coerce')
+                    icb_meds['ICB_start_age'] = icb_meds[age_cols[0]].apply(numericize_age)
                 else:
-                    icb_meds['ICB_start_age'] = None
+                    icb_meds['ICB_start_age'] = np.nan
             
             # Add ICB class information for each drug
             def get_icb_class(drug_name):
@@ -662,22 +646,24 @@ class ICBAnalysis:
             else:
                 print("Warning: Still no overlap after standardization")
                 # Create a minimal dataframe to avoid errors
-                minimal_cols = ['PATIENT_ID', 'ICB_status']
-                
-                # Add basic clinical variables if available
-                for col in ['AGE', 'SEX', 'STAGE_SIMPLE', 'OS_TIME', 'OS_EVENT']:
-                    if col in clinical_copy.columns:
-                        minimal_cols.append(col)
-                        
-                # Create a dataframe with the first few patients from clinical data
+                # Start only with columns that actually exist, then add ICB_status
+                base_candidates = ['PATIENT_ID', 'AGE', 'SEX', 'STAGE_SIMPLE', 'OS_TIME', 'OS_EVENT']
+                existing_cols = [c for c in base_candidates if c in clinical_copy.columns]
+
                 n_patients = min(10, len(clinical_copy))
                 print(f"Creating a minimal merged dataset with {n_patients} patients")
-                
-                minimal_df = clinical_copy.head(n_patients)[minimal_cols].copy()
-                # Add ICB status column if not present
-                if 'ICB_status' not in minimal_df.columns:
-                    minimal_df['ICB_status'] = 'Unknown'
-                
+
+                # Build from existing columns only (no KeyError)
+                minimal_df = clinical_copy.head(n_patients)[existing_cols].copy()
+
+                # Add ICB_status explicitly
+                minimal_df['ICB_status'] = 'Unknown'
+
+                # Optional: nice column order
+                ordered_cols = (['PATIENT_ID', 'ICB_status'] +
+                                [c for c in existing_cols if c not in ('PATIENT_ID',)])
+                minimal_df = minimal_df.reindex(columns=ordered_cols, fill_value=np.nan)
+
                 return minimal_df
         else:
             merge_on = 'PATIENT_ID'
@@ -744,7 +730,7 @@ class ICBAnalysis:
                     if possible_cols:
                         print(f"Using '{possible_cols[0]}' as OS_EVENT (coerced)")
                         merged_data['OS_EVENT'] = (
-                            pd.to_numeric(merged_data[possible_cols[0]], errors="coerce")
+                            pd.to_numeric(merged_data[possible_cols[0]], errors="raise")
                               .fillna(0)           # treat unknown / NA as “no event”
                               .astype(int)
                         )
@@ -790,7 +776,7 @@ class ICBAnalysis:
         for col in ['OS_TIME', 'OS_EVENT']:
             if col in merged_data.columns:
                 # Convert to numeric if needed
-                merged_data[col] = pd.to_numeric(merged_data[col], errors='coerce')
+                merged_data[col] = pd.to_numeric(merged_data[col], errors='raise')
                 
                 # Handle missing values
                 if merged_data[col].isna().any():
@@ -986,7 +972,7 @@ class ICBAnalysis:
         # Ensure OS variables are numeric
         for col in ['OS_TIME', 'OS_EVENT']:
             if col in data.columns:
-                data[col] = pd.to_numeric(data[col], errors='coerce')
+                data[col] = pd.to_numeric(data[col], errors='raise')
                 data[col] = data[col].fillna(0)
         
         # Define color maps for consistent plots
@@ -1062,11 +1048,11 @@ class ICBAnalysis:
             
             covariates = ["TME_binary", "ICB_binary", "SEX_numeric", "TME_ICB", "TME_SEX", "ICB_SEX", "TME_ICB_SEX"]
             if "STAGE_SIMPLE" in data.columns:
-                data["STAGE_SIMPLE"] = pd.to_numeric(data["STAGE_SIMPLE"], errors = "coerce")
+                data["STAGE_SIMPLE"] = pd.to_numeric(data["STAGE_SIMPLE"], errors = "raise")
                 covariates.append("STAGE_SIMPLE")
             
             fit_cols = ["OS_TIME", "OS_EVENT"] + covariates
-            fit_data = data[fit_cols].apply(pd.to_numeric, errors = "coerce").dropna()
+            fit_data = data[fit_cols].apply(pd.to_numeric, errors = "raise").dropna()
             fit_data = _clean_design_matrix(fit_data, "OS_TIME", "OS_EVENT")
             print(f"[Cox] fitting on {len(fit_data)} of {len(data)} rows after dropping rows with missing covariates")
             
@@ -1425,7 +1411,7 @@ class ICBAnalysis:
         for col in confounders:
             if not pd.api.types.is_numeric_dtype(df[col]):
                 print(f"Converting {col} to numeric")
-                df[col] = pd.to_numeric(df[col], errors='coerce')
+                df[col] = pd.to_numeric(df[col], errors='raise')
             
             # Fill missing values with median for numeric columns
             df[col] = df[col].fillna(df[col].median())
@@ -1541,7 +1527,7 @@ class ICBAnalysis:
                 if col not in matched_data.columns and col != 'treatment':
                     matched_data[col] = df.loc[matched_data.index, col]
                 
-                return matched_data
+            return matched_data
         
         except Exception as e:
             print(f"Error in propensity score matching: {e}")
@@ -1996,10 +1982,10 @@ class ICBAnalysis:
             events_untreated = np.array(events_untreated)
             
             # Ensure all arrays are numeric
-            times_treated = pd.to_numeric(times_treated, errors='coerce')
-            events_treated = pd.to_numeric(events_treated, errors='coerce')
-            times_untreated = pd.to_numeric(times_untreated, errors='coerce')
-            events_untreated = pd.to_numeric(events_untreated, errors='coerce')
+            times_treated = pd.to_numeric(times_treated, errors='raise')
+            events_treated = pd.to_numeric(events_treated, errors='raise')
+            times_untreated = pd.to_numeric(times_untreated, errors='raise')
+            events_untreated = pd.to_numeric(events_untreated, errors='raise')
             
             # Replace NaN values
             times_treated = np.nan_to_num(times_treated, nan=0.0)
@@ -2055,7 +2041,7 @@ class ICBAnalysis:
                     cox_data['stage'] = np.concatenate([treated_stage, untreated_stage])
                 
                 # Fit Cox model
-                cox_data = cox_data.apply(pd.to_numeric, errors = "coerce")
+                cox_data = cox_data.apply(pd.to_numeric, errors = "raise")
                 
                 cox_data.replace([np.inf, -np.inf], np.nan, inplace = True)
                 
@@ -2619,3 +2605,40 @@ class ICBAnalysis:
         print(f"CD8_G range: {cd8_scores['CD8_G'].min()} to {cd8_scores['CD8_G'].max()}")
         
         return cd8_scores
+
+
+if __name__ == "__main__":
+    a = ICBAnalysis("/sfs/gpfs/tardis/project/orien/data/aws/24PRJ217UVA_IORIG")
+
+    # Clinical (the loader scans several standard locations)
+    clin = a.load_clinical_data()
+
+    # Meds → identify ICB status
+    meds_path = "/sfs/gpfs/tardis/project/orien/data/aws/24PRJ217UVA_IORIG/Clinical_Data/24PRJ217UVA_NormalizedFiles/24PRJ217UVA_20241112_Medications_V4.csv"
+    meds = a.load_medication_data(meds_path)
+    icb  = a.identify_icb_treatments(meds)  # returns PATIENT_ID, ICB_status ('Received'/'Naive'), ICB_DRUG, ICB_class, ICB_start_age
+    
+    # CD8 group scores (adjust path to your file; otherwise the loader uses the embedded table)
+    cd8 = a.load_cd8_scores("/path/to/group_scores.csv")  # columns should include PATIENT_ID, CD8_G, CD8_B (etc.)
+
+    merged  = a.merge_icb_with_clinical(icb, clin)
+    
+    merged.to_csv("merged.csv")
+
+    # Optional: ensure sex coding is present/clean (the merge tries to help; this makes it explicit)
+    if 'SEX' not in merged.columns and 'Sex' in merged.columns:
+        merged['SEX'] = merged['Sex']
+    merged['SEX_numeric'] = (merged['Sex'].astype(str).str.upper().str.startswith('M')).astype(int)
+
+    # Optional: simplify stage (module supplies helpers)
+    merged = a.create_stage_simple(merged)
+
+    matched = a.perform_propensity_matching(
+        merged,
+        confounders=['AGE','SEX_numeric','STAGE_SIMPLE'],
+        treatment_col='ICB_status',
+        treatment_val='Received',
+    )
+
+    _ = a.analyze_survival(matched)
+    _ = a.analyze_tme_icb_survival_by_sex(matched, cd8, tme_feature='CD8_G')  # try 'CD8_B' or 'CD8_GtoB_ratio' too

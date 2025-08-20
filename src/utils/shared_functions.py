@@ -74,6 +74,8 @@ def numericize_age(string_representation_of_age):
         return 90.0
     elif string_representation_of_age == "Unknown/Not Applicable":
         return np.nan
+    elif string_representation_of_age == "Age Unknown/Not Recorded":
+        return np.nan
     else:
         return float(string_representation_of_age)
 

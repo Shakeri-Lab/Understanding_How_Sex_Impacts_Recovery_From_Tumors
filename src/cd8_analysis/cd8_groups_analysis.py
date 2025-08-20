@@ -3,7 +3,7 @@ CD8 Groups Analysis
 Analyzes CD8+ T cell signatures and groups
 
 Usage
-python -m src.cd8_analysis.cd8_groups_analysis
+./miniconda3/envs/ici_sex/bin/python -m src.cd8_analysis.cd8_groups_analysis
 """
 
 from pathlib import Path
