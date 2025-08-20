@@ -1,6 +1,11 @@
 '''
 cd8_analysis.py
 
+`cd8_analysis.py` computes CD8+ T cell signature scores per patient and
+generates summary tables, results of statistical tests, and plots.
+A CD8 signature score is the mean expression value in Transcripts Per Million
+of genes in each CD8 signature.
+
 CD8 analysis produces a data frame of CD8 signatures and statistics including
 mean signature scores by sex, numbers of patients with each sex, and
 test statistics and p values relating to comparing these means using Welch's t test.
@@ -22,7 +27,8 @@ A survival probability is the probability that a patient will be alive after a c
 CD8 analysis produces results of a log rank test for each of many CD8 signatures.
 The log rank test is a hypothesis test used in survival analysis
 to compare the distributions of times to events for 2 independent groups.
-A time to event is the time between a patient's death and the age at diagnosis of the patient.
+A time to event is the time between a patient's death and the age at diagnosis of the patient
+For a patient with no time of death, time to event is censored to time at last contact.
 For a given CD8 signature, Group 1 is a group of patients (e.g., 150)
 with scores for that CD8 signature above the median score for all patients (e.g., 300)
 involved in plotting survival curves and performing log rank tests.
