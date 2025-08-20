@@ -2,29 +2,31 @@
 cd8_analysis.py
 
 CD8 analysis produces a data frame of CD8 signatures and statistics including
-mean signature scores by sex, numbers of patients with each sex, and test statistics and p values relating to comparing these means.
+mean signature scores by sex, numbers of patients with each sex, and
+test statistics and p values relating to comparing these means using Welch's t test.
 
 CD8 analysis produces a data frame of patient IDs and CD8 signature scores.
 
 CD8 analysis produces a data frame of sexes, CD8 signatures, and statistics.
 
-CD8 analysis produces a data frame of diagnoses with more than 20 patients, CD8 signatures, and statistics.
+CD8 analysis produces a data frame of diagnoses with at least 20 patients, CD8 signatures, and statistics.
 
 CD8 analysis plots for each CD8 signature mean CD8 signature score vs. sex.
 
-CD8 analysis plots for each CD8 signature mean CD8 signature score vs. diagnosis for diagnoses with more than 20 patients.
+CD8 analysis plots for each CD8 signature mean CD8 signature score vs. diagnosis for diagnoses with at least 20 patients.
 
 CD8 analysis plots for each CD8 signature 2 Kaplan-Meier survival curves
-of survival rates of patients in each group for that CD8 signature vs. time in months.
-A survival rate is the probability that a patient will be alive after a certain number of months.
+of survival probabilities of patients in each group for that CD8 signature vs. time in months.
+A survival probability is the probability that a patient will be alive after a certain number of months.
 
 CD8 analysis produces results of a log rank test for each of many CD8 signatures.
 The log rank test is a hypothesis test used in survival analysis
 to compare the distributions of times to events for 2 independent groups.
 A time to event is the time between a patient's death and the age at diagnosis of the patient.
-For a given CD8 signature, Group 1 is a group of 150 patients
-with scores for that CD8 signature above the median score for 300 patients.
-Group 2 is a group of 150 patients with scores for that CD8 below the median score for 300 patients.
+For a given CD8 signature, Group 1 is a group of patients (e.g., 150)
+with scores for that CD8 signature above the median score for all patients (e.g., 300)
+involved in plotting survival curves and performing log rank tests.
+Group 2 is a group of patients (e.g., 150) with scores for that CD8 below the median score for all patients.
 The log rank test may be used to evaluate whether
 there is a significant difference in times to events between Group 1 and Group 2.
 The null hypothesis of a log rank test is that Group 1 and Group 2 have the same distributions.
