@@ -7,7 +7,6 @@ Usage
 """
 
 from pathlib import Path
-import argparse
 import logging
 import pandas as pd
 import numpy as np
@@ -18,6 +17,8 @@ from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 from sklearn.metrics import silhouette_score
+from lifelines import KaplanMeierFitter
+from lifelines.statistics import logrank_test
 
 from src.cd8_analysis.cd8_analysis import CD8Analysis
 from src.utils.shared_functions import calculate_survival_months, filter_by_primary_diagnosis_site, load_expression_matrix, map_sample_IDs_to_patient_IDs
@@ -33,25 +34,10 @@ logger = logging.getLogger(__name__)
 
 class CD8GroupAnalysis(CD8Analysis):
     '''
-    Analyzes CD8+ T cell signatures and groups
+   CD8GroupAnalysis is a template for an object for analyzing CD8+ T cell signatures and groups.
     '''
     
-    def __init__(self, base_path):
-        '''
-        Initialize CD8 group analysis with base path
-        '''
-        self.base_path = Path(base_path)
-        
-        # Define output directories
-        self.output_dir = self.base_path / "output"
-        self.directory_cd8_groups_analysis = Path(self.output_dir) / "cd8_groups_analysis"
-        self.plots_dir = self.directory_cd8_groups_analysis / "plots"
-        self.results_dir = self.directory_cd8_groups_analysis / "results"
-        
-        # Create output directories if they don't exist
-        for directory in (self.plots_dir, self.results_dir):
-            directory.mkdir(parents = True, exist_ok = True)
-        
+    def __init__(self):        
         '''
         Define CD8 T cell groups and their marker genes
         CD8_A is a classical cytotoxic / effector described in Sade-Feldman et al. 2018 and Li e al. 2023.
@@ -126,575 +112,439 @@ class CD8GroupAnalysis(CD8Analysis):
             ]
         }
         
-        # Define cluster descriptions
-        self.cluster_desc = {
-            'CD8_B': 'Non-responder enriched (Clusters 1-3)',
-            'CD8_G': 'Responder enriched (Clusters 4-6)',
-            'CD8_GtoB_ratio': 'Responder/Non-responder ratio',
-            'CD8_GtoB_log': 'Log2(Responder/Non-responder ratio)'
+        self.dictionary_of_names_of_features_and_labels = {
+            "CD8_B": "Non-responder enriched (Clusters 1-3)",
+            "CD8_G": "Responder enriched (Clusters 4-6)",
+            "CD8_GtoB_ratio": "Responder/Non-responder ratio",
+            "CD8_GtoB_log": "Log2(Responder/Non-responder ratio)"
         }
     
-    def calculate_group_scores(self, rnaseq_data: pd.DataFrame) -> pd.DataFrame:
+    
+    def calculate_CD8_group_scores(self, expression_matrix: pd.DataFrame) -> pd.DataFrame:
         '''
-        Calculate CD8 group scores
+        Calculate CD8 group scores.
         '''
-        print("\nCalculating CD8 group scores...")
         
-        rnaseq_base = rnaseq_data.copy()
-        rnaseq_base.index = rnaseq_base.index.str.split('.').str[0]
-        rnaseq_base = rnaseq_base.groupby(rnaseq_base.index).mean()
+        logger.info("CD8 group scores will be calculated.")
         
-        # Calculate scores for each group
-        scores = pd.DataFrame(
+        condensed_expression_matrix = expression_matrix.copy()
+        condensed_expression_matrix.index = condensed_expression_matrix.index.str.split('.').str[0]
+        condensed_expression_matrix = condensed_expression_matrix.groupby(condensed_expression_matrix.index).mean()
+        data_frame_of_scores = pd.DataFrame(
             {
-                group: rnaseq_base.loc[[gene for gene in genes if gene in rnaseq_base.index]].mean() for group, genes in self.cd8_groups.items()
+                group: condensed_expression_matrix.loc[
+                    [gene for gene in list_of_genes if gene in condensed_expression_matrix.index]
+                ].mean()
+                for group, list_of_genes in self.cd8_groups.items()
             }
         )
-        
-        # Calculate ratio and log ratio
-        if 'CD8_B' in scores.columns and 'CD8_G' in scores.columns:
+        if "CD8_B" in data_frame_of_scores.columns and "CD8_G" in data_frame_of_scores.columns:
             constant_to_avoid_division_by_0 = 0.01
-            scores['CD8_GtoB_ratio'] = scores['CD8_G'] / (scores['CD8_B'] + constant_to_avoid_division_by_0)
-            scores['CD8_GtoB_log'] = np.log2(scores['CD8_GtoB_ratio'])
-        
-        # Save scores
-        scores.to_csv(self.results_dir / "cd8_group_scores.csv")
-        
-        print(f"Calculated CD8 group scores for {len(scores)} samples")
-        
-        return scores
-
-    
-    def cluster_samples(self, scores: pd.DataFrame, n_clusters: int = 6) -> pd.DataFrame:
-        '''
-        Cluster samples based on CD8 group scores
-        '''
-        print(f"\nClustering samples into {n_clusters} clusters...")
-        
-        # Select features for clustering
-        features = ['CD8_B', 'CD8_G']
-        X = scores[features].values
-        
-        # Standardize features
-        scaler = StandardScaler()
-        X_scaled = scaler.fit_transform(X)
-        
-        # Perform K-means clustering
-        kmeans = KMeans(n_clusters = n_clusters, random_state = 42, n_init = 10)
-        clusters = kmeans.fit_predict(X_scaled)
-        
-        # Add cluster labels to scores
-        scores_with_clusters = scores.copy()
-        scores_with_clusters['cluster'] = clusters
-        
-        # Calculate silhouette score
-        silhouette = silhouette_score(X_scaled, clusters)
-        print(f"Silhouette score: {silhouette:.3f}")
-        
-        # Save clustered data
-        scores_with_clusters.to_csv(self.results_dir / 'cd8_clusters.csv')
-        
-        # Plot clusters
-        self.plot_clusters(scores_with_clusters, features)
-        
-        print(f"Clustered {len(scores)} samples into {n_clusters} clusters")
-        
-        return scores_with_clusters
-
-    
-    def plot_clusters(self, scores_with_clusters: pd.DataFrame, features: list[str]):
-        '''
-        Plot clusters
-        '''
-        # Create scatter plot
-        plt.figure(figsize=(10, 8))
-        
-        # Plot each cluster
-        for cluster in sorted(scores_with_clusters['cluster'].unique()):
-            cluster_data = scores_with_clusters[scores_with_clusters['cluster'] == cluster]
-            plt.scatter(
-                cluster_data[features[0]],
-                cluster_data[features[1]],
-                label=f'Cluster {cluster+1}',
-                alpha=0.7,
-                s=50
+            data_frame_of_scores["CD8_GtoB_ratio"] = (
+                data_frame_of_scores["CD8_G"] / (data_frame_of_scores["CD8_B"] + constant_to_avoid_division_by_0)
             )
+            data_frame_of_scores["CD8_GtoB_log"] = np.log2(data_frame_of_scores["CD8_GtoB_ratio"])
+        data_frame_of_scores.to_csv(paths.data_frame_of_CD8_group_scores)
         
-        # Add labels and title
-        plt.xlabel(f"{features[0]} ({self.cluster_desc.get(features[0], 'Unknown')})")
-        plt.ylabel(f"{features[1]} ({self.cluster_desc.get(features[1], 'Unknown')})")
-        plt.title('CD8 Group Clusters')
+        logger.info(f"CD8 group scores for {len(data_frame_of_scores)} samples were calculated.")
         
-        # Add legend
+        return data_frame_of_scores
+
+    
+    def cluster_samples(self, data_frame_of_scores: pd.DataFrame) -> pd.DataFrame:
+        '''
+        Cluster samples based on CD8 group scores.
+        '''
+        number_of_clusters = 6
+        
+        logger.info(f"Samples will be clustered into {number_of_clusters} clusters.")
+        
+        list_of_features = ["CD8_B", "CD8_G"]
+        array_of_CD8_B_and_CD8_G_scores = data_frame_of_scores[list_of_features].values
+        standard_scaler = StandardScaler()
+        scaled_array_of_CD8_B_and_CD8_G_scores = standard_scaler.fit_transform(array_of_CD8_B_and_CD8_G_scores)
+        kmeans = KMeans(n_clusters = number_of_clusters, random_state = 0, n_init = 10)
+        array_of_indices_of_clusters = kmeans.fit_predict(scaled_array_of_CD8_B_and_CD8_G_scores)
+        data_frame_of_scores_and_indices_of_clusters = data_frame_of_scores.copy()
+        data_frame_of_scores_and_indices_of_clusters["cluster"] = array_of_indices_of_clusters
+        silhouette = silhouette_score(scaled_array_of_CD8_B_and_CD8_G_scores, array_of_indices_of_clusters)
+        
+        logger.info(f"Silhouette score is {silhouette:.3f}.")
+        
+        data_frame_of_scores_and_indices_of_clusters.to_csv(paths.data_frame_of_scores_and_indices_of_clusters)
+        self.plot_clusters(data_frame_of_scores_and_indices_of_clusters, list_of_features)
+        
+        logger.info(f"{len(data_frame_of_scores)} samples were clustered into {number_of_clusters} clusters.")
+        
+        return data_frame_of_scores_and_indices_of_clusters
+
+    
+    def plot_clusters(self, data_frame_of_scores_and_indices_of_clusters: pd.DataFrame, list_of_features: list[str]):
+        '''
+        Plot clusters.
+        '''
+        for cluster in sorted(data_frame_of_scores_and_indices_of_clusters["cluster"].unique()):
+            data_frame_of_scores_for_cluster = data_frame_of_scores_and_indices_of_clusters[
+                data_frame_of_scores_and_indices_of_clusters["cluster"] == cluster
+            ]
+            plt.scatter(
+                data_frame_of_scores_for_cluster[list_of_features[0]],
+                data_frame_of_scores_for_cluster[list_of_features[1]],
+                label = f"Cluster {cluster}",
+                alpha = 0.7,
+                s = 50
+            )
+        plt.xlabel(f"{list_of_features[0]} ({self.dictionary_of_names_of_features_and_labels.get(list_of_features[0], "Unknown")})")
+        plt.ylabel(f"{list_of_features[1]} ({self.dictionary_of_names_of_features_and_labels.get(list_of_features[1], "Unknown")})")
+        plt.title("CD8 Group Clusters")
         plt.legend()
-        
-        # Save plot
-        plt.tight_layout()
-        plt.savefig(self.plots_dir / "cd8_clusters.png", dpi = 300)
+        plt.savefig(paths.plot_of_CD8_clusters)
         plt.close()
         
-        # Create PCA plot
-        self.plot_pca(scores_with_clusters)
+        self.plot_PCA(data_frame_of_scores_and_indices_of_clusters)
         
-        print("Saved cluster plots")
+        logger.info("Plots of CD8 clusters were saved.")
     
 
-    def plot_pca(self, scores_with_clusters: pd.DataFrame):
+    def plot_PCA(self, data_frame_of_scores_and_indices_of_clusters: pd.DataFrame):
         '''
-        Plot PCA of CD8 group scores
+        Plot PCA of CD8 group scores.
         '''
-        # Select features for PCA
-        features = ['CD8_B', 'CD8_G', 'CD8_GtoB_ratio', 'CD8_GtoB_log']
-        features = [f for f in features if f in scores_with_clusters.columns]
-        X = scores_with_clusters[features].values
-        
-        # Standardize features
-        scaler = StandardScaler()
-        X_scaled = scaler.fit_transform(X)
-        
-        # Perform PCA
-        pca = PCA(n_components=2)
-        X_pca = pca.fit_transform(X_scaled)
-        
-        # Create scatter plot
-        plt.figure(figsize=(10, 8))
-        
-        # Plot each cluster
-        for cluster in sorted(scores_with_clusters['cluster'].unique()):
-            cluster_mask = scores_with_clusters['cluster'] == cluster
+        list_of_features = ["CD8_B", "CD8_G", "CD8_GtoB_ratio", "CD8_GtoB_log"]
+        list_of_features = [feature for feature in list_of_features if feature in data_frame_of_scores_and_indices_of_clusters.columns]
+        array_of_features = data_frame_of_scores_and_indices_of_clusters[list_of_features].values
+        standard_scaler = StandardScaler()
+        scaled_array_of_features = standard_scaler.fit_transform(array_of_features)
+        pca = PCA(n_components = 2)
+        projected_array_of_features = pca.fit_transform(scaled_array_of_features)
+        for cluster in sorted(data_frame_of_scores_and_indices_of_clusters["cluster"].unique()):
             plt.scatter(
-                X_pca[cluster_mask, 0],
-                X_pca[cluster_mask, 1],
-                label=f'Cluster {cluster+1}',
-                alpha=0.7,
-                s=50
+                projected_array_of_features[data_frame_of_scores_and_indices_of_clusters["cluster"] == cluster, 0],
+                projected_array_of_features[data_frame_of_scores_and_indices_of_clusters["cluster"] == cluster, 1],
+                label = f"Cluster {cluster}",
+                alpha = 0.7,
+                s = 50
             )
-        
-        # Add labels and title
         plt.xlabel(f"PC1 ({pca.explained_variance_ratio_[0]:.2%})")
         plt.ylabel(f"PC2 ({pca.explained_variance_ratio_[1]:.2%})")
-        plt.title('PCA of CD8 Group Scores')
-        
-        # Add legend
+        plt.title("PCA of CD8 Group Scores")
         plt.legend()
-        
-        # Save plot
-        plt.tight_layout()
-        plt.savefig(self.plots_dir / "cd8_pca.png", dpi = 300)
+        plt.savefig(paths.plot_of_CD8_PCA)
         plt.close()
     
 
-    def analyze_clusters_by_sex(self, scores_with_clusters: pd.DataFrame, clinical_data: pd.DataFrame):
+    def analyze_clusters_by_sex(self, data_frame_of_scores_and_indices_of_clusters: pd.DataFrame, clinical_data: pd.DataFrame):
         '''
         Analyze clusters by sex.
         '''
-        print("\nAnalyzing clusters by sex...")
         
-        # Merge with clinical data
-        merged = clinical_data.merge(
-            scores_with_clusters,
-            left_on='PATIENT_ID',
-            right_index=True,
-            how='inner'
+        logger.info("Clusters will be analyzed by sex.")
+        
+        data_frame_of_clinical_data_scores_and_indices_of_clusters = clinical_data.merge(
+            data_frame_of_scores_and_indices_of_clusters,
+            left_on = "PATIENT_ID",
+            right_index = True,
+            how = "inner"
         )
-        
-        # Filter by diagnosis
-        merged = filter_by_primary_diagnosis_site(merged)
-        
-        # Create cluster distribution by sex
-        cluster_by_sex = pd.crosstab(
-            merged['cluster'],
-            merged['Sex'],
-            normalize='columns'
+        data_frame_of_clinical_data_scores_and_indices_of_clusters = filter_by_primary_diagnosis_site(
+            data_frame_of_clinical_data_scores_and_indices_of_clusters
+        )
+        contigency_data_frame_of_cluster_and_sex = pd.crosstab(
+            data_frame_of_clinical_data_scores_and_indices_of_clusters["cluster"],
+            data_frame_of_clinical_data_scores_and_indices_of_clusters["Sex"],
+            normalize = "columns"
         ) * 100
-        
-        # Save distribution
-        cluster_by_sex.to_csv(self.results_dir / 'cluster_by_sex.csv')
-        
-        # Plot distribution
-        plt.figure(figsize=(10, 6))
-        cluster_by_sex.plot(kind='bar')
-        plt.xlabel('Cluster')
-        plt.ylabel('Percentage (%)')
-        plt.title('Cluster Distribution by Sex')
-        plt.xticks(rotation=0)
-        plt.legend(title='Sex')
-        plt.tight_layout()
-        plt.savefig(self.plots_dir / 'cluster_by_sex.png', dpi = 300)
+        contigency_data_frame_of_cluster_and_sex.to_csv(paths.contigency_data_frame_of_cluster_and_sex)
+        contigency_data_frame_of_cluster_and_sex.plot(kind = "bar")
+        plt.xlabel("Cluster")
+        plt.ylabel("Percentage (%)")
+        plt.title("Cluster Distribution by Sex")
+        plt.xticks(rotation = 0)
+        plt.legend(title = "Sex")
+        plt.savefig(paths.plot_of_distributions_of_clusters_by_sex)
         plt.close()
-        
-        # Create summary statistics by sex
-        summary = []
-        
-        for sex in ['Male', 'Female']:
-            sex_data = merged[merged['Sex'] == sex]
-            
-            for feature in ['CD8_B', 'CD8_G', 'CD8_GtoB_ratio', 'CD8_GtoB_log']:
+        list_of_dictionaries_of_sexes_features_and_statistics = []
+        for sex in ["Male", "Female"]:
+            sex_data = data_frame_of_clinical_data_scores_and_indices_of_clusters[
+                data_frame_of_clinical_data_scores_and_indices_of_clusters["Sex"] == sex
+            ]
+            for feature in ["CD8_B", "CD8_G", "CD8_GtoB_ratio", "CD8_GtoB_log"]:
                 if feature in sex_data.columns:
-                    summary.append({
-                        'sex': sex,
-                        'feature': feature,
-                        'mean': sex_data[feature].mean(),
-                        'median': sex_data[feature].median(),
-                        'std': sex_data[feature].std(),
-                        'count': len(sex_data)
-                    })
+                    list_of_dictionaries_of_sexes_features_and_statistics.append(
+                        {
+                            "sex": sex,
+                            "feature": feature,
+                            "mean": sex_data[feature].mean(),
+                            "median": sex_data[feature].median(),
+                            "std": sex_data[feature].std(),
+                            "count": len(sex_data)
+                        }
+                    )
+        data_frame_of_sexes_features_and_statistics = pd.DataFrame(list_of_dictionaries_of_sexes_features_and_statistics)
+        data_frame_of_sexes_features_and_statistics.to_csv(paths.data_frame_of_sexes_features_and_statistics, index = False)
+        self.plot_mean_CD8_group_scores_by_sex(data_frame_of_sexes_features_and_statistics)
+        self.perform_t_tests_for_mean_CD8_group_scores_by_sex(data_frame_of_clinical_data_scores_and_indices_of_clusters)
         
-        # Create DataFrame
-        summary_df = pd.DataFrame(summary)
+        logger.info(f"Clusters by sex for {len(data_frame_of_clinical_data_scores_and_indices_of_clusters)} patients were analyzed.")
         
-        # Save summary
-        summary_df.to_csv(self.results_dir / 'cd8_by_sex.csv', index = False)
-        
-        # Plot CD8 scores by sex
-        self.plot_cd8_by_sex(summary_df)
-        
-        # Perform statistical tests
-        self.test_cd8_by_sex(merged)
-        
-        print(f"Analyzed clusters by sex for {len(merged)} patients")
-        
-        return merged
+        return data_frame_of_clinical_data_scores_and_indices_of_clusters
 
     
-    def plot_cd8_by_sex(self, summary_df):
+    def plot_mean_CD8_group_scores_by_sex(self, data_frame_of_sexes_features_and_statistics: pd.DataFrame):
         '''
-        Plot CD8 scores by sex
+        Plot mean CD8 group scores by sex.
         '''
-        # Create bar plot
-        plt.figure(figsize=(12, 6))
-        
-        # Plot each feature
-        for i, feature in enumerate(['CD8_B', 'CD8_G', 'CD8_GtoB_ratio', 'CD8_GtoB_log']):
-            feature_data = summary_df[summary_df['feature'] == feature]
-            
-            if len(feature_data) == 0:
-                continue
-            
-            # Create subplot
-            plt.subplot(1, 4, i+1)
-            
-            # Create bar plot
-            sns.barplot(x='sex', y='mean', data=feature_data)
-            
-            # Add error bars
-            for j, row in feature_data.iterrows():
-                plt.errorbar(
-                    x=j % 2,  # Position based on sex
-                    y=row['mean'],
-                    yerr=row['std'],
-                    fmt='none',
-                    color='black',
-                    capsize=5
+        list_of_features = ["CD8_B", "CD8_G", "CD8_GtoB_ratio", "CD8_GtoB_log"]
+        list_of_sexes = ["Female", "Male"]
+        figure, array_of_axes = plt.subplots(1, 4, figsize = (14, 5))#, constrained_layout = True)
+        for axes, feature in zip(array_of_axes, list_of_features):
+            feature_data = data_frame_of_sexes_features_and_statistics[
+                data_frame_of_sexes_features_and_statistics["feature"] == feature
+            ].copy()
+            sns.barplot(
+                ax = axes,
+                data = feature_data,
+                errorbar = None,
+                order = list_of_sexes,
+                x = "sex",
+                y = "mean"
+            )
+            for horizontal_position, sex in enumerate(list_of_sexes):
+                row = feature_data.loc[feature_data["sex"] == sex]
+                mean = row["mean"].iloc[0]
+                standard_deviation = row["std"].iloc[0]
+                axes.errorbar(
+                    horizontal_position,
+                    mean,
+                    yerr = standard_deviation
                 )
-            
-            # Add labels and title
-            plt.xlabel('Sex')
-            plt.ylabel('Mean Score')
-            plt.title(f'{feature} ({self.cluster_desc.get(feature, "Unknown")})')
+            axes.set_xlabel("Sex")
+            axes.set_ylabel("Mean Score")
+            axes.set_title(f"{feature}")
+            #ymax = max((feature_data["mean"] + feature_data["std"].fillna(0)).max(), 0)
+            #ax.set_ylim(top = ymax * 1.1 if ymax > 0 else None)
+        figure.savefig(paths.plots_of_mean_CD8_group_scores_by_sex)
+        plt.close(figure)
         
-        # Save plot
-        plt.tight_layout()
-        plt.savefig(self.plots_dir / "cd8_by_sex.png", dpi = 300)
-        plt.close()
-        
-        print("Saved CD8 by sex plots")
+        logger.info("Plots of mean CD8 group scores by sex were saved.")
 
     
-    def test_cd8_by_sex(self, merged):
-        '''
-        Perform statistical tests for CD8 scores by sex
-        '''
-        # Create results list
-        test_results = []
+    def perform_t_tests_for_mean_CD8_group_scores_by_sex(self, data_frame_of_clinical_data_scores_and_indices_of_clusters):
+        list_of_dictionaries_of_features_and_statistics = []
+        for feature in ["CD8_B", "CD8_G", "CD8_GtoB_ratio", "CD8_GtoB_log"]:
+            feature_data_for_males = data_frame_of_clinical_data_scores_and_indices_of_clusters[
+                data_frame_of_clinical_data_scores_and_indices_of_clusters["Sex"] == "Male"
+            ][feature]
+            feature_data_for_females = data_frame_of_clinical_data_scores_and_indices_of_clusters[
+                data_frame_of_clinical_data_scores_and_indices_of_clusters["Sex"] == "Female"
+            ][feature]
+            test_statistic, p_value = stats.ttest_ind(feature_data_for_males, feature_data_for_females, equal_var = False)
+            list_of_dictionaries_of_features_and_statistics.append(
+                {
+                    "feature": feature,
+                    "male_mean": feature_data_for_males.mean(),
+                    "female_mean": feature_data_for_females.mean(),
+                    "male_count": len(feature_data_for_males),
+                    "female_count": len(feature_data_for_females),
+                    "t_stat": test_statistic,
+                    "p_value": p_value
+                }
+            )
+        data_frame_of_features_and_statistics = pd.DataFrame(list_of_dictionaries_of_features_and_statistics)
+        data_frame_of_features_and_statistics["significant"] = data_frame_of_features_and_statistics["p_value"] < 0.05
+        data_frame_of_features_and_statistics.to_csv(paths.data_frame_of_features_and_statistics, index = False)
         
-        # Test each feature
-        for feature in ['CD8_B', 'CD8_G', 'CD8_GtoB_ratio', 'CD8_GtoB_log']:
-            if feature not in merged.columns:
-                continue
-            
-            # Get data by sex
-            male = merged[merged['Sex'] == 'Male'][feature]
-            female = merged[merged['Sex'] == 'Female'][feature]
-            
-            # Skip if not enough samples
-            if len(male) < 10 or len(female) < 10:
-                continue
-            
-            # Perform t-test
-            t_stat, p_val = stats.ttest_ind(male, female, equal_var=False)
-            
-            # Add to results
-            test_results.append({
-                'feature': feature,
-                'male_mean': male.mean(),
-                'female_mean': female.mean(),
-                'male_count': len(male),
-                'female_count': len(female),
-                't_stat': t_stat,
-                'p_value': p_val
-            })
+        logger.info("T tests for mean CD8 group scores by sex were performed.")
         
-        # Create DataFrame
-        test_df = pd.DataFrame(test_results)
-        
-        # Add significance indicator
-        test_df['significant'] = test_df['p_value'] < 0.05
-        
-        # Save results
-        test_df.to_csv(self.results_dir / "cd8_by_sex_tests.csv", index = False)
-        
-        print("Performed statistical tests for CD8 scores by sex")
-        
-        return test_df
+        return data_frame_of_features_and_statistics
 
     
-    def analyze_clusters_by_diagnosis(self, scores_with_clusters: pd.DataFrame, clinical_data: pd.DataFrame):
+    def analyze_clusters_by_diagnosis(self, data_frame_of_scores_and_indices_of_clusters: pd.DataFrame, clinical_data: pd.DataFrame):
         '''
-        Analyze clusters by diagnosis
+        Analyze clusters by diagnosis.
         '''
-        print("\nAnalyzing clusters by diagnosis...")
         
-        # Merge with clinical data
-        merged = clinical_data.merge(
-            scores_with_clusters,
-            left_on='PATIENT_ID',
-            right_index=True,
-            how='inner'
+        logger.info("Clusters by diagnosis will be analyzed.")
+        
+        data_frame_of_clinical_data_scores_and_indices_of_clusters = clinical_data.merge(
+            data_frame_of_scores_and_indices_of_clusters,
+            left_on = "PATIENT_ID",
+            right_index = True,
+            how = "inner"
         )
-        
-        # Get top diagnoses
-        diagnosis_counts = merged['PrimaryDiagnosisSite'].value_counts()
-        top_diagnoses = diagnosis_counts[diagnosis_counts >= 20].index.tolist()
-        
-        if len(top_diagnoses) == 0:
-            print("Warning: No diagnoses with at least 20 patients")
-            return None
-        
-        # Filter to top diagnoses
-        merged_top = merged[merged['PrimaryDiagnosisSite'].isin(top_diagnoses)]
-        
-        # Create cluster distribution by diagnosis
-        cluster_by_diagnosis = pd.crosstab(
-            merged_top['cluster'],
-            merged_top['PrimaryDiagnosisSite'],
-            normalize='columns'
+        series_of_diagnoses_and_numbers_of_patients = data_frame_of_clinical_data_scores_and_indices_of_clusters["PrimaryDiagnosisSite"].value_counts()
+        list_of_diagnoses_with_at_least_20_patients = series_of_diagnoses_and_numbers_of_patients[
+            series_of_diagnoses_and_numbers_of_patients >= 20
+        ].index.tolist()
+        if len(list_of_diagnoses_with_at_least_20_patients) == 0:
+            raise Exception("No diagnoses with at least 20 patients")
+        data_frame_of_clinical_data_scores_and_indicators_of_clusters_for_patients_with_diagnoses_with_at_least_20_patients = data_frame_of_clinical_data_scores_and_indices_of_clusters[
+            data_frame_of_clinical_data_scores_and_indices_of_clusters["PrimaryDiagnosisSite"].isin(
+                list_of_diagnoses_with_at_least_20_patients
+            )
+        ]
+        contingency_data_frame_of_cluster_and_diagnosis = pd.crosstab(
+            data_frame_of_clinical_data_scores_and_indicators_of_clusters_for_patients_with_diagnoses_with_at_least_20_patients["cluster"],
+            data_frame_of_clinical_data_scores_and_indicators_of_clusters_for_patients_with_diagnoses_with_at_least_20_patients["PrimaryDiagnosisSite"],
+            normalize = "columns"
         ) * 100
-        
-        # Save distribution
-        cluster_by_diagnosis.to_csv(self.results_dir / "cluster_by_diagnosis.csv")
-        
-        # Plot distribution
-        plt.figure(figsize=(12, 8))
-        cluster_by_diagnosis.plot(kind='bar')
-        plt.xlabel('Cluster')
-        plt.ylabel('Percentage (%)')
-        plt.title('Cluster Distribution by Diagnosis')
-        plt.xticks(rotation=0)
-        plt.legend(title='Diagnosis', bbox_to_anchor=(1.05, 1), loc='upper left')
-        plt.tight_layout()
-        plt.savefig(self.plots_dir / "cluster_by_diagnosis.png", dpi = 300)
+        contingency_data_frame_of_cluster_and_diagnosis.to_csv(paths.contingency_data_frame_of_cluster_and_diagnosis)
+        contingency_data_frame_of_cluster_and_diagnosis.plot(kind = "bar")
+        plt.xlabel("Cluster")
+        plt.ylabel("Percentage (%)")
+        plt.title("Cluster Distribution by Diagnosis")
+        #plt.xticks(rotation = 0)
+        #plt.legend(title = "Diagnosis", bbox_to_anchor = (1.05, 1), loc = "upper left")
+        plt.legend(title = "Diagnosis")
+        plt.savefig(paths.plot_of_cluster_and_diagnosis)
         plt.close()
+        list_of_dictionaries_of_diagnoses_features_and_statistics = []
+        for diagnosis in list_of_diagnoses_with_at_least_20_patients:
+            diagnosis_data = data_frame_of_clinical_data_scores_and_indices_of_clusters[
+                data_frame_of_clinical_data_scores_and_indices_of_clusters["PrimaryDiagnosisSite"] == diagnosis
+            ]
+            for feature in ["CD8_B", "CD8_G", "CD8_GtoB_ratio", "CD8_GtoB_log"]:
+                if feature in diagnosis_data.columns:
+                    list_of_dictionaries_of_diagnoses_features_and_statistics.append(
+                        {
+                            "diagnosis": diagnosis,
+                            "feature": feature,
+                            "mean": diagnosis_data[feature].mean(),
+                            "median": diagnosis_data[feature].median(),
+                            "std": diagnosis_data[feature].std(),
+                            "count": len(diagnosis_data)
+                        }
+                    )
+        data_frame_of_diagnoses_features_and_statistics = pd.DataFrame(list_of_dictionaries_of_diagnoses_features_and_statistics)
+        data_frame_of_diagnoses_features_and_statistics.to_csv(paths.data_frame_of_diagnoses_features_and_statistics, index = False)
+        self.plot_CD8_group_scores_by_diagnosis(data_frame_of_diagnoses_features_and_statistics)
         
-        # Create summary statistics by diagnosis
-        summary = []
+        logger.info(f"Clusters by diagnosis for {len(data_frame_of_clinical_data_scores_and_indicators_of_clusters_for_patients_with_diagnoses_with_at_least_20_patients)} patients with diagnoses with at least 20 patients were analyzed.")
         
-        for diagnosis in top_diagnoses:
-            diag_data = merged[merged['PrimaryDiagnosisSite'] == diagnosis]
-            
-            for feature in ['CD8_B', 'CD8_G', 'CD8_GtoB_ratio', 'CD8_GtoB_log']:
-                if feature in diag_data.columns:
-                    summary.append({
-                        'diagnosis': diagnosis,
-                        'feature': feature,
-                        'mean': diag_data[feature].mean(),
-                        'median': diag_data[feature].median(),
-                        'std': diag_data[feature].std(),
-                        'count': len(diag_data)
-                    })
-        
-        # Create DataFrame
-        summary_df = pd.DataFrame(summary)
-        
-        # Save summary
-        summary_df.to_csv(self.results_dir / "cd8_by_diagnosis.csv", index = False)
-        
-        # Plot CD8 scores by diagnosis
-        self.plot_cd8_by_diagnosis(summary_df)
-        
-        print(f"Analyzed clusters by diagnosis for {len(merged_top)} patients with top diagnoses")
-        
-        return merged_top
+        return data_frame_of_clinical_data_scores_and_indicators_of_clusters_for_patients_with_diagnoses_with_at_least_20_patients
 
     
-    def plot_cd8_by_diagnosis(self, summary_df):
-        """Plot CD8 scores by diagnosis"""
-        # Plot each feature
-        for feature in ['CD8_B', 'CD8_G', 'CD8_GtoB_ratio', 'CD8_GtoB_log']:
-            feature_data = summary_df[summary_df['feature'] == feature]
-            
+    def plot_CD8_group_scores_by_diagnosis(self, data_frame_of_diagnoses_features_and_statistics):
+        for feature in ["CD8_B", "CD8_G", "CD8_GtoB_ratio", "CD8_GtoB_log"]:
+            feature_data = data_frame_of_diagnoses_features_and_statistics[
+                data_frame_of_diagnoses_features_and_statistics['feature'] == feature
+            ]
             if len(feature_data) == 0:
-                continue
-            
-            # Create bar plot
-            plt.figure(figsize=(12, 6))
-            sns.barplot(x='diagnosis', y='mean', data=feature_data)
-            
-            # Add error bars
-            for i, row in feature_data.iterrows():
-                plt.errorbar(
-                    x=i % len(feature_data['diagnosis'].unique()),  # Position based on diagnosis
-                    y=row['mean'],
-                    yerr=row['std'],
-                    fmt='none',
-                    color='black',
-                    capsize=5
+                raise Exception("")
+            sns.barplot(x = "diagnosis", y = "mean", data = feature_data)
+            ax = sns.barplot(x = "diagnosis", y = "mean", data = feature_data, errorbar = None)
+            for x, (_, row) in enumerate(feature_data.iterrows()):
+                ax.errorbar(
+                    x,
+                    row["mean"],
+                    yerr = row["std"]
                 )
-            
-            # Add labels and title
-            plt.xlabel('Diagnosis')
-            plt.ylabel('Mean Score')
-            plt.title(f'{feature} ({self.cluster_desc.get(feature, "Unknown")}) by Diagnosis')
-            plt.xticks(rotation=45, ha='right')
-            
-            # Save plot
+            plt.xlabel("Diagnosis")
+            plt.ylabel("Mean Score")
+            plt.title(f"{feature} ({self.dictionary_of_names_of_features_and_labels.get(feature, "Unknown")}) by Diagnosis")
+            plt.xticks(rotation = 45, ha = "right")
             plt.tight_layout()
-            plt.savefig(self.plots_dir / f"{feature}_by_diagnosis.png", dpi = 300)
+            plt.savefig(paths.outputs_of_CD8_groups_analysis / f"{feature}_by_diagnosis.png")
             plt.close()
         
-        print("Saved CD8 by diagnosis plots")
+        logger.info("Plots of CD8 group scores by diagnosis were saved.")
 
     
-    def analyze_survival_by_cluster(self, scores_with_clusters, clinical_data):
-        """Analyze survival by cluster"""
-        print("\nAnalyzing survival by cluster...")
+    def analyze_survival_by_cluster(self, data_frame_of_scores_and_indices_of_clusters, clinical_data):
         
-        # Merge with clinical data
-        merged = clinical_data.merge(
-            scores_with_clusters,
-            left_on='PATIENT_ID',
-            right_index=True,
-            how='inner'
+        logger.info("Survival by cluster will be analyzed.")
+        
+        data_frame_of_clinical_data_scores_and_indices_of_clusters = clinical_data.merge(
+            data_frame_of_scores_and_indices_of_clusters,
+            left_on = "PATIENT_ID",
+            right_index = True,
+            how = "inner"
         )
+        data_frame_of_clinical_data_scores_and_indices_of_clusters = filter_by_primary_diagnosis_site(data_frame_of_clinical_data_scores_and_indices_of_clusters)
+        if "OS_MONTHS" not in data_frame_of_clinical_data_scores_and_indices_of_clusters.columns or "OS_STATUS" not in data_frame_of_clinical_data_scores_and_indices_of_clusters.columns:
+            raise Exception("Survival data not available")
+        data_frame_of_clinical_data_scores_and_indices_of_clusters["event"] = (
+            data_frame_of_clinical_data_scores_and_indices_of_clusters["OS_STATUS"] == "DECEASED"
+        ).astype(int)
+        if "CD8_GtoB_ratio" in data_frame_of_clinical_data_scores_and_indices_of_clusters.columns:
+            median_ratio = data_frame_of_clinical_data_scores_and_indices_of_clusters["CD8_GtoB_ratio"].median()
+            data_frame_of_clinical_data_scores_and_indices_of_clusters["CD8_GtoB_group"] = (
+                data_frame_of_clinical_data_scores_and_indices_of_clusters["CD8_GtoB_ratio"] > median_ratio
+            ).map({True: 'High', False: 'Low'})
+            self.plot_survival_curves(data_frame_of_clinical_data_scores_and_indices_of_clusters, "CD8_GtoB_group")
+        self.plot_survival_curves(data_frame_of_clinical_data_scores_and_indices_of_clusters, "cluster")
         
-        # Filter by diagnosis
-        merged = filter_by_primary_diagnosis_site(merged)
+        logger.info(f"Survival by cluster for {len(data_frame_of_clinical_data_scores_and_indices_of_clusters)} patients was analyzed.")
         
-        # Check if survival data is available
-        if 'OS_MONTHS' not in merged.columns or 'OS_STATUS' not in merged.columns:
-            print("Warning: Survival data not available")
-            return None
-        
-        # Create survival status indicator (1 for death, 0 for censored)
-        merged['event'] = (merged['OS_STATUS'] == 'DECEASED').astype(int)
-        
-        # Group clusters into high and low CD8_GtoB_ratio
-        if 'CD8_GtoB_ratio' in merged.columns:
-            median_ratio = merged['CD8_GtoB_ratio'].median()
-            merged['CD8_GtoB_group'] = (merged['CD8_GtoB_ratio'] > median_ratio).map({True: 'High', False: 'Low'})
-            
-            # Plot Kaplan-Meier curves by CD8_GtoB_group
-            self.plot_survival_curves(merged, 'CD8_GtoB_group')
-        
-        # Plot Kaplan-Meier curves by cluster
-        self.plot_survival_curves(merged, 'cluster')
-        
-        print(f"Analyzed survival by cluster for {len(merged)} patients")
-        
-        return merged
+        return data_frame_of_clinical_data_scores_and_indices_of_clusters
             
     
-    def plot_survival_curves(self, merged, group_col, title = None):
-        '''
-        Plot Kaplan-Meier survival curves by group
-        '''
-        from lifelines import KaplanMeierFitter
-        from lifelines.statistics import logrank_test
-        
-        # Create figure
-        plt.figure(figsize=(10, 6))
-        
-        # Initialize Kaplan-Meier fitter
-        kmf = KaplanMeierFitter()
-        
-        clean = merged.loc[:, ["OS_MONTHS", "event", group_col]].dropna(subset = ["OS_MONTHS", "event"]).query("OS_MONTHS > 0")
-        
-        # Plot survival curve for each group
-        for group in sorted(clean[group_col].unique()):
-            group_data = clean[clean[group_col] == group]
-            
-            # Skip if not enough samples after cleaning
-            if len(group_data) < 10:
-                continue
-            
-            # Fit survival curve
-            kmf.fit(
-                durations = group_data['OS_MONTHS'].astype(float),
-                event_observed = group_data['event'].astype(int),
-                label = f"{group} (n={len(group_data)})"
+    def plot_survival_curves(self, data_frame_of_clinical_data_scores_and_indices_of_clusters, feature):
+        Kaplan_Meier_fitter = KaplanMeierFitter()
+        data_frame_of_survival_times_events_and_indices_of_clusters = (
+            data_frame_of_clinical_data_scores_and_indices_of_clusters.loc[
+                :,
+                ["OS_MONTHS", "event", feature]
+            ]
+            .dropna(subset = ["OS_MONTHS", "event"])
+            .query("OS_MONTHS > 0")
+        )
+        for value in sorted(data_frame_of_survival_times_events_and_indices_of_clusters[feature].unique()):
+            feature_data = data_frame_of_survival_times_events_and_indices_of_clusters[
+                data_frame_of_survival_times_events_and_indices_of_clusters[feature] == value
+            ]
+            if len(feature_data) < 10:
+                raise Exception("")
+            Kaplan_Meier_fitter.fit(
+                durations = feature_data["OS_MONTHS"].astype(float),
+                event_observed = feature_data["event"].astype(int),
+                label = f"{value} (n = {len(feature_data)})"
             )
-            
-            # Plot survival curve
-            kmf.plot()
+            Kaplan_Meier_fitter.plot()
+        plt.xlabel("Months")
+        plt.ylabel("Survival Probability")
+        plt.title(f"Kaplan Meier Survival Curves by Cluster")
+        plt.grid(alpha = 0.3)
+        plt.savefig(paths.plot_of_survival_by_cluster)
         
-        # Add labels and title
-        plt.xlabel('Months')
-        plt.ylabel('Survival Probability')
-        plt.title(f'Kaplan-Meier Survival Curves by {group_col}')
+        logger.info(f"Plot of survival curves by {feature} was saved.")
         
-        # Add grid
-        plt.grid(alpha=0.3)
-        
-        # Save plot
-        plt.tight_layout()
-        plt.savefig(self.plots_dir / f"survival_by_{group_col}.png", dpi = 300)
         plt.close()
-        
-        # Perform log-rank test if there are exactly 2 groups
-        if len(merged[group_col].unique()) == 2:
-            groups = sorted(merged[group_col].unique())
-            group1_data = merged[merged[group_col] == groups[0]]
-            group2_data = merged[merged[group_col] == groups[1]]
-            
+        if len(data_frame_of_clinical_data_scores_and_indices_of_clusters[feature].unique()) == 2:
+            list_of_values = sorted(data_frame_of_clinical_data_scores_and_indices_of_clusters[feature].unique())
+            group1_data = data_frame_of_clinical_data_scores_and_indices_of_clusters[
+                data_frame_of_clinical_data_scores_and_indices_of_clusters[feature] == list_of_values[0]
+            ]
+            group2_data = data_frame_of_clinical_data_scores_and_indices_of_clusters[
+                data_frame_of_clinical_data_scores_and_indices_of_clusters[feature] == list_of_values[1]
+            ]
             results = logrank_test(
                 group1_data['OS_MONTHS'],
                 group2_data['OS_MONTHS'],
                 group1_data['event'],
                 group2_data['event']
             )
-            
-            print(f"Log-rank test p-value: {results.p_value:.4f}")
-            
-            # Save results
-            with open(self.results_dir / f"logrank_{group_col}.txt", 'w') as f:
-                f.write(f"Log-rank test results for {group_col}:\n")
-                f.write(f"Group 1: {groups[0]} (n={len(group1_data)})\n")
-                f.write(f"Group 2: {groups[1]} (n={len(group2_data)})\n")
-                f.write(f"p-value: {results.p_value:.4f}\n")
-        
-        print(f"Saved survival curves by {group_col}")
+            with open(paths.outputs_of_CD8_groups_analysis / f"results_of_log_rank_test_for_{feature}.txt", 'w') as file:
+                file.write(f"Log-rank test results for {feature}:\n")
+                file.write(f"Group 1: {list_of_values[0]} (n = {len(group1_data)})\n")
+                file.write(f"Group 2: {list_of_values[1]} (n = {len(group2_data)})\n")
+                file.write(f"p value: {results.p_value:.4f}\n")
+                
+            logger.info(f"Results of log rank test for {feature} were saved.")
 
     
     def run(self):
-        """Run full CD8 group analysis"""
-        logger.info("\nRunning full CD8 group analysis...")
+        '''
+        Run full CD8 groups analysis.
+        '''
         
-        # Load RNA-seq data
+        logger.info("Full CD8 group analysis will be run.")
+        
         expression_matrix = load_expression_matrix()
-        
-        # Calculate CD8 group scores
-        scores = self.calculate_group_scores(expression_matrix)
-        
-        # Cluster samples
-        scores_with_clusters = self.cluster_samples(scores)
-        scores_with_clusters = map_sample_IDs_to_patient_IDs(scores_with_clusters)
-        if scores_with_clusters is None:
-            raise Exception("Scores with clusters in None.")
-        
-        # Load clinical data
+        data_frame_of_scores = self.calculate_CD8_group_scores(expression_matrix)
+        data_frame_of_scores_and_indices_of_clusters = self.cluster_samples(data_frame_of_scores)
+        data_frame_of_scores_and_indices_of_clusters = map_sample_IDs_to_patient_IDs(data_frame_of_scores_and_indices_of_clusters)
         clinical_data = pd.read_csv(paths.melanoma_clinical_data)
-        if clinical_data is None:
-            raise Exception("Clinical data is None.")
         clinical_data = clinical_data[~clinical_data["Primary/Met"].str.contains("germline")]
         vital_status_data = pd.read_csv(paths.vital_status_data)
         clinical_data = clinical_data.merge(
@@ -703,34 +553,18 @@ class CD8GroupAnalysis(CD8Analysis):
             left_on = "PATIENT_ID",
             right_on = "AvatarKey"
         )
-        
         clinical_data = calculate_survival_months(clinical_data)
-        
         clinical_data = clinical_data.rename(columns = {"survival_months": "OS_MONTHS"})
         clinical_data["OS_STATUS"] = clinical_data["event"].map({1: "DECEASED", 0: "ALIVE"})
+        self.analyze_clusters_by_sex(data_frame_of_scores_and_indices_of_clusters, clinical_data)
+        self.analyze_clusters_by_diagnosis(data_frame_of_scores_and_indices_of_clusters, clinical_data)
+        clinical_data.to_csv(paths.clinical_data_massaged_by_CD8_groups_analysis)
+        self.analyze_survival_by_cluster(data_frame_of_scores_and_indices_of_clusters, clinical_data)
         
-        # Analyze clusters by sex
-        self.analyze_clusters_by_sex(scores_with_clusters, clinical_data)
-        
-        # Analyze clusters by diagnosis
-        self.analyze_clusters_by_diagnosis(scores_with_clusters, clinical_data)
-        
-        # Analyze survival by cluster
-        scores_with_clusters.to_csv(self.directory_cd8_groups_analysis / "scores_with_clusters.csv")
-        clinical_data.to_csv(self.directory_cd8_groups_analysis / "clinical_data.csv")
-        self.analyze_survival_by_cluster(scores_with_clusters, clinical_data)
-        
-        print("\nCD8 group analysis complete!")
-        print(f"Results saved to {self.results_dir}")
-        print(f"Plots saved to {self.plots_dir}")
-        
-        return scores_with_clusters
+        logger.info("CD8 group analysis is complete.")
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='CD8 Group Analysis')
-    parser.add_argument('--base-path', type = str, default = "/sfs/gpfs/tardis/project/orien/data/aws/24PRJ217UVA_IORIG/Understanding_How_Sex_Impacts_Recovery_From_Tumors", help = "Base path for data files")
-    args = parser.parse_args()
-    
-    analysis = CD8GroupAnalysis(args.base_path)
+if __name__ == "__main__":    
+    paths.ensure_dependencies_for_CD8_groups_analysis_exist()
+    analysis = CD8GroupAnalysis()
     analysis.run() 

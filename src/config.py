@@ -171,6 +171,25 @@ class Paths():
         self.data_frame_of_patient_IDs_and_CD8_signature_scores = self.outputs_of_cd8_analysis / "data_frame_of_patient_IDs_and_CD8_signature_scores.csv"
         self.plot_of_mean_CD8_signature_scores_by_diagnosis = self.cd8_analysis_plots / "plot_of_mean_CD8_signature_scores_by_diagnosis.png"
         self.plot_of_mean_CD8_signature_scores_by_sex = self.cd8_analysis_plots / "plot_of_mean_CD8_signature_scores_by_sex.png"
+        
+        # src/cd8_groups_analysis/cd8_groups_analysis.py
+        # dependencies
+        self.outputs_of_CD8_groups_analysis = self.root / "output/cd8_groups_analysis"
+        # outputs
+        self.data_frame_of_CD8_group_scores = self.outputs_of_CD8_groups_analysis / "data_frame_of_CD8_group_scores.csv"
+        self.data_frame_of_scores_and_indices_of_clusters = self.outputs_of_CD8_groups_analysis / "data_frame_of_scores_and_indices_of_clusters.csv"
+        self.plot_of_CD8_clusters = self.outputs_of_CD8_groups_analysis / "plot_of_CD8_clusters.png"
+        self.plot_of_CD8_PCA = self.outputs_of_CD8_groups_analysis / "cd8_pca.png"
+        self.contigency_data_frame_of_cluster_and_sex = self.outputs_of_CD8_groups_analysis / "contigency_data_frame_of_cluster_and_sex.csv"
+        self.plot_of_distributions_of_clusters_by_sex = self.outputs_of_CD8_groups_analysis / "plot_of_distributions_of_clusters_by_sex.png"
+        self.data_frame_of_sexes_features_and_statistics = self.outputs_of_CD8_groups_analysis / "data_frame_of_sexes_features_and_statistics.csv"
+        self.plots_of_mean_CD8_group_scores_by_sex = self.outputs_of_CD8_groups_analysis / "plots_of_mean_CD8_group_scores_by_sex.png"
+        self.data_frame_of_features_and_statistics = self.outputs_of_CD8_groups_analysis / "cd8_by_sex_tests.csv"
+        self.contingency_data_frame_of_cluster_and_diagnosis = self.outputs_of_CD8_groups_analysis / "contingency_data_frame_of_cluster_and_diagnosis.csv"
+        self.plot_of_cluster_and_diagnosis = self.outputs_of_CD8_groups_analysis / "cluster_by_diagnosis.png"
+        self.data_frame_of_diagnoses_features_and_statistics = self.outputs_of_CD8_groups_analysis / "data_frame_of_diagnoses_features_and_statistics.csv"
+        self.clinical_data_massaged_by_CD8_groups_analysis = self.outputs_of_CD8_groups_analysis / "clinical_data_massaged_by_CD8_groups_analysis.csv"
+        self.plot_of_survival_by_cluster = self.outputs_of_CD8_groups_analysis / "survival_by_cluster.png"
     
     
     def ensure_dependencies_for_src_exist(self):
@@ -228,6 +247,11 @@ class Paths():
 
     def ensure_dependencies_for_cd8_analysis_exist(self):
         for path in [self.outputs_of_cd8_analysis, self.cd8_analysis_plots]:
+            os.makedirs(path, exist_ok = True)
+
+
+    def ensure_dependencies_for_CD8_groups_analysis_exist(self):
+        for path in [self.outputs_of_CD8_groups_analysis]:
             os.makedirs(path, exist_ok = True)
 
 
