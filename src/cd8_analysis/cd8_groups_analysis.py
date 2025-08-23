@@ -1,10 +1,93 @@
-"""
-CD8 Groups Analysis
-Analyzes CD8+ T cell signatures and groups
+'''
+cd8_groups_analysis.py
+
+`cd8_groups_analysis.py` turns bulk RNA sequencing data for samples of tumors of patients
+into abundance scores for 7 different states of CD8+ T cells for each sample.
+The script clusters samples by scores and relates clusters to clinical data.
+
+The script loads RNA sequencing data into a matrix where each of 17,120 filtered rows corresponds to a gene.
+Each of 333 columns corresponds to a physical library of fragments of RNA from a sample of a tumor of patient.
+Each value represents a number of fragments.
+
+The script creates a 333 x 7 matrix of scores / means of values for a sample and genes related to a state.
+
+The script clusters samples into 6 clusters based on states B (exhausted) and G (proliferative).
+
+The script relates clusters to sexes and diagnoses and relates survival to clusters.
+
+A bar chart of mean `CD8_B` score by diagnosis summarizes how `CD8_B` score varies across primary diagnosis sites.
+Patients with high `CD8_B` scores typically have exhausted T cells and don't respond to ICB therapy.
+`CD8_B` score is highest for tumors of skin of upper limb and shoulder.
+`CD8_B` scores vary highly.
+Differences in means may not be statistically significant.
+
+A bar chart of mean `CD8_G` score by diagnosis summarizes how `CD8_G` score varies across primary diagnosis sites.
+Patients with high `CD8_G` scores typically have proliferative T cells and respond to ICB therapy.
+`CD8_G` score is highest for tumors of skin Not Otherwise Specified.
+`CD8_G` scores vary highly.
+Differences in means may not be statistically significant.
+
+A bar chart of mean ratio of `CD8_G` score to `CD8_B` score by diagnosis summarizes how ratio varies across diagnosis sites.
+Patients with high ratios typically have mostly proliferative T cells with little exhaustion and respond to ICB therapy.
+Ratio is highest for tumors of skin of trunk.
+Ratios vary highly.
+Differences in means may not be statistically significant.
+
+A bar chart of mean log of ratio of `CD8_G` score to `CD8_B` score by diagnosis
+summarizes how log of ratio varies across primary diagnosis sites.
+Patients with high logs of ratios typically have mostly proliferative T cells with little exhaustion and respond to ICB therapy.
+Log of ratio is highest for tumors of skin of trunk.
+Log of ratios vary highly.
+Differences in means may not be statistically significant.
+
+The script creates bar charts of
+mean `CD8_B` score by sex,
+mean `CD8_G` score by sex,
+mean ratio of `CD8_G` score to `CD8_B` score, and
+mean log of ratio by sex.
+Patients with high `CD8_B` scores typically have exhausted T cells and don't respond to ICB therapy.
+Patients with high `CD8_G` scores typically have proliferative T cells and respond to ICB therapy.
+Patients with high ratios typically have mostly proliferative T cells with little exhaustion and respond to ICB therapy.
+Differences in means may not be statistically significant.
+
+A scatter plot of `CD8_G` score vs. `CD8_B` score for each sample allows visualizing the results of K means clusters where K is 6.
+The cluster of red points represents mostly proliferative T cells with little exhaustion.
+The cluster of green points represents tumors without many CD8+ T cells.
+
+The script creates a scatter plot of samples--
+defined by `CD8_B` score, `CD8_G` score, ratio of `CD8_G` score to `CD8_B` score, and log of ratio --
+projected onto Principal Components 1 and 2.
+PC1 may represent a spectrum of samples with few CD8+ T cells to samples with many CD8+ T cells, mostly proliferative.
+PC2 may represent a spectrum of low ratio / exhausted to high ratio / proliferative.
+The cluster of red points represents mostly proliferative T cells with little exhaustion.
+The cluster of green points represents tumors without many CD8+ T cells.
+
+The script creates a bar chart of percentage of patients with a given diagnosis by cluster.
+The x axis represents clusters 0 through 5.
+Each bar has a color that corresponds to a diagnosis and gives the percentage of of patients with that diagnosis in that cluster.
+Percentages sum to 100 across clusters with each diagnosis.
+Diagnoses with at least 20 patients are included.
+Percentages of patients with diagnoses are fairly constant for patients with samples in cluster 0.
+About 29 percent of samples with primary diagnosis site skin of upper limb and shoulder in cluster 1
+have high CD8_B scores / exhausted T cells.
+Modest percentages of samples with other primary diagnosis sites in cluster 1 have high CD8_B scores / exhausted T cells.
+About 32 percent of samples with primary diagnosis site skin of trunk in cluster 2 have few CD8+ T cells.
+About 20 percent of samples with other primary diagnosis sites in cluster 2 have few CD8+ T cells.
+About 5 percent of samples in cluster 3 have high `CD8_G` scores and moderate `CD8_B` scores.
+About 30 percent of samples with primary diagnosis sites in cluster 4 have moderate `CD8_G` scores and low `CD8_B` scores.
+About 15 percent of samples with primary diagnosis sites in cluster 4 have moderate `CD8_G` scores and low `CD8_B` scores.
+About 21 percent of samples with primary diagnosis sites in cluster 5 have moderate `CD8_G` scores and moderate `CD8_B` scores.
+About 15 percent of samples with primary diagnosis sites in cluster 5 have moderate `CD8_G` scores and moderate `CD8_B` scores.
+
+Survival curves by cluster suggest that patients with high ratios are more likely to survive over time.
+`CD8_B` score being equal, high ratio means high `CD8_G` score and high levels of T cells.
+Patients with low `CD8_G` scores, low `CD8_B` scores, and low general immune response are less likely to survive over time.
+
 
 Usage
 ./miniconda3/envs/ici_sex/bin/python -m src.cd8_analysis.cd8_groups_analysis
-"""
+'''
+
 
 from pathlib import Path
 import logging
@@ -486,15 +569,13 @@ class CD8GroupAnalysis(CD8Analysis):
                 :,
                 ["OS_MONTHS", "event", feature]
             ]
-            .dropna(subset = ["OS_MONTHS", "event"])
+            .dropna(subset = ["OS_MONTHS", "event", feature])
             .query("OS_MONTHS > 0")
         )
         for value in sorted(data_frame_of_survival_times_events_and_indices_of_clusters[feature].unique()):
             feature_data = data_frame_of_survival_times_events_and_indices_of_clusters[
                 data_frame_of_survival_times_events_and_indices_of_clusters[feature] == value
             ]
-            if len(feature_data) < 10:
-                raise Exception("")
             Kaplan_Meier_fitter.fit(
                 durations = feature_data["OS_MONTHS"].astype(float),
                 event_observed = feature_data["event"].astype(int),
@@ -505,7 +586,7 @@ class CD8GroupAnalysis(CD8Analysis):
         plt.ylabel("Survival Probability")
         plt.title(f"Kaplan Meier Survival Curves by Cluster")
         plt.grid(alpha = 0.3)
-        plt.savefig(paths.plot_of_survival_by_cluster)
+        plt.savefig(paths.outputs_of_CD8_groups_analysis / f"survival_by_{feature}.png")
         
         logger.info(f"Plot of survival curves by {feature} was saved.")
         
