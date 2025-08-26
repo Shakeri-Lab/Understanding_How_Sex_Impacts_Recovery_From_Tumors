@@ -15,24 +15,21 @@ The script clusters samples into 6 clusters based on states B (exhausted) and G 
 
 The script relates clusters to sexes and diagnoses and relates survival to clusters.
 
+`CD8_B_by_diagnosis.png`
 A bar chart of mean `CD8_B` score by diagnosis summarizes how `CD8_B` score varies across primary diagnosis sites.
 Patients with high `CD8_B` scores typically have exhausted T cells and don't respond to ICB therapy.
 `CD8_B` score is highest for tumors of skin of upper limb and shoulder.
 `CD8_B` scores vary highly.
 Differences in means may not be statistically significant.
 
+`CD8_G_by_diagnosis.png`
 A bar chart of mean `CD8_G` score by diagnosis summarizes how `CD8_G` score varies across primary diagnosis sites.
 Patients with high `CD8_G` scores typically have proliferative T cells and respond to ICB therapy.
 `CD8_G` score is highest for tumors of skin Not Otherwise Specified.
 `CD8_G` scores vary highly.
 Differences in means may not be statistically significant.
 
-A bar chart of mean ratio of `CD8_G` score to `CD8_B` score by diagnosis summarizes how ratio varies across diagnosis sites.
-Patients with high ratios typically have mostly proliferative T cells with little exhaustion and respond to ICB therapy.
-Ratio is highest for tumors of skin of trunk.
-Ratios vary highly.
-Differences in means may not be statistically significant.
-
+`CD8_GtoB_log_by_diagnosis.png`
 A bar chart of mean log of ratio of `CD8_G` score to `CD8_B` score by diagnosis
 summarizes how log of ratio varies across primary diagnosis sites.
 Patients with high logs of ratios typically have mostly proliferative T cells with little exhaustion and respond to ICB therapy.
@@ -40,20 +37,14 @@ Log of ratio is highest for tumors of skin of trunk.
 Log of ratios vary highly.
 Differences in means may not be statistically significant.
 
-The script creates bar charts of
-mean `CD8_B` score by sex,
-mean `CD8_G` score by sex,
-mean ratio of `CD8_G` score to `CD8_B` score, and
-mean log of ratio by sex.
-Patients with high `CD8_B` scores typically have exhausted T cells and don't respond to ICB therapy.
-Patients with high `CD8_G` scores typically have proliferative T cells and respond to ICB therapy.
+`CD8_GtoB_ratio_by_diagnosis.png`
+A bar chart of mean ratio of `CD8_G` score to `CD8_B` score by diagnosis summarizes how ratio varies across diagnosis sites.
 Patients with high ratios typically have mostly proliferative T cells with little exhaustion and respond to ICB therapy.
+Ratio is highest for tumors of skin of trunk.
+Ratios vary highly.
 Differences in means may not be statistically significant.
 
-A scatter plot of `CD8_G` score vs. `CD8_B` score for each sample allows visualizing the results of K means clusters where K is 6.
-The cluster of red points represents mostly proliferative T cells with little exhaustion.
-The cluster of green points represents tumors without many CD8+ T cells.
-
+`cd8_pca.png`
 The script creates a scatter plot of samples--
 defined by `CD8_B` score, `CD8_G` score, ratio of `CD8_G` score to `CD8_B` score, and log of ratio --
 projected onto Principal Components 1 and 2.
@@ -62,6 +53,7 @@ PC2 may represent a spectrum of low ratio / exhausted to high ratio / proliferat
 The cluster of red points represents mostly proliferative T cells with little exhaustion.
 The cluster of green points represents tumors without many CD8+ T cells.
 
+`cluster_by_diagnosis.png`
 The script creates a bar chart of percentage of patients with a given diagnosis by cluster.
 The x axis represents clusters 0 through 5.
 Each bar has a color that corresponds to a diagnosis and gives the percentage of of patients with that diagnosis in that cluster.
@@ -79,9 +71,30 @@ About 15 percent of samples with primary diagnosis sites in cluster 4 have moder
 About 21 percent of samples with primary diagnosis sites in cluster 5 have moderate `CD8_G` scores and moderate `CD8_B` scores.
 About 15 percent of samples with primary diagnosis sites in cluster 5 have moderate `CD8_G` scores and moderate `CD8_B` scores.
 
-Survival curves by cluster suggest that patients with high ratios are more likely to survive over time.
-`CD8_B` score being equal, high ratio means high `CD8_G` score and high levels of T cells.
-Patients with low `CD8_G` scores, low `CD8_B` scores, and low general immune response are less likely to survive over time.
+`plot_of_CD8_clusters.png`
+A scatter plot of `CD8_G` score vs. `CD8_B` score for each sample allows visualizing the results of K means clusters where K is 6.
+The cluster of red points represents mostly proliferative T cells with little exhaustion.
+The cluster of green points represents tumors without many CD8+ T cells.
+
+`plots_of_mean_CD8_group_scores_by_sex.png`
+The script creates bar charts of
+mean `CD8_B` score by sex,
+mean `CD8_G` score by sex,
+mean ratio of `CD8_G` score to `CD8_B` score, and
+mean log of ratio by sex.
+Patients with high `CD8_B` scores typically have exhausted T cells and don't respond to ICB therapy.
+Patients with high `CD8_G` scores typically have proliferative T cells and respond to ICB therapy.
+Patients with high ratios typically have mostly proliferative T cells with little exhaustion and respond to ICB therapy.
+Differences in means may not be statistically significant.
+
+`plot_of_distributions_of_clusters_by_sex.png`
+A bar chart of percentage of patients in a given cluster by sex shows that about 25 percent of patients have low `CD8_G` and moderate `CD8_B` scores. This cluster is more common for females.
+
+`survival_by_CD8_GtoB_group.png`
+Survival curves by groups of ratios of `CD8_G` score to CD8_B` score suggest that patients with high ratios are less likely to survive over time. `CD8_B` score being equal, high ratio means high `CD8_G` score, high levels of T cells, and high levels of reproducing tumor cells.
+
+`survival_by_cluster.png`
+Survival curves by cluster, when compared with the scatter plot of `CD8_G` score vs. `CD8_B` score for each sample, suggest that patients with low ratios (orange, blue, brown) are more likely to survive over time. `CD8_B` score being equal, high ratio means high `CD8_G` score, high levels of T cells, and high levels of reproducing tumor cells. Patients with low `CD8_G` scores, low `CD8_B` scores, and low general immune response are less likely to survive over time.
 
 
 Usage
