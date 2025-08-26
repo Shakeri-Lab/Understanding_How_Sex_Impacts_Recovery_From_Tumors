@@ -76,6 +76,9 @@ A scatter plot of `CD8_G` score vs. `CD8_B` score for each sample allows visuali
 The cluster of red points represents mostly proliferative T cells with little exhaustion.
 The cluster of green points represents tumors without many CD8+ T cells.
 
+`plot_of_distributions_of_clusters_by_sex.png`
+A bar chart of percentage of patients in a given cluster by sex shows that about 25 percent of patients have low `CD8_G` and moderate `CD8_B` scores. This cluster is more common for females.
+
 `plots_of_mean_CD8_group_scores_by_sex.png`
 The script creates bar charts of
 mean `CD8_B` score by sex,
@@ -86,9 +89,6 @@ Patients with high `CD8_B` scores typically have exhausted T cells and don't res
 Patients with high `CD8_G` scores typically have proliferative T cells and respond to ICB therapy.
 Patients with high ratios typically have mostly proliferative T cells with little exhaustion and respond to ICB therapy.
 Differences in means may not be statistically significant.
-
-`plot_of_distributions_of_clusters_by_sex.png`
-A bar chart of percentage of patients in a given cluster by sex shows that about 25 percent of patients have low `CD8_G` and moderate `CD8_B` scores. This cluster is more common for females.
 
 `survival_by_CD8_GtoB_group.png`
 Survival curves by groups of ratios of `CD8_G` score to CD8_B` score suggest that patients with high ratios are less likely to survive over time. `CD8_B` score being equal, high ratio means high `CD8_G` score, high levels of T cells, and high levels of reproducing tumor cells.
