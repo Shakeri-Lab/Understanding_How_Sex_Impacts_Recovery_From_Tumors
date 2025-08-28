@@ -290,8 +290,8 @@ class CD8GroupAnalysis(CD8Analysis):
                 alpha = 0.7,
                 s = 50
             )
-        plt.xlabel(f"{list_of_features[0]} ({self.dictionary_of_names_of_features_and_labels.get(list_of_features[0], "Unknown")})")
-        plt.ylabel(f"{list_of_features[1]} ({self.dictionary_of_names_of_features_and_labels.get(list_of_features[1], "Unknown")})")
+        plt.xlabel(f"{list_of_features[0]} ({self.dictionary_of_names_of_features_and_labels.get(list_of_features[0], 'Unknown')})")
+        plt.ylabel(f"{list_of_features[1]} ({self.dictionary_of_names_of_features_and_labels.get(list_of_features[1], 'Unknown')})")
         plt.title("CD8 Group Clusters")
         plt.legend()
         plt.savefig(paths.plot_of_CD8_clusters)
@@ -537,7 +537,7 @@ class CD8GroupAnalysis(CD8Analysis):
                 )
             plt.xlabel("Diagnosis")
             plt.ylabel("Mean Score")
-            plt.title(f"{feature} ({self.dictionary_of_names_of_features_and_labels.get(feature, "Unknown")}) by Diagnosis")
+            plt.title(f"{feature} ({self.dictionary_of_names_of_features_and_labels.get(feature, 'Unknown')}) by Diagnosis")
             plt.xticks(rotation = 45, ha = "right")
             plt.tight_layout()
             plt.savefig(paths.outputs_of_CD8_groups_analysis / f"{feature}_by_diagnosis.png")
