@@ -1,3 +1,26 @@
+'''
+create_expression_matrix.py
+
+We build an expression matrix with 60,609 Ensembl IDs and 333 sample IDs.
+We filter the expression matrix to columns with sample IDs from QC data
+for patients with specimens whose assigned primary site is "cutaneous".
+
+QC data has 333 rows and 333 unique sample IDs.
+Each row has a unique sample ID.
+Filtering QC data to rows with sample IDs for patients with cutaneous specimens
+yields 322 rows and 322 unique sample IDs.
+The filtered expression matrix has 60,609 Ensembl IDs and 322 sample IDs.
+No KeyError occurred when selecting columns of the filtered expression matrix.
+Every sample ID in the filtered QC data is the name of a column in the expression matrix.
+
+We include all SLIDs for any patient who has a cutaneous specimen.
+If a sample ID corresponds to a non-cutaneous specimen,
+that sample ID will be included in the filtered expression matrix.
+To include only sample IDs of cutaneous specimens in the filtered expression matrix,
+we would need site information for each sample.
+'''
+
+
 from ORIEN_analysis.config import paths
 import os
 import pandas as pd
@@ -12,7 +35,11 @@ def create_expression_matrix():
             pd.read_csv(
                 path,
                 sep = '\t',
-                usecols = ["gene_id", "TPM"]
+                usecols = ["gene_id", "TPM"],
+                dtype = {
+                    "gene_id": str,
+                    "TPM": float
+                }
             )
             .assign(
                 gene_id = lambda df: df["gene_id"].str.replace(r"\.\d+$", "", regex = True)
@@ -24,30 +51,44 @@ def create_expression_matrix():
     expression_matrix = pd.DataFrame(dictionary_of_sample_IDs_and_series_of_expressions)
     expression_matrix.to_csv("expression_matrix.csv")
     print(f"Expression matrix has shape {expression_matrix.shape}.")
-    print(f"The number of unique genes is {len(expression_matrix.index.unique())}.")
-    print(f"The number of unique sample IDs is {len(expression_matrix.columns.unique())}.")
-    QC_data = pd.read_csv(paths.QC_data)
-    print(f"QC data has shape {QC_data.shape}.")
-    print(f"The number of unique patient IDs is {len(QC_data["ORIENAvatarKey"].unique())}.")
-    print(f"The number of unique sample IDs is {len(QC_data["SLID"].unique())}.")
-    output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors = pd.read_csv(
-        "../pair_clinical_data_and_stages_of_tumors/output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors.csv"
+    print(f"The number of unique genes is {expression_matrix.index.nunique()}.")
+    print(f"The number of unique sample IDs is {expression_matrix.columns.nunique()}.")
+    QC_data = pd.read_csv(
+        paths.QC_data,
+        dtype = {
+            "ORIENAvatarKey": str,
+            "SLID": str
+        }
     )
-    # We restrict strictly to the prespecified cutaneous melanoma cohort with paired clinical-tumor data.
+    print(f"QC data has shape {QC_data.shape}.")
+    print(f"The number of unique patient IDs is {QC_data['ORIENAvatarKey'].nunique()}.")
+    print(f"The number of unique sample IDs is {QC_data['SLID'].nunique()}.")
+    output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors = pd.read_csv(
+        paths.output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors,
+        dtype = {
+            "AvatarKey": str,
+            "AssignedPrimarySite": str
+        }
+    )
+    print(f"Output of pipeline for pairing clinical data and stages of tumors has shape {output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors.shape}.")
+    print(f"The number of unique patient IDs is {output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors['AvatarKey'].nunique()}.")
     output_of_pipeline_for_cutaneous_specimens = output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors[
         output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors["AssignedPrimarySite"] == "cutaneous"
     ]
+    print(f"Output of pipeline for cutaneous specimens has shape {output_of_pipeline_for_cutaneous_specimens.shape}.")
+    print(f"The number of unique patient IDs is {output_of_pipeline_for_cutaneous_specimens['AvatarKey'].nunique()}.")
     series_of_patient_IDs_in_QC_Data = QC_data["ORIENAvatarKey"]
     series_of_patient_IDs_in_output_of_pipeline_for_cutaneous_specimens = output_of_pipeline_for_cutaneous_specimens["AvatarKey"]
     set_of_patient_IDs_in_output_of_pipeline_for_cutaneous_specimens = set(series_of_patient_IDs_in_output_of_pipeline_for_cutaneous_specimens)
     QC_data_for_patients_with_cutaneous_specimens = QC_data[series_of_patient_IDs_in_QC_Data.isin(set_of_patient_IDs_in_output_of_pipeline_for_cutaneous_specimens)]
-    QC_data_for_patients_with_cutaneous_specimens.to_csv("QC_data_for_patients_with_cutaneous_specimens.csv")
+    print(f"QC data for patients with cutaneous specimens has shape {QC_data_for_patients_with_cutaneous_specimens.shape}.")
+    print(f"The number of unique patient IDs is {QC_data_for_patients_with_cutaneous_specimens['ORIENAvatarKey'].nunique()}.")
+    print(f"The number of unique sample IDs is {QC_data_for_patients_with_cutaneous_specimens['SLID'].nunique()}.")
     series_of_sample_IDs = QC_data_for_patients_with_cutaneous_specimens["SLID"]
     filtered_expression_matrix = expression_matrix.loc[:, series_of_sample_IDs]
-    '''
-    Filtering will raise if any sample ID is not the name of a column in expression matrix.
-    This possibility serves as a check that all sample IDs are in expression matrix.
-    '''
+    print(f"Filtered expression matrix has shape {filtered_expression_matrix.shape}.")
+    print(f"The number of unique genes is {filtered_expression_matrix.index.nunique()}.")
+    print(f"The number of unique sample IDs is {filtered_expression_matrix.columns.nunique()}.")
     filtered_expression_matrix.to_csv("filtered_expression_matrix.csv")
 
 
