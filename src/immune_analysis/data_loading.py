@@ -482,7 +482,7 @@ def load_rnaseq_data():
     '''
     We construct a data frame of Ensembl IDs and HGNC symbols.
     '''
-    data_frame_of_Ensembl_IDs_and_HGNC_symbols = (
+    series_of_Ensembl_IDs_and_HGNC_symbols = (
         pd.concat(
             [pd.read_csv(f, sep = '\t', usecols = ["gene_id", "gene_symbol"]) for f in expr_files],
             ignore_index = True
@@ -493,9 +493,9 @@ def load_rnaseq_data():
         .query("gene_symbol != ''")
         .set_index("gene_id")["gene_symbol"]
     )
-    data_frame_of_Ensembl_IDs_and_HGNC_symbols.to_csv(paths.data_frame_of_Ensembl_IDs_and_HGNC_symbols)
+    series_of_Ensembl_IDs_and_HGNC_symbols.to_csv(paths.series_of_Ensembl_IDs_and_HGNC_symbols)
     
-    logger.info(f"A data frame of Ensembl IDs and HGNC symbols was built with {data_frame_of_Ensembl_IDs_and_HGNC_symbols.size} entries and {data_frame_of_Ensembl_IDs_and_HGNC_symbols.notna().sum()} non-blank symbols.")
+    logger.info(f"A data frame of Ensembl IDs and HGNC symbols was built with {series_of_Ensembl_IDs_and_HGNC_symbols.size} entries and {series_of_Ensembl_IDs_and_HGNC_symbols.notna().sum()} non-blank symbols.")
     
     # Create a dictionary of sample IDs and series of Ensembl IDs and expression values in Transcripts Per Million.
     expr_data: dict[str, pd.Series] = {}

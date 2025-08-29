@@ -74,9 +74,9 @@ def test_that_outputs_of_EDA_are_equal():
 def test_that_outputs_of_data_loading_are_equal():
     # ./miniconda3/envs/ici_sex/bin/python -m src.immune_analysis.data_loading
     
-    data_frame_of_Ensembl_IDs_and_HGNC_symbols = pd.read_csv("output/data_loading/data_frame_of_Ensembl_IDs_and_HGNC_symbols.csv")
-    data_frame_of_Ensembl_IDs_and_HGNC_symbols_for_comparison = pd.read_csv("output/data_loading/data_frame_of_Ensembl_IDs_and_HGNC_symbols_for_comparison.csv")
-    assert_frame_equal(data_frame_of_Ensembl_IDs_and_HGNC_symbols, data_frame_of_Ensembl_IDs_and_HGNC_symbols_for_comparison)
+    series_of_Ensembl_IDs_and_HGNC_symbols = pd.read_csv("output/data_loading/series_of_Ensembl_IDs_and_HGNC_symbols.csv")
+    series_of_Ensembl_IDs_and_HGNC_symbols_for_comparison = pd.read_csv("output/data_loading/series_of_Ensembl_IDs_and_HGNC_symbols_for_comparison.csv")
+    assert_frame_equal(series_of_Ensembl_IDs_and_HGNC_symbols, series_of_Ensembl_IDs_and_HGNC_symbols_for_comparison)
     
     data_frame_of_melanoma_clinical_data = pd.read_csv("output/data_loading/melanoma_clinical_data.csv")
     data_frame_of_melanoma_clinical_data_for_comparison = pd.read_csv("output/data_loading/melanoma_clinical_data_for_comparison.csv")

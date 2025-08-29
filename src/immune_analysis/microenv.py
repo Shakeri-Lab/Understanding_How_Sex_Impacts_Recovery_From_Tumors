@@ -38,7 +38,7 @@ def clean_expression_df(df: pd.DataFrame) -> pd.DataFrame:
     df.index = df.index.astype(str)
     dictionary_of_Ensembl_IDs_and_HGNC_symbols = (
         pd.read_csv(
-            paths.data_frame_of_Ensembl_IDs_and_HGNC_symbols,
+            paths.series_of_Ensembl_IDs_and_HGNC_symbols,
             usecols = ["gene_id", "gene_symbol"]
         )
         .dropna(subset = ["gene_symbol"])
