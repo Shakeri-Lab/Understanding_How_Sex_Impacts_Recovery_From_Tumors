@@ -5,7 +5,7 @@ Build
 "Table 2. Patient baseline characteristics. Demographic and clinical characteristics at the time of diagnosis."
 
 Usage:
-../miniconda3/envs/ici_sex/bin/python build_tables.py
+../../miniconda3/envs/ici_sex/bin/python build_tables.py
 '''
 
 from pathlib import Path
@@ -158,12 +158,12 @@ def classify_specimen_site_of_collection(site: str) -> str | None:
 def main():
     
     # Read CSV files into data frames.
-    PATH_TO_NORMALIZED_FILES = Path("../../Clinical_Data/24PRJ217UVA_NormalizedFiles")
+    PATH_TO_NORMALIZED_FILES = Path("../../../Clinical_Data/24PRJ217UVA_NormalizedFiles")
     PATH_TO_CLINICAL_MOLECULAR_LINKAGE_DATA = PATH_TO_NORMALIZED_FILES / "24PRJ217UVA_20241112_ClinicalMolLinkage_V4.csv"
     PATH_TO_PATIENT_DATA = PATH_TO_NORMALIZED_FILES / "24PRJ217UVA_20241112_PatientMaster_V4.csv"
     PATH_TO_PATIENT_DATA_WITH_EMILY_NINMERS_ETHNICITIES = "24PRJ217UVA_20241112_PatientMaster_V4_Ethnicity.csv"
     PATH_TO_TUMOR_MARKER_DATA = PATH_TO_NORMALIZED_FILES / "24PRJ217UVA_20241112_TumorMarker_V4.csv"
-    PATH_TO_OUTPUT_OF_PIPELINE_FOR_PAIRING_CLINICAL_DATA_AND_STAGES_OF_TUMORS = "../pair_clinical_data_and_stages_of_tumors/output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors.csv"
+    PATH_TO_OUTPUT_OF_PIPELINE_FOR_PAIRING_CLINICAL_DATA_AND_STAGES_OF_TUMORS = "../../pair_clinical_data_and_stages_of_tumors/output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors.csv"
     PATH_TO_MEDICATIONS_DATA = PATH_TO_NORMALIZED_FILES / "24PRJ217UVA_20241112_Medications_V4.csv"
     PATH_TO_DIAGNOSIS_DATA = PATH_TO_NORMALIZED_FILES / "24PRJ217UVA_20241112_Diagnosis_V4.csv"
     

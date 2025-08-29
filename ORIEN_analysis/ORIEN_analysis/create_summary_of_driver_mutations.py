@@ -13,10 +13,10 @@ Reference Allele, and
 Alternate Allele.
 
 General Usage:
-../miniconda3/envs/ici_sex/bin/python create_summary_of_driver_mutations.py <input_csv> [--output_csv <output_csv>]
+../../miniconda3/envs/ici_sex/bin/python create_summary_of_driver_mutations.py <input_csv> [--output_csv <output_csv>]
 
 Example usage:
-../miniconda3/envs/ici_sex/bin/python create_data_frame_of_patient_IDs_specimen_IDs_and_indicators_of_mutations.py data_frame_of_IDs_of_patients_specimens_and_WES_and_paths_to_WES.csv
+../../miniconda3/envs/ici_sex/bin/python create_data_frame_of_patient_IDs_specimen_IDs_and_indicators_of_mutations.py data_frame_of_IDs_of_patients_specimens_and_WES_and_paths_to_WES.csv
 
 Input CSV file contains a data frame with columns `ORIENAvatarKey`, `DeidSpecimenID`, and `path_to_WES`.
 '''

@@ -3,7 +3,7 @@
 Add paths of WES to a data frame of IDs of patients, specimens, and WES.
 
 Usage:
-../miniconda3/envs/ici_sex/bin/python add_paths_to_data_frame_of_IDs_of_patient_specimens_and_WES.py
+../../miniconda3/envs/ici_sex/bin/python add_paths_to_data_frame_of_IDs_of_patient_specimens_and_WES.py
 '''
 from pathlib import Path
 import pandas as pd
