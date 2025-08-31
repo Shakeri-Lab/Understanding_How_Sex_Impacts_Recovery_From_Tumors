@@ -44,6 +44,7 @@ def create_expression_matrix():
         paths.QC_data,
         dtype = {
             "ORIENAvatarKey": str,
+            "QCCheck": str,
             "SLID": str
         }
     )
@@ -51,6 +52,7 @@ def create_expression_matrix():
     print(f"The number of unique patient IDs is {QC_data['ORIENAvatarKey'].nunique()}.")
     print(f"The number of unique sample IDs is {QC_data['SLID'].nunique()}.")
     filtered_QC_data = QC_data[
+        (QC_data["QCCheck"] == "Pass") &
         (QC_data["MappedReads"] >= 10E6) &
         (QC_data["ExonicRate"] >= 0.5)
     ]
