@@ -16,12 +16,13 @@ CD8 analysis produces a data frame of sexes, CD8 signatures, and statistics.
 
 CD8 analysis produces a data frame of diagnoses with at least 20 patients, CD8 signatures, and statistics.
 
-CD8 analysis plots for each CD8 signature mean CD8 signature score vs. sex.
-
 CD8 analysis plots for each CD8 signature mean CD8 signature score vs. diagnosis for diagnoses with at least 20 patients.
 
+CD8 analysis plots for each CD8 signature mean CD8 signature score vs. sex.
+
 CD8 analysis plots for each CD8 signature 2 Kaplan-Meier survival curves
-of survival probabilities of patients in each group for that CD8 signature vs. time in months.
+of survival probabilities of patients in 2 groups of high and low CD8 signature scores
+vs. time in months.
 A survival probability is the probability that a patient will be alive after a certain number of months.
 
 CD8 analysis produces results of a log rank test for each of many CD8 signatures.
