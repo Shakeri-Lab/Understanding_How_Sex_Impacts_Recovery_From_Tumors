@@ -11,6 +11,21 @@ output by our pipeline for pairing clinical data and stages of tumors.
 from ORIEN_analysis.config import paths
 import os
 import pandas as pd
+from functools import reduce
+import operator
+
+
+def create_series_of_indicators_that_values_are_outliers(series: pd.Series) -> pd.Series:
+    mean = series.mean()
+    standard_deviation = series.std()
+    return (series.sub(mean).abs().div(standard_deviation)).gt(3)
+
+
+def provide_name_of_first_column_whose_name_matches_a_candidate(filtered_QC_data: pd.DataFrame, list_of_candidates: list[str]) -> str | None:
+    for candidate in list_of_candidates:
+        if candidate in filtered_QC_data.columns:
+            return candidate
+    return None
 
 
 def create_expression_matrix():
@@ -50,12 +65,70 @@ def create_expression_matrix():
     )
     print(f"QC data has shape {QC_data.shape}.")
     print(f"The number of unique patient IDs is {QC_data['ORIENAvatarKey'].nunique()}.")
-    print(f"The number of unique sample IDs is {QC_data['SLID'].nunique()}.")
-    filtered_QC_data = QC_data[
-        (QC_data["QCCheck"] == "Pass") &
-        (QC_data["MappedReads"] >= 10E6) &
-        (QC_data["ExonicRate"] >= 0.5)
+    print(f"The number of unique sample IDs is {QC_data['SLID'].nunique()}.")    
+    list_of_dictionaries_of_information_re_columns = [
+        {
+            "name": "Alignment",
+            "list_of_candidates": ["AlignmentRate", "PercentAligned", "pct_aligned"],
+            "direction": "ge",
+            "threshold": 0.7
+        },
+        {
+            "name": "rRNA",
+            "list_of_candidates": ["rRNA Rate", "rRNARate", "Pct_rRNA"],
+            "direction": "le",
+            "threshold": 0.2
+        },
+        {
+            "name": "Duplication",
+            "list_of_candidates": ["Duplication", "DupRate", "PCT_DUPLICATION"],
+            "direction": "le",
+            "threshold": 0.6
+        },
+        {
+            "name": "Mapped reads",
+            "list_of_candidates": ["MappedReads", "Total Mapped Reads"],
+            "direction": "ge",
+            "threshold": 10E6
+        },
+        {
+            "name": "Exonic rate",
+            "list_of_candidates": ["ExonicRate", "Pct_Exonic"],
+            "direction": "ge",
+            "threshold": 0.5
+        }
     ]
+    list_of_series_of_indicators_that_values_did_not_meet_condition = []
+    list_of_series_of_indicators_that_values_are_outliers = []
+    for dictionary_of_information_re_column in list_of_dictionaries_of_information_re_columns:
+        name_of_dictionary = dictionary_of_information_re_column["name"]
+        name_of_column = provide_name_of_first_column_whose_name_matches_a_candidate(
+            QC_data,
+            dictionary_of_information_re_column["list_of_candidates"]
+        )
+        direction = dictionary_of_information_re_column["direction"]
+        threshold = dictionary_of_information_re_column["threshold"]
+        if name_of_column is None:
+            print(f"Column was not found for dictionary {name_of_dictionary}.")
+            continue
+        series_of_values = QC_data[name_of_column]
+        if direction == "ge":
+            series_of_indicators_that_values_met_condition = series_of_values >= threshold
+        elif direction == "le":
+            series_of_indicators_that_values_met_condition = series_of_values <= threshold
+        else:
+            raise Exception(f"Direction {direction} is invalid.")
+        series_of_indicators_that_values_did_not_meet_condition = ~series_of_indicators_that_values_met_condition
+        list_of_series_of_indicators_that_values_did_not_meet_condition.append(
+            series_of_indicators_that_values_did_not_meet_condition
+        )
+        series_of_indicators_that_values_are_outliers = create_series_of_indicators_that_values_are_outliers(series_of_values)
+        list_of_series_of_indicators_that_values_are_outliers.append(series_of_indicators_that_values_are_outliers)
+    series_of_numbers_of_failures = sum(list_of_series_of_indicators_that_values_did_not_meet_condition)
+    series_of_indicators_that_some_values_are_outliers = reduce(operator.or_, list_of_series_of_indicators_that_values_are_outliers)
+    series_of_indicators_that_row_should_be_excluded = (series_of_numbers_of_failures >= 2) | series_of_indicators_that_some_values_are_outliers
+    filtered_QC_data = QC_data.loc[~series_of_indicators_that_row_should_be_excluded]
+    filtered_QC_data = filtered_QC_data[filtered_QC_data["QCCheck"] == "Pass"]
     print(f"Filtered QC data has shape {filtered_QC_data.shape}.")
     print(f"The number of unique patient IDs is {filtered_QC_data['ORIENAvatarKey'].nunique()}.")
     print(f"The number of unique sample IDs is {filtered_QC_data['SLID'].nunique()}.")
