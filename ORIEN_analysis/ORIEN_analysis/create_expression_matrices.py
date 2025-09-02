@@ -10,10 +10,86 @@ output by our pipeline for pairing clinical data and stages of tumors.
 
 from ORIEN_analysis.config import paths
 from datetime import datetime, timezone
+import numpy as np
+import math
 import os
 import pandas as pd
 from functools import reduce
 import operator
+
+
+def _build_ensembl_to_hgnc_mapping(expr_files: list) -> pd.Series:
+    """
+    Build a Series mapping Ensembl ID (no version) -> HGNC symbol,
+    using the user's provided approach (first non-empty per gene_id).
+    """
+    if not expr_files:
+        raise Exception(f"No .genes.results files were found in {paths.gene_and_transcript_expression_results}.")
+    ser = (
+        pd.concat(
+            [pd.read_csv(f, sep="\t", usecols=["gene_id", "gene_symbol"]) for f in expr_files],
+            ignore_index=True
+        )
+        .assign(gene_id=lambda df: df["gene_id"].astype(str).str.replace(r"\.\d+$", "", regex=True))
+        .query("gene_id != ''")
+        .query("gene_symbol != ''")
+        .drop_duplicates("gene_id")
+        .set_index("gene_id")["gene_symbol"]
+    )
+    return ser
+
+
+def _collapse_to_hgnc_median(tpm_ensembl: pd.DataFrame, ens_to_hgnc: pd.Series) -> pd.DataFrame:
+    """
+    Align Ensembl->HGNC mapping to TPM rows (Ensembl IDs without version),
+    keep only mapped rows, attach HGNC, and collapse duplicates by per-sample median.
+    """
+    # Align mapping to the TPM row index (labels = Ensembl IDs)
+    hgnc_aligned = ens_to_hgnc.reindex(tpm_ensembl.index)
+
+    # Keep rows with a non-null HGNC symbol
+    keep_mask = hgnc_aligned.notna()
+    dropped = int((~keep_mask).sum())
+    if dropped > 0:
+        print(f"Dropping {dropped} Ensembl IDs without HGNC mapping.")
+
+    # Subset TPM by the aligned boolean mask (indexes now match)
+    tpm_mapped = tpm_ensembl.loc[keep_mask].copy()
+
+    # Attach HGNC as a column (same order as tpm_mapped rows)
+    tpm_mapped["HGNC"] = hgnc_aligned.loc[keep_mask].astype(str).values
+
+    # Collapse Ensembl duplicates to HGNC by per-sample median
+    tpm_hgnc = tpm_mapped.groupby("HGNC", sort=False).median(numeric_only=True)
+    return tpm_hgnc
+
+
+def _low_expression_filter(tpm_df: pd.DataFrame, threshold: float = 1.0, min_prop: float = 0.20) -> tuple[pd.DataFrame, pd.Series]:
+    """
+    Keep genes with TPM > threshold in at least ceil(min_prop * n_samples) samples.
+    Returns (filtered_df, mask_used).
+    """
+    n_samples = tpm_df.shape[1]
+    if n_samples == 0:
+        return tpm_df.copy(), pd.Series(False, index=tpm_df.index)
+    min_count = max(1, math.ceil(min_prop * n_samples))
+    mask = (tpm_df > threshold).sum(axis=1) >= min_count
+    return tpm_df.loc[mask], mask
+
+
+def _log2_tpm_plus1(df: pd.DataFrame) -> pd.DataFrame:
+    return np.log2(df.astype(float) + 1.0)
+
+
+def _rowwise_zscore(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Gene-wise z-score across samples (rows standardized).
+    Uses population SD (ddof=0). Constant rows become 0.
+    """
+    means = df.mean(axis=1)
+    stds = df.std(axis=1, ddof=0).replace(0.0, np.nan)
+    z = df.sub(means, axis=0).div(stds, axis=0).fillna(0.0)
+    return z
 
 
 def _fmt_ts(ts: float | None) -> str:
@@ -450,14 +526,60 @@ def create_expression_matrix():
     manifest_to_save.to_csv("manifest.csv", index = False)
     print(f"Cohort manifest has shape {manifest_to_save.shape}.")
 
+    # Restrict Ensembl TPM to included SLIDs (this is the *pre low-expression* matrix)
     list_of_included_SLIDs = manifest.loc[manifest["Included"], "SLID"].dropna().unique().tolist()
-    filtered_expression_matrix = expression_matrix.loc[
-        :,
-        [column for column in expression_matrix.columns if column in list_of_included_SLIDs]
-    ]
-    filtered_expression_matrix.to_csv("filtered_expression_matrix.csv")
-    print(f"Filtered expression matrix has shape {filtered_expression_matrix.shape}.")
-    print(f"CSV and Markdown QC summaries were written.")
+    tpm_ensembl_pre = expression_matrix.loc[:, [c for c in expression_matrix.columns if c in list_of_included_SLIDs]].copy()
+    tpm_ensembl_pre.to_csv("tpm_ensembl_pre_filter.csv")
+    print(f"TPM (Ensembl) pre-filter matrix has shape {tpm_ensembl_pre.shape}.")
+    # Keep old name for backward-compatibility
+    tpm_ensembl_pre.to_csv("filtered_expression_matrix.csv")
+
+    # === Ensembl→HGNC mapping & HGNC collapse (median) ======================
+    expr_files = list_of_paths  # reuse from above
+    ens_to_hgnc = _build_ensembl_to_hgnc_mapping(expr_files)
+    # Save mapping as both the configured series path and a two-column table
+    try:
+        ens_to_hgnc.to_csv("data_frame_of_Ensembl_IDs_and_HGNC_symbols.csv")
+        print(f"Saved Ensembl→HGNC series to \"data_frame_of_Ensembl_IDs_and_HGNC_symbols.csv\".")
+    except Exception as e:
+        print(f"Warning: could not write mapping series to data_frame_of_Ensembl_IDs_and_HGNC_symbols.csv ({e}).")
+    mapping_df = ens_to_hgnc.rename("HGNC").rename_axis("EnsemblID").reset_index()
+    mapping_df.to_csv("ensembl_to_hgnc_mapping.csv", index=False)
+
+    tpm_hgnc_pre = _collapse_to_hgnc_median(tpm_ensembl_pre, ens_to_hgnc)
+    tpm_hgnc_pre.to_csv("tpm_hgnc_pre_filter.csv")
+    print(f"TPM (HGNC-collapsed, median) pre-filter matrix has shape {tpm_hgnc_pre.shape}.")
+
+    # === Low-expression filtering: TPM > 1 in ≥ 20% samples =================
+    tpm_ensembl_post, mask_ens = _low_expression_filter(tpm_ensembl_pre, threshold=1.0, min_prop=0.20)
+    tpm_ensembl_post.to_csv("tpm_ensembl_post_filter.csv")
+    print(f"TPM (Ensembl) post-filter (TPM>1 in ≥20%) has shape {tpm_ensembl_post.shape} "
+          f"(kept {mask_ens.sum()} / {mask_ens.size} genes).")
+
+    tpm_hgnc_post, mask_hgnc = _low_expression_filter(tpm_hgnc_pre, threshold=1.0, min_prop=0.20)
+    tpm_hgnc_post.to_csv("tpm_hgnc_post_filter.csv")
+    print(f"TPM (HGNC) post-filter (TPM>1 in ≥20%) has shape {tpm_hgnc_post.shape} "
+          f"(kept {mask_hgnc.sum()} / {mask_hgnc.size} genes).")
+
+    # === Transforms: log2(TPM+1) and gene-wise z-scores =====================
+    # (Save for both Ensembl and HGNC post-filter; HGNC versions are typically used for PCA/signatures)
+    log2_ens = _log2_tpm_plus1(tpm_ensembl_post)
+    log2_ens.to_csv("log2_tpm_plus1_ensembl_post_filter.csv")
+    z_ens = _rowwise_zscore(log2_ens)  # z-score usually applied after log
+    z_ens.to_csv("zscore_ensembl_post_filter.csv")
+
+    log2_hgnc = _log2_tpm_plus1(tpm_hgnc_post)
+    log2_hgnc.to_csv("log2_tpm_plus1_hgnc_post_filter.csv")
+    z_hgnc = _rowwise_zscore(log2_hgnc)
+    z_hgnc.to_csv("zscore_hgnc_post_filter.csv")
+
+    print("CSV and Markdown QC summaries were written.")
+    print("Saved:")
+    print(" - tpm_ensembl_pre_filter.csv / tpm_ensembl_post_filter.csv")
+    print(" - tpm_hgnc_pre_filter.csv / tpm_hgnc_post_filter.csv")
+    print(" - log2_tpm_plus1_ensembl_post_filter.csv / zscore_ensembl_post_filter.csv")
+    print(" - log2_tpm_plus1_hgnc_post_filter.csv / zscore_hgnc_post_filter.csv")
+    print(" - ensembl_to_hgnc_mapping.csv (and mapping series to paths.series_of_Ensembl_IDs_and_HGNC_symbols)")
 
 
 if __name__ == "__main__":
