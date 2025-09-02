@@ -35,6 +35,8 @@ pandas2ri.activate()
 
 
 def clean_expression_df(df: pd.DataFrame) -> pd.DataFrame:
+    if "gene_id" in df.columns:
+        df = df.set_index("gene_id")
     df.index = df.index.astype(str)
     dictionary_of_Ensembl_IDs_and_HGNC_symbols = (
         pd.read_csv(
@@ -76,13 +78,11 @@ def main():
     
     paths.ensure_dependencies_for_microenv_exist()
 
-    expr_matrix, clinical_data = load_RNA_sequencing_data_for_melanoma_samples()
-    process_melanoma_immune_data(clinical_data)
+    #expr_matrix, clinical_data = load_RNA_sequencing_data_for_melanoma_samples()
+    #process_melanoma_immune_data(clinical_data)
+    expr_matrix = pd.read_csv(paths.melanoma_expression_matrix)
 
-    clinical_data_processed = pd.read_csv(paths.data_frame_of_melanoma_patient_and_sequencing_data)
-    logger.info(f"Clinical data for {clinical_data_processed['PATIENT_ID'].nunique()} unique melanoma patients was loaded from {paths.data_frame_of_melanoma_patient_and_sequencing_data}.")
-
-    success = run_xcell_analysis(expr_matrix, clinical_data_processed)
+    success = run_xcell_analysis(expr_matrix)
     if success:
         logger.info("xCell analysis succeeded.")
     else:
@@ -239,12 +239,14 @@ def process_melanoma_immune_data(clinical_data):
     return immune_clinical
 
 
-def run_xcell_analysis(expr_df: pd.DataFrame, clinical_df: pd.DataFrame) -> bool:
+def run_xcell_analysis(expr_df: pd.DataFrame) -> bool:
     '''
     Run xCell on a gene-by-sample matrix.
     Remove cell types that are not present in any sample based on significance analysis.
     Write enrichment matrices.
     '''
+
+    print(expr_df.shape)
 
     expr_df = clean_expression_df(expr_df)
     
