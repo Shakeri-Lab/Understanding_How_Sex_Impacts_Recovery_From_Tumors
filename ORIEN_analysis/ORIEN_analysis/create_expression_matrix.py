@@ -9,10 +9,30 @@ output by our pipeline for pairing clinical data and stages of tumors.
 
 
 from ORIEN_analysis.config import paths
+from datetime import datetime, timezone
 import os
 import pandas as pd
 from functools import reduce
 import operator
+
+
+def _fmt_ts(ts: float | None) -> str:
+    if ts is None:
+        return "NA"
+    return datetime.fromtimestamp(ts, tz=timezone.utc).astimezone().isoformat(timespec="seconds")
+
+
+def _latest_mtime_in_dir(dir_path) -> float | None:
+    try:
+        files = list(dir_path.glob("*"))
+    except Exception:
+        return None
+    if not files:
+        return None
+    try:
+        return max(f.stat().st_mtime for f in files)
+    except Exception:
+        return None
 
 
 def create_series_of_indicators_that_comparisons_are_true(series: pd.Series, direction: str, threshold: float) -> pd.Series:
@@ -148,22 +168,22 @@ def create_expression_matrix():
     QC_data["QC_Pass"] = QC_data["QCCheck"].eq("Pass")
 
     # Add to QC data columns of numbers of indicators that comparisons are false and indicators that values are outliers.
-    list_of_series_of_indicators_that_comparisons_are_false = []
-    for name_of_column in list_of_names_of_columns_of_indicators_that_comparisons_are_true:
-        series_of_indicators_that_comparisons_are_false = ~QC_data[name_of_column]
-        list_of_series_of_indicators_that_comparisons_are_false.append(series_of_indicators_that_comparisons_are_false)
     available_pass_fail_cols = [
         c for c in list_of_names_of_columns_of_indicators_that_comparisons_are_true
         if QC_data[c].notna().any()
     ]
     QC_data["number_of_indicators_that_comparisons_are_false"] = (
         (QC_data[available_pass_fail_cols] == False).sum(axis = 1)
-    ).astype("int64")
+        if available_pass_fail_cols else 0
+    )
     available_outlier_cols = [
         c for c in list_of_names_of_columns_of_indicators_that_values_are_outliers
         if QC_data[c].notna().any()
     ]
-    QC_data["value_is_outlier"] = QC_data[available_outlier_cols].fillna(False).any(axis = 1)
+    if available_outlier_cols:
+        QC_data["value_is_outlier"] = QC_data[available_outlier_cols].fillna(False).any(axis = 1)
+    else:
+        QC_data["value_is_outlier"] = False
 
     # Load clinical molecular linkage data.
     clinical_molecular_linkage_data = pd.read_csv(
@@ -300,6 +320,125 @@ def create_expression_matrix():
         lambda row: "" if safe_bool(row.get("Included"), False) else provide_exclusion_reason(row),
         axis = 1
     )
+
+    rows_metrics: list[dict] = []
+    for metric, th in dictionary_of_names_of_standard_columns_and_dictionaries_of_directions_and_thresholds.items():
+        source = dictionary_of_names_of_standard_columns_and_sources.get(metric)
+        available = source is not None and QC_data[metric].notna().any()
+        avail_label = "available" if available else "not available"
+
+        # Pass/fail/outlier counts
+        if available:
+            comp = QC_data[f"comparison_is_true_for_{metric}"]
+            n_pass = int((comp == True).sum())
+            n_fail = int((comp == False).sum())
+            n_out = int((QC_data[f"{metric}_is_outlier"] == True).sum())
+            series = QC_data[metric].dropna()
+            v_min = float(series.min()) if not series.empty else None
+            v_med = float(series.median()) if not series.empty else None
+            v_max = float(series.max()) if not series.empty else None
+            n_nonnull = int(series.size)
+        else:
+            n_pass = n_fail = n_out = n_nonnull = 0
+            v_min = v_med = v_max = None
+
+        rows_metrics.append({
+            "Type": "metric",
+            "Metric": metric,
+            "SourceColumn": source if source is not None else "not available",
+            "Availability": avail_label,
+            "ThresholdDirection": th["direction"],
+            "ThresholdValue": th["threshold"],
+            "N_nonnull": n_nonnull,
+            "N_pass_threshold": n_pass,
+            "N_fail_threshold": n_fail,
+            "N_outliers_>3SD": n_out,
+            "Min": v_min,
+            "Median": v_med,
+            "Max": v_max
+        })
+
+    # Counts included/excluded by reason (high-level & breakdown)
+    total_n = int(manifest.shape[0])
+    n_included = int(manifest["Included"].sum())
+    n_excluded = int(total_n - n_included)
+
+    rows_reasons: list[dict] = []
+    def add_reason(name: str, count: int):
+        rows_reasons.append({"Type": "reason", "Reason": name, "Count": int(count)})
+
+    add_reason("TOTAL", total_n)
+    add_reason("Included", n_included)
+    add_reason("Excluded", n_excluded)
+
+    add_reason('QCCheck != "Pass"', int((~manifest["QC_Pass"].fillna(False)).sum()))
+    add_reason(">=2 thresholds failed", int((manifest["number_of_indicators_that_comparisons_are_false"] >= 2).fillna(False).sum()))
+    for metric in ["MappedReads", "ExonicRate", "AlignmentRate", "rRNARate", "Duplication"]:
+        source = dictionary_of_names_of_standard_columns_and_sources.get(metric)
+        if source is None:
+            add_reason(f"{metric} outlier (not available)", 0)
+        else:
+            add_reason(f"{metric} outlier", int((manifest[f"{metric}_is_outlier"] == True).sum()))
+    add_reason("No SLID↔DeidSpecimenID link", int((~manifest["has_cml_link"]).sum()))
+    add_reason("AssignedPrimarySite missing", int((~manifest["has_site"]).sum()))
+    add_reason("Not cutaneous", int((manifest["has_site"] & ~manifest["is_cutaneous"]).sum()))
+
+    qc_summary_df = pd.concat([
+        pd.DataFrame(rows_metrics),
+        pd.DataFrame(rows_reasons)
+    ], ignore_index=True)
+    qc_summary_df.to_csv("qc_summary.csv", index=False)
+
+    # Markdown summary ("brief")
+    thresholds_lines = []
+    for metric, th in dictionary_of_names_of_standard_columns_and_dictionaries_of_directions_and_thresholds.items():
+        src = dictionary_of_names_of_standard_columns_and_sources.get(metric)
+        thresholds_lines.append(f"- **{metric}** ({'available' if src else 'not available'}; source: `{src if src else 'NA'}`): "
+                                f"{'≥' if th['direction']=='ge' else '≤'} {th['threshold']}")
+
+    # Data/vintage paths (with mod-times)
+    try:
+        qc_mtime = os.path.getmtime(paths.QC_data)
+    except Exception:
+        qc_mtime = None
+    try:
+        cml_mtime = os.path.getmtime(paths.clinical_molecular_linkage_data)
+    except Exception:
+        cml_mtime = None
+    try:
+        pairing_mtime = os.path.getmtime(paths.output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors)
+    except Exception:
+        pairing_mtime = None
+    try:
+        dx_mtime = os.path.getmtime(paths.diagnosis_data)
+    except Exception:
+        dx_mtime = None
+    expr_latest = _latest_mtime_in_dir(paths.gene_and_transcript_expression_results)
+
+    md = []
+    md.append("# QC Summary")
+    md.append("")
+    md.append(f"- Generated: {_fmt_ts(datetime.now().timestamp())}")
+    md.append(f"- Total SLIDs: **{total_n}** | Included: **{n_included}** | Excluded: **{n_excluded}**")
+    md.append("")
+    md.append("## Thresholds & Availability")
+    md += thresholds_lines
+    md.append("")
+    md.append("## Data sources & vintage")
+    md.append(f"- QC data: `{paths.QC_data}` (mtime: {_fmt_ts(qc_mtime)})")
+    md.append(f"- Clinical–molecular linkage: `{paths.clinical_molecular_linkage_data}` (mtime: {_fmt_ts(cml_mtime)})")
+    md.append(f"- Pairing output: `{paths.output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors}` (mtime: {_fmt_ts(pairing_mtime)})")
+    md.append(f"- Diagnosis data: `{paths.diagnosis_data}` (mtime: {_fmt_ts(dx_mtime)})")
+    md.append(f"- Expression dir: `{paths.gene_and_transcript_expression_results}` (latest file mtime: {_fmt_ts(expr_latest)})")
+    md.append("")
+    md.append("## Exclusion breakdown (counts)")
+    for row in rows_reasons:
+        if row["Type"] == "reason" and row["Reason"] not in ("TOTAL", "Included", "Excluded"):
+            md.append(f"- {row['Reason']}: **{row['Count']}**")
+
+    with open("qc_summary.md", "w", encoding="utf-8") as f:
+        f.write("\n".join(md))
+
     columns_to_exclude_from_output = [
         "number_of_indicators_that_comparisons_are_false",
         "value_is_outlier",
@@ -318,6 +457,7 @@ def create_expression_matrix():
     ]
     filtered_expression_matrix.to_csv("filtered_expression_matrix.csv")
     print(f"Filtered expression matrix has shape {filtered_expression_matrix.shape}.")
+    print(f"CSV and Markdown QC summaries were written.")
 
 
 if __name__ == "__main__":
