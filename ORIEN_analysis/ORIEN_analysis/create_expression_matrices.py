@@ -1,5 +1,5 @@
 '''
-create_expression_matrix.py
+create_expression_matrices.py
 
 We build an expression matrix with 60,609 Ensembl IDs and 333 sample IDs.
 We filter the expression matrix to columns with sample IDs
@@ -111,28 +111,6 @@ def _latest_mtime_in_dir(dir_path) -> float | None:
         return None
 
 
-def create_series_of_indicators_that_comparisons_are_true(series: pd.Series, direction: str, threshold: float) -> pd.Series:
-    if direction == "ge":
-        return series >= threshold
-    elif direction == "le":
-        return series <= threshold
-    else:
-        raise Exception(f"Direction {direction} is invalid.")
-
-
-def create_series_of_indicators_that_values_are_outliers(series: pd.Series) -> pd.Series:
-    mean = series.mean()
-    standard_deviation = series.std()
-    return (series.sub(mean).abs().div(standard_deviation)).gt(3)
-
-
-def provide_name_of_first_column_whose_name_matches_a_candidate(QC_data: pd.DataFrame, list_of_candidates: list[str]) -> str | None:
-    for candidate in list_of_candidates:
-        if candidate in QC_data.columns:
-            return candidate
-    return None
-
-
 def safe_bool(x, default: bool = False) -> bool:
     try:
         if pd.isna(x):
@@ -142,29 +120,7 @@ def safe_bool(x, default: bool = False) -> bool:
     return bool(x)
 
 
-def standardize_columns(QC_data: pd.DataFrame) -> dict[str, str]:
-    dictionary_of_names_of_standard_columns_and_possible_sources = {
-        "AlignmentRate": ["AlignmentRate", "PercentAligned", "pct_aligned"],
-        "rRNARate": ["rRNA Rate", "rRNARate", "Pct_rRNA"],
-        "Duplication": ["Duplication", "DupRate", "PCT_DUPLICATION"],
-        "MappedReads": ["MappedReads", "Total Mapped Reads"],
-        "ExonicRate": ["ExonicRate", "Pct_Exonic"]
-    }
-    dictionary_of_names_of_standard_columns_and_sources = {
-        name_of_standard_column: provide_name_of_first_column_whose_name_matches_a_candidate(QC_data, list_of_candidates)
-        for name_of_standard_column, list_of_candidates in dictionary_of_names_of_standard_columns_and_possible_sources.items()
-    }
-    for name_of_standard_column, name_of_source in dictionary_of_names_of_standard_columns_and_sources.items():
-        if name_of_source is not None:
-            QC_data[name_of_standard_column] = pd.to_numeric(QC_data[name_of_source], errors = "raise")
-        else:
-            QC_data[name_of_standard_column] = pd.NA
-    return dictionary_of_names_of_standard_columns_and_sources
-
-
-def create_expression_matrix():
-    # Create full expression matrix.
-    list_of_paths = list(paths.gene_and_transcript_expression_results.glob("*.genes.results"))
+def create_full_expression_matrix(list_of_paths: str) -> pd.DataFrame:
     dictionary_of_sample_IDs_and_series_of_expressions: dict[str, pd.Series] = {}
     for path in list_of_paths:
         sample_ID = os.path.basename(path).removesuffix(".genes.results")
@@ -185,12 +141,14 @@ def create_expression_matrix():
             ["TPM"]
         )
         dictionary_of_sample_IDs_and_series_of_expressions[sample_ID] = series_of_expressions
-    expression_matrix = pd.DataFrame(dictionary_of_sample_IDs_and_series_of_expressions)
-    print(f"Expression matrix has shape {expression_matrix.shape}.")
-    print(f"The number of unique genes is {expression_matrix.index.nunique()}.")
-    print(f"The number of unique sample IDs is {expression_matrix.columns.nunique()}.")
+    full_expression_matrix = pd.DataFrame(dictionary_of_sample_IDs_and_series_of_expressions)
+    print(f"Full expression matrix has shape {full_expression_matrix.shape}.")
+    print(f"The number of unique genes is {full_expression_matrix.index.nunique()}.")
+    print(f"The number of unique sample IDs is {full_expression_matrix.columns.nunique()}.")
+    return full_expression_matrix
 
-    # Load QC data.
+
+def load_QC_data():
     QC_data = pd.read_csv(
         paths.QC_data,
         dtype = {
@@ -202,47 +160,113 @@ def create_expression_matrix():
     print(f"QC data has shape {QC_data.shape}.")
     print(f"The number of unique patient IDs is {QC_data['ORIENAvatarKey'].nunique()}.")
     print(f"The number of unique sample IDs is {QC_data['SLID'].nunique()}.")
+    return QC_data
 
-    # Standardize QC data.
-    dictionary_of_names_of_standard_columns_and_sources = standardize_columns(QC_data)
-    print(f"Dictionary of names of standard columns and sources is\n{dictionary_of_names_of_standard_columns_and_sources}.")
 
-    # Add to QC data columns of indicators that comparisons are true and that values are outliers.
-    dictionary_of_names_of_standard_columns_and_dictionaries_of_directions_and_thresholds = {
-        "AlignmentRate": {"direction": "ge", "threshold": 0.7},
-        "rRNARate": {"direction": "le", "threshold": 0.2},
-        "Duplication": {"direction": "le", "threshold": 0.6},
-        "MappedReads": {"direction": "ge", "threshold": 10E6},
-        "ExonicRate": {"direction": "ge", "threshold": 0.5}
+def provide_name_of_first_column_whose_name_matches_a_candidate(
+    QC_data: pd.DataFrame,
+    list_of_candidates: list[str]
+) -> str | None:
+    for candidate in list_of_candidates:
+        if candidate in QC_data.columns:
+            return candidate
+    return None
+
+
+def standardize_columns(QC_data: pd.DataFrame) -> dict[str, str]:
+    dictionary_of_names_of_standard_columns_and_possible_sources = {
+        "AlignmentRate": ["AlignmentRate", "PercentAligned", "pct_aligned"],
+        "rRNARate": ["rRNA Rate", "rRNARate", "Pct_rRNA"],
+        "Duplication": ["Duplication", "DupRate", "PCT_DUPLICATION"],
+        "MappedReads": ["MappedReads", "Total Mapped Reads"],
+        "ExonicRate": ["ExonicRate", "Pct_Exonic"]
     }
+    dictionary_of_names_of_standard_columns_and_sources = {
+        name_of_standard_column: provide_name_of_first_column_whose_name_matches_a_candidate(QC_data, list_of_candidates)
+        for name_of_standard_column, list_of_candidates in dictionary_of_names_of_standard_columns_and_possible_sources.items()
+    }
+    for name_of_standard_column, name_of_source in dictionary_of_names_of_standard_columns_and_sources.items():
+        if name_of_source is not None:
+            QC_data[name_of_standard_column] = pd.to_numeric(QC_data[name_of_source], errors = "raise")
+        else:
+            QC_data[name_of_standard_column] = pd.NA
+    print(f"Dictionary of names of standard columns and sources is\n{dictionary_of_names_of_standard_columns_and_sources}.")
+    return dictionary_of_names_of_standard_columns_and_sources
+
+
+def create_series_of_indicators_that_comparisons_are_true(series: pd.Series, direction: str, threshold: float) -> pd.Series:
+    if direction == "ge":
+        return series >= threshold
+    elif direction == "le":
+        return series <= threshold
+    else:
+        raise Exception(f"Direction {direction} is invalid.")
+
+
+def create_series_of_indicators_that_values_are_outliers(series: pd.Series) -> pd.Series:
+    mean = series.mean()
+    standard_deviation = series.std()
+    return (series.sub(mean).abs().div(standard_deviation)).gt(3)
+
+
+dictionary_of_names_of_standard_columns_and_dictionaries_of_directions_and_thresholds = {
+    "AlignmentRate": {"direction": "ge", "threshold": 0.7},
+    "rRNARate": {"direction": "le", "threshold": 0.2},
+    "Duplication": {"direction": "le", "threshold": 0.6},
+    "MappedReads": {"direction": "ge", "threshold": 10E6},
+    "ExonicRate": {"direction": "ge", "threshold": 0.5}
+}
+
+
+def add_to_QC_data_columns_of_indicators_that_comparisons_are_true(
+    QC_data: pd.DataFrame,
+    dictionary_of_names_of_standard_columns_and_sources: dict[str, str]
+):
     list_of_names_of_columns_of_indicators_that_comparisons_are_true = []
+    for name_of_standard_column, dictionary_of_directions_and_thresholds in dictionary_of_names_of_standard_columns_and_dictionaries_of_directions_and_thresholds.items():
+        if dictionary_of_names_of_standard_columns_and_sources.get(name_of_standard_column) is None:
+            QC_data[f"comparison_is_true_for_{name_of_standard_column}"] = pd.NA
+        else:
+            QC_data[f"comparison_is_true_for_{name_of_standard_column}"] = create_series_of_indicators_that_comparisons_are_true(
+                QC_data[name_of_standard_column],
+                dictionary_of_directions_and_thresholds["direction"],
+                dictionary_of_directions_and_thresholds["threshold"]
+            )
+        list_of_names_of_columns_of_indicators_that_comparisons_are_true.append(f"comparison_is_true_for_{name_of_standard_column}")
+    return list_of_names_of_columns_of_indicators_that_comparisons_are_true
+
+
+def add_to_QC_data_columns_of_indicators_that_values_are_outliers(
+    QC_data: pd.DataFrame,
+    dictionary_of_names_of_standard_columns_and_sources: dict[str, str]
+):
     list_of_names_of_columns_of_indicators_that_values_are_outliers = []
     for name_of_standard_column, dictionary_of_directions_and_thresholds in dictionary_of_names_of_standard_columns_and_dictionaries_of_directions_and_thresholds.items():
-        standard_column_has_source = dictionary_of_names_of_standard_columns_and_sources.get(name_of_standard_column) is not None
-        if not standard_column_has_source:
-            QC_data[f"comparison_is_true_for_{name_of_standard_column}"] = pd.NA
+        if dictionary_of_names_of_standard_columns_and_sources.get(name_of_standard_column) is None:
             QC_data[f"{name_of_standard_column}_is_outlier"] = pd.NA
         else:
-            if QC_data[name_of_standard_column].isna().all():
-                QC_data[f"comparison_is_true_for_{name_of_standard_column}"] = pd.NA
-                QC_data[f"{name_of_standard_column}_is_outlier"] = pd.NA
-            else:
-                QC_data[f"comparison_is_true_for_{name_of_standard_column}"] = create_series_of_indicators_that_comparisons_are_true(
-                    QC_data[name_of_standard_column],
-                    dictionary_of_directions_and_thresholds["direction"],
-                    dictionary_of_directions_and_thresholds["threshold"]
-                )
-                out = create_series_of_indicators_that_values_are_outliers(
-                    QC_data[name_of_standard_column]
-                )
-                out = out.mask(QC_data[name_of_standard_column].isna(), other = pd.NA)
-                QC_data[f"{name_of_standard_column}_is_outlier"] = out
-        list_of_names_of_columns_of_indicators_that_comparisons_are_true.append(f"comparison_is_true_for_{name_of_standard_column}")
+            QC_data[f"{name_of_standard_column}_is_outlier"] = create_series_of_indicators_that_values_are_outliers(
+                QC_data[name_of_standard_column]
+            )
         list_of_names_of_columns_of_indicators_that_values_are_outliers.append(f"{name_of_standard_column}_is_outlier")
+    return list_of_names_of_columns_of_indicators_that_values_are_outliers
 
-    # Add to QC data column `QC_Pass`.
+
+def create_expression_matrices():
+    list_of_paths = list(paths.gene_and_transcript_expression_results.glob("*.genes.results"))
+    full_expression_matrix = create_full_expression_matrix(list_of_paths)
+    QC_data = load_QC_data()
     QC_data["QC_Pass"] = QC_data["QCCheck"].eq("Pass")
-
+    dictionary_of_names_of_standard_columns_and_sources = standardize_columns(QC_data)
+    list_of_names_of_columns_of_indicators_that_comparisons_are_true = add_to_QC_data_columns_of_indicators_that_comparisons_are_true(
+        QC_data,
+        dictionary_of_names_of_standard_columns_and_sources
+    )
+    list_of_names_of_columns_of_indicators_that_values_are_outliers = add_to_QC_data_columns_of_indicators_that_values_are_outliers(
+        QC_data,
+        dictionary_of_names_of_standard_columns_and_sources
+    )
+    
     # Add to QC data columns of numbers of indicators that comparisons are false and indicators that values are outliers.
     available_pass_fail_cols = [
         c for c in list_of_names_of_columns_of_indicators_that_comparisons_are_true
@@ -528,15 +552,14 @@ def create_expression_matrix():
 
     # Restrict Ensembl TPM to included SLIDs (this is the *pre low-expression* matrix)
     list_of_included_SLIDs = manifest.loc[manifest["Included"], "SLID"].dropna().unique().tolist()
-    tpm_ensembl_pre = expression_matrix.loc[:, [c for c in expression_matrix.columns if c in list_of_included_SLIDs]].copy()
+    tpm_ensembl_pre = full_expression_matrix.loc[:, [c for c in full_expression_matrix.columns if c in list_of_included_SLIDs]].copy()
     tpm_ensembl_pre.to_csv("tpm_ensembl_pre_filter.csv")
     print(f"TPM (Ensembl) pre-filter matrix has shape {tpm_ensembl_pre.shape}.")
     # Keep old name for backward-compatibility
     tpm_ensembl_pre.to_csv("filtered_expression_matrix.csv")
 
     # === Ensembl→HGNC mapping & HGNC collapse (median) ======================
-    expr_files = list_of_paths  # reuse from above
-    ens_to_hgnc = _build_ensembl_to_hgnc_mapping(expr_files)
+    ens_to_hgnc = _build_ensembl_to_hgnc_mapping(list_of_paths)
     # Save mapping as both the configured series path and a two-column table
     try:
         ens_to_hgnc.to_csv("data_frame_of_Ensembl_IDs_and_HGNC_symbols.csv")
@@ -583,4 +606,4 @@ def create_expression_matrix():
 
 
 if __name__ == "__main__":
-    create_expression_matrix()
+    create_expression_matrices()
