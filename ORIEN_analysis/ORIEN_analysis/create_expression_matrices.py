@@ -163,6 +163,100 @@ def load_QC_data():
     return QC_data
 
 
+def load_clinical_molecular_linkage_data():
+    clinical_molecular_linkage_data = pd.read_csv(
+        paths.clinical_molecular_linkage_data,
+        dtype = {
+            "DeidSpecimenID": str,
+            "RNASeq": str
+        }
+    )
+    print(f"Clinical molecular linkage data has shape {clinical_molecular_linkage_data.shape}.")
+    print(f"The number of unique specimen IDs is {clinical_molecular_linkage_data['DeidSpecimenID'].nunique()}.")
+    print(f"The number of unique sample IDs is {clinical_molecular_linkage_data['RNASeq'].nunique()}.")
+    return clinical_molecular_linkage_data
+
+
+def load_output_of_pipeline():
+    output_of_pipeline = pd.read_csv(
+        paths.output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors,
+        dtype = {
+            "AvatarKey": str,
+            "AssignedPrimarySite": str
+        }
+    )
+    print(f"Output of pipeline for pairing clinical data and stages of tumors has shape {output_of_pipeline.shape}.")
+    print(f"The number of unique specimen IDs is {output_of_pipeline['ORIENSpecimenID'].nunique()}.")
+    return output_of_pipeline
+
+
+def load_diagnosis_data():
+    diagnosis_data = pd.read_csv(paths.diagnosis_data).reset_index()
+    print(f"Diagnosis data has shape {diagnosis_data.shape}")
+    return diagnosis_data
+
+
+def merge_data(
+    QC_data,
+    clinical_molecular_linkage_data,
+    output_of_pipeline,
+    diagnosis_data
+):
+    manifest = (
+        QC_data[
+            [
+                "ORIENAvatarKey",
+                "SLID",
+                "NexusBatch"
+            ]
+        ]
+        .rename(
+            columns = {"ORIENAvatarKey": "PATIENT_ID"}
+        )
+        .merge(
+            clinical_molecular_linkage_data[
+                [
+                    "Age At Specimen Collection", # Column "Age At Specimen Collection" values in the spirit of collection dates.
+                    "DeidSpecimenID",
+                    "RNASeq",
+                    "SpecimenSiteOfCollection"
+                ]
+            ],
+            how = "left",
+            left_on = "SLID",
+            right_on = "RNASeq"
+        )
+        .drop(columns = "RNASeq")
+        .rename(columns = {"SpecimenSiteOfCollection": "SpecimenSite"})
+        .merge(
+            output_of_pipeline[
+                [
+                    "AssignedPrimarySite",
+                    "ORIENSpecimenID",
+                    "index_of_row_of_diagnosis_data_paired_with_specimen"
+                ]
+            ],
+            how = "left",
+            left_on = "DeidSpecimenID",
+            right_on = "ORIENSpecimenID"
+        )
+        .merge(
+            diagnosis_data[
+                [
+                    "index",
+                    "HistologyCode"
+                ]
+            ],
+            how = "left",
+            left_on = "index_of_row_of_diagnosis_data_paired_with_specimen",
+            right_on = "index"
+        )
+        .drop(columns = "index_of_row_of_diagnosis_data_paired_with_specimen")
+        .rename(columns = {"index": "DiagnosisID"})
+    )
+    return manifest
+
+
 def provide_name_of_first_column_whose_name_matches_a_candidate(
     QC_data: pd.DataFrame,
     list_of_candidates: list[str]
@@ -173,7 +267,7 @@ def provide_name_of_first_column_whose_name_matches_a_candidate(
     return None
 
 
-def standardize_columns(QC_data: pd.DataFrame) -> dict[str, str]:
+def standardize_columns(QC_data: pd.DataFrame, manifest: pd.DataFrame) -> dict[str, str]:
     dictionary_of_names_of_standard_columns_and_possible_sources = {
         "AlignmentRate": ["AlignmentRate", "PercentAligned", "pct_aligned"],
         "rRNARate": ["rRNA Rate", "rRNARate", "Pct_rRNA"],
@@ -187,9 +281,9 @@ def standardize_columns(QC_data: pd.DataFrame) -> dict[str, str]:
     }
     for name_of_standard_column, name_of_source in dictionary_of_names_of_standard_columns_and_sources.items():
         if name_of_source is not None:
-            QC_data[name_of_standard_column] = pd.to_numeric(QC_data[name_of_source], errors = "raise")
+            manifest[name_of_standard_column] = pd.to_numeric(QC_data[name_of_source], errors = "raise")
         else:
-            QC_data[name_of_standard_column] = pd.NA
+            manifest[name_of_standard_column] = pd.NA
     print(f"Dictionary of names of standard columns and sources is\n{dictionary_of_names_of_standard_columns_and_sources}.")
     return dictionary_of_names_of_standard_columns_and_sources
 
@@ -218,17 +312,17 @@ dictionary_of_names_of_standard_columns_and_dictionaries_of_directions_and_thres
 }
 
 
-def add_to_QC_data_columns_of_indicators_that_comparisons_are_true(
-    QC_data: pd.DataFrame,
+def add_to_manifest_columns_of_indicators_that_comparisons_are_true(
+    manifest: pd.DataFrame,
     dictionary_of_names_of_standard_columns_and_sources: dict[str, str]
 ):
     list_of_names_of_columns_of_indicators_that_comparisons_are_true = []
     for name_of_standard_column, dictionary_of_directions_and_thresholds in dictionary_of_names_of_standard_columns_and_dictionaries_of_directions_and_thresholds.items():
         if dictionary_of_names_of_standard_columns_and_sources.get(name_of_standard_column) is None:
-            QC_data[f"comparison_is_true_for_{name_of_standard_column}"] = pd.NA
+            manifest[f"comparison_is_true_for_{name_of_standard_column}"] = pd.NA
         else:
-            QC_data[f"comparison_is_true_for_{name_of_standard_column}"] = create_series_of_indicators_that_comparisons_are_true(
-                QC_data[name_of_standard_column],
+            manifest[f"comparison_is_true_for_{name_of_standard_column}"] = create_series_of_indicators_that_comparisons_are_true(
+                manifest[name_of_standard_column],
                 dictionary_of_directions_and_thresholds["direction"],
                 dictionary_of_directions_and_thresholds["threshold"]
             )
@@ -236,190 +330,115 @@ def add_to_QC_data_columns_of_indicators_that_comparisons_are_true(
     return list_of_names_of_columns_of_indicators_that_comparisons_are_true
 
 
-def add_to_QC_data_columns_of_indicators_that_values_are_outliers(
-    QC_data: pd.DataFrame,
+def add_to_manifest_columns_of_indicators_that_values_are_outliers(
+    manifest: pd.DataFrame,
     dictionary_of_names_of_standard_columns_and_sources: dict[str, str]
 ):
     list_of_names_of_columns_of_indicators_that_values_are_outliers = []
     for name_of_standard_column, dictionary_of_directions_and_thresholds in dictionary_of_names_of_standard_columns_and_dictionaries_of_directions_and_thresholds.items():
         if dictionary_of_names_of_standard_columns_and_sources.get(name_of_standard_column) is None:
-            QC_data[f"{name_of_standard_column}_is_outlier"] = pd.NA
+            manifest[f"{name_of_standard_column}_is_outlier"] = False
         else:
-            QC_data[f"{name_of_standard_column}_is_outlier"] = create_series_of_indicators_that_values_are_outliers(
-                QC_data[name_of_standard_column]
+            manifest[f"{name_of_standard_column}_is_outlier"] = create_series_of_indicators_that_values_are_outliers(
+                manifest[name_of_standard_column]
             )
         list_of_names_of_columns_of_indicators_that_values_are_outliers.append(f"{name_of_standard_column}_is_outlier")
     return list_of_names_of_columns_of_indicators_that_values_are_outliers
+
+
+def provide_reason_to_exclude_sample(row, dictionary_of_names_of_standard_columns_and_sources) -> str:
+    list_of_reasons = []
+    if not row.get("QC_Pass"):
+        list_of_reasons.append("Value of QCCheck is not \"Pass\".")
+    number_of_indicators_that_comparisons_are_false = row.get("number_of_indicators_that_comparisons_are_false")
+    if number_of_indicators_that_comparisons_are_false >= 2:
+        list_of_reasons.append(f"Number of indicators that comparisons are false is {number_of_indicators_that_comparisons_are_false}.")
+    for name_of_standard_column in ["AlignmentRate", "Duplication", "ExonicRate", "MappedReads", "rRNARate"]:
+        if row.get(f"{name_of_standard_column}_is_outlier"):
+            list_of_reasons.append(f"{name_of_standard_column} is outlier.")
+    if not row.get("sample_has_assigned_primary_site"):
+        list_of_reasons.append("Sample does not have assigned primary site.")
+    elif not row.get("sample_is_cutaneous"):
+        assigned_primary_site = row.get("AssignedPrimarySite")
+        list_of_reasons.append(f"Sample is not cutaneous and is {assigned_primary_site}.")
+    return " ".join(list_of_reasons)
 
 
 def create_expression_matrices():
     list_of_paths = list(paths.gene_and_transcript_expression_results.glob("*.genes.results"))
     full_expression_matrix = create_full_expression_matrix(list_of_paths)
     QC_data = load_QC_data()
-    QC_data["QC_Pass"] = QC_data["QCCheck"].eq("Pass")
-    dictionary_of_names_of_standard_columns_and_sources = standardize_columns(QC_data)
-    list_of_names_of_columns_of_indicators_that_comparisons_are_true = add_to_QC_data_columns_of_indicators_that_comparisons_are_true(
+    clinical_molecular_linkage_data = load_clinical_molecular_linkage_data()
+    output_of_pipeline = load_output_of_pipeline()
+    diagnosis_data = load_diagnosis_data()
+    manifest = merge_data(
         QC_data,
+        clinical_molecular_linkage_data,
+        output_of_pipeline,
+        diagnosis_data
+    )
+    manifest["QC_Pass"] = QC_data["QCCheck"].eq("Pass")
+    dictionary_of_names_of_standard_columns_and_sources = standardize_columns(QC_data, manifest)
+    list_of_names_of_columns_of_indicators_that_comparisons_are_true = add_to_manifest_columns_of_indicators_that_comparisons_are_true(
+        manifest,
         dictionary_of_names_of_standard_columns_and_sources
     )
-    list_of_names_of_columns_of_indicators_that_values_are_outliers = add_to_QC_data_columns_of_indicators_that_values_are_outliers(
-        QC_data,
+    manifest["number_of_indicators_that_comparisons_are_false"] = (
+        (manifest[list_of_names_of_columns_of_indicators_that_comparisons_are_true] == False).sum(axis = 1)
+    )
+    list_of_names_of_columns_of_indicators_that_values_are_outliers = add_to_manifest_columns_of_indicators_that_values_are_outliers(
+        manifest,
         dictionary_of_names_of_standard_columns_and_sources
     )
-    
-    # Add to QC data columns of numbers of indicators that comparisons are false and indicators that values are outliers.
-    available_pass_fail_cols = [
-        c for c in list_of_names_of_columns_of_indicators_that_comparisons_are_true
-        if QC_data[c].notna().any()
-    ]
-    QC_data["number_of_indicators_that_comparisons_are_false"] = (
-        (QC_data[available_pass_fail_cols] == False).sum(axis = 1)
-        if available_pass_fail_cols else 0
-    )
-    available_outlier_cols = [
-        c for c in list_of_names_of_columns_of_indicators_that_values_are_outliers
-        if QC_data[c].notna().any()
-    ]
-    if available_outlier_cols:
-        QC_data["value_is_outlier"] = QC_data[available_outlier_cols].fillna(False).any(axis = 1)
-    else:
-        QC_data["value_is_outlier"] = False
-
-    # Load clinical molecular linkage data.
-    clinical_molecular_linkage_data = pd.read_csv(
-        paths.clinical_molecular_linkage_data,
-        dtype = {
-            "DeidSpecimenID": str,
-            "RNASeq": str
-        }
-    )
-    print(f"Clinical molecular linkage data has shape {clinical_molecular_linkage_data.shape}.")
-    print(f"The number of unique specimen IDs is {clinical_molecular_linkage_data['DeidSpecimenID'].nunique()}.")
-    print(f"The number of unique sample IDs is {clinical_molecular_linkage_data['RNASeq'].nunique()}.")
-
-    output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors = pd.read_csv(
-        paths.output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors,
-        dtype = {
-            "AvatarKey": str,
-            "AssignedPrimarySite": str
-        }
-    )
-    print(f"Output of pipeline for pairing clinical data and stages of tumors has shape {output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors.shape}.")
-    print(f"The number of unique specimen IDs is {output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors['ORIENSpecimenID'].nunique()}.")
-
-    diagnosis_data = pd.read_csv(paths.diagnosis_data).reset_index()
-
-    manifest = (
-        QC_data[
-            [
-                "ORIENAvatarKey",
-                "SLID",
-                "NexusBatch",
-                "MappedReads",
-                "ExonicRate",
-                "AlignmentRate",
-                "rRNARate",
-                "Duplication",
-                "comparison_is_true_for_MappedReads",
-                "MappedReads_is_outlier",
-                "comparison_is_true_for_ExonicRate",
-                "ExonicRate_is_outlier",
-                "comparison_is_true_for_AlignmentRate",
-                "AlignmentRate_is_outlier",
-                "comparison_is_true_for_rRNARate",
-                "rRNARate_is_outlier",
-                "comparison_is_true_for_Duplication",
-                "Duplication_is_outlier",
-                "QC_Pass",
-                "number_of_indicators_that_comparisons_are_false",
-                "value_is_outlier"
-            ]
-        ]
-        .rename(columns = {"ORIENAvatarKey": "PATIENT_ID"})
-        .merge(
-            clinical_molecular_linkage_data[
-                [
-                    "RNASeq",
-                    "DeidSpecimenID",
-                    "SpecimenSiteOfCollection",
-                    "Age At Specimen Collection" # Column "Age At Specimen Collection" values in the spirit of collection dates.
-                ]
-            ],
-            how = "left",
-            left_on = "SLID",
-            right_on = "RNASeq"
-        )
-        .drop(columns = "RNASeq")
-        .rename(columns = {"SpecimenSiteOfCollection": "SpecimenSite"})
-        .merge(
-            output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors[
-                [
-                    "index_of_row_of_diagnosis_data_paired_with_specimen",
-                    "ORIENSpecimenID",
-                    "AssignedPrimarySite"
-                ]
-            ],
-            how = "left",
-            left_on = "DeidSpecimenID",
-            right_on = "ORIENSpecimenID"
-        )
-        .merge(
-            diagnosis_data[
-                [
-                    "index",
-                    "HistologyCode"
-                ]
-            ],
-            how = "left",
-            left_on = "index_of_row_of_diagnosis_data_paired_with_specimen",
-            right_on = "index"
-        )
-        .drop(columns = "index_of_row_of_diagnosis_data_paired_with_specimen")
-        .rename(columns = {"index": "DiagnosisID"})
-    )
-    manifest["has_cml_link"] = manifest["DeidSpecimenID"].notna()
-    manifest["has_site"] = manifest["AssignedPrimarySite"].notna()
-    manifest["is_cutaneous"] = manifest["AssignedPrimarySite"].astype(str).str.strip().str.lower().eq("cutaneous")
+    manifest["value_is_outlier"] = manifest[list_of_names_of_columns_of_indicators_that_values_are_outliers].any(axis = 1)
+    manifest["sample_has_assigned_primary_site"] = manifest["AssignedPrimarySite"].notna()
+    manifest["sample_is_cutaneous"] = manifest["AssignedPrimarySite"].eq("cutaneous")
     manifest["Included"] = (
         manifest["QC_Pass"] &
-        manifest["has_cml_link"] &
-        manifest["is_cutaneous"] &
         manifest["number_of_indicators_that_comparisons_are_false"].lt(2) &
+        manifest["sample_is_cutaneous"] &
         ~manifest["value_is_outlier"]
     )
-
-    def provide_exclusion_reason(row) -> str:
-        list_of_reasons = []
-        if not safe_bool(row.get("QC_Pass", False)):
-            list_of_reasons.append("Value of QCCheck is not \"Pass\".")
-        number_of_indicators_that_comparisons_are_false = row.get("number_of_indicators_that_comparisons_are_false", 0)
-        number_of_indicators_that_comparisons_are_false = (
-            0
-            if pd.isna(number_of_indicators_that_comparisons_are_false)
-            else int(number_of_indicators_that_comparisons_are_false)
-        )
-        if number_of_indicators_that_comparisons_are_false >= 2:
-            list_of_reasons.append(f"{number_of_indicators_that_comparisons_are_false} comparisons are false.")
-        for name_of_standard_column in ["MappedReads", "ExonicRate", "AlignmentRate", "rRNARate", "Duplication"]:
-            has_source = dictionary_of_names_of_standard_columns_and_sources.get(name_of_standard_column) is not None
-            if not has_source:
-                continue
-            val = row.get(f"{name_of_standard_column}_is_outlier", False)
-            if safe_bool(val, False):
-                list_of_reasons.append(f"{name_of_standard_column} is outlier.")
-        if not safe_bool(row.get("has_cml_link", False)):
-            list_of_reasons.append("There is no link between SLID and DeidSpecimenID.")
-        if not safe_bool(row.get("has_site", False)):
-            list_of_reasons.append("AssignedPrimarySite is missing.")
-        elif not safe_bool(row.get("is_cutaneous", False)):
-            site = row.get("AssignedPrimarySite", pd.NA)
-            list_of_reasons.append(f"Sample is not cutaneous and is {site}.")
-        return " ".join(list_of_reasons)
-    
     manifest["ExclusionReason"] = manifest.apply(
-        lambda row: "" if safe_bool(row.get("Included"), False) else provide_exclusion_reason(row),
+        lambda row: "" if row.get("Included") else provide_reason_to_exclude_sample(row, dictionary_of_names_of_standard_columns_and_sources),
         axis = 1
     )
+    manifest_to_save = manifest[
+        [
+            "PATIENT_ID",
+            "SLID",
+            "DeidSpecimenID",
+            "ORIENSpecimenID",
+            "SpecimenSite",
+            "AssignedPrimarySite",
+            "HistologyCode",
+            "DiagnosisID",
+            "Age At Specimen Collection",
+            "NexusBatch",
+            "MappedReads",
+            "ExonicRate",
+            "AlignmentRate",
+            "rRNARate",
+            "Duplication",
+            "comparison_is_true_for_MappedReads",
+            "MappedReads_is_outlier",
+            "comparison_is_true_for_ExonicRate",
+            "ExonicRate_is_outlier",
+            "comparison_is_true_for_AlignmentRate",
+            "AlignmentRate_is_outlier",
+            "comparison_is_true_for_rRNARate",
+            "rRNARate_is_outlier",
+            "comparison_is_true_for_Duplication",
+            "Duplication_is_outlier",
+            "QC_Pass",
+            "Included",
+            "ExclusionReason"            
+        ]
+    ]
+    manifest_to_save.to_csv(paths.manifest, index = False)
+    print("Manifest was saved.")
+    print(f"Manifest has shape {manifest_to_save.shape}.")
+
 
     rows_metrics: list[dict] = []
     for metric, th in dictionary_of_names_of_standard_columns_and_dictionaries_of_directions_and_thresholds.items():
@@ -429,11 +448,11 @@ def create_expression_matrices():
 
         # Pass/fail/outlier counts
         if available:
-            comp = QC_data[f"comparison_is_true_for_{metric}"]
+            comp = manifest[f"comparison_is_true_for_{metric}"]
             n_pass = int((comp == True).sum())
             n_fail = int((comp == False).sum())
-            n_out = int((QC_data[f"{metric}_is_outlier"] == True).sum())
-            series = QC_data[metric].dropna()
+            n_out = int((manifest[f"{metric}_is_outlier"] == True).sum())
+            series = manifest[metric].dropna()
             v_min = float(series.min()) if not series.empty else None
             v_med = float(series.median()) if not series.empty else None
             v_max = float(series.max()) if not series.empty else None
@@ -479,9 +498,8 @@ def create_expression_matrices():
             add_reason(f"{metric} outlier (not available)", 0)
         else:
             add_reason(f"{metric} outlier", int((manifest[f"{metric}_is_outlier"] == True).sum()))
-    add_reason("No SLID↔DeidSpecimenID link", int((~manifest["has_cml_link"]).sum()))
-    add_reason("AssignedPrimarySite missing", int((~manifest["has_site"]).sum()))
-    add_reason("Not cutaneous", int((manifest["has_site"] & ~manifest["is_cutaneous"]).sum()))
+    add_reason("AssignedPrimarySite missing", int((~manifest["sample_has_assigned_primary_site"]).sum()))
+    add_reason("Not cutaneous", int((manifest["sample_has_assigned_primary_site"] & ~manifest["sample_is_cutaneous"]).sum()))
 
     qc_summary_df = pd.concat([
         pd.DataFrame(rows_metrics),
@@ -539,17 +557,6 @@ def create_expression_matrices():
     with open("qc_summary.md", "w", encoding="utf-8") as f:
         f.write("\n".join(md))
 
-    columns_to_exclude_from_output = [
-        "number_of_indicators_that_comparisons_are_false",
-        "value_is_outlier",
-        "has_cml_link",
-        "has_site",
-        "is_cutaneous",
-    ]
-    manifest_to_save = manifest.drop(columns = columns_to_exclude_from_output)
-    manifest_to_save.to_csv("manifest.csv", index = False)
-    print(f"Cohort manifest has shape {manifest_to_save.shape}.")
-
     # Restrict Ensembl TPM to included SLIDs (this is the *pre low-expression* matrix)
     list_of_included_SLIDs = manifest.loc[manifest["Included"], "SLID"].dropna().unique().tolist()
     tpm_ensembl_pre = full_expression_matrix.loc[:, [c for c in full_expression_matrix.columns if c in list_of_included_SLIDs]].copy()
@@ -606,4 +613,5 @@ def create_expression_matrices():
 
 
 if __name__ == "__main__":
+    paths.ensure_dependencies_for_creating_expression_matrices_exist()
     create_expression_matrices()
