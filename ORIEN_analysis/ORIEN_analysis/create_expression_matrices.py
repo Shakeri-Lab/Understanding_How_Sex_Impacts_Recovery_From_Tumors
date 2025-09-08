@@ -439,73 +439,76 @@ def create_expression_matrices():
     print("Manifest was saved.")
     print(f"Manifest has shape {manifest_to_save.shape}.")
 
-
-    rows_metrics: list[dict] = []
-    for metric, th in dictionary_of_names_of_standard_columns_and_dictionaries_of_directions_and_thresholds.items():
-        source = dictionary_of_names_of_standard_columns_and_sources.get(metric)
-        available = source is not None and QC_data[metric].notna().any()
-        avail_label = "available" if available else "not available"
-
-        # Pass/fail/outlier counts
-        if available:
-            comp = manifest[f"comparison_is_true_for_{metric}"]
-            n_pass = int((comp == True).sum())
-            n_fail = int((comp == False).sum())
-            n_out = int((manifest[f"{metric}_is_outlier"] == True).sum())
-            series = manifest[metric].dropna()
-            v_min = float(series.min()) if not series.empty else None
-            v_med = float(series.median()) if not series.empty else None
-            v_max = float(series.max()) if not series.empty else None
-            n_nonnull = int(series.size)
+    list_of_dictionaries_of_information_for_first_table_of_QC_summary: list[dict] = []
+    for name_of_standard_column, dictionary_of_directions_and_thresholds in dictionary_of_names_of_standard_columns_and_dictionaries_of_directions_and_thresholds.items():
+        comparison = dictionary_of_directions_and_thresholds["direction"]
+        threshold = dictionary_of_directions_and_thresholds["threshold"]
+        name_of_source = dictionary_of_names_of_standard_columns_and_sources.get(name_of_standard_column)
+        standard_column_is_available = name_of_source is not None and QC_data[name_of_standard_column].notna().any()
+        minimum_value = None
+        median_value = None
+        maximum_value = None
+        number_of_values = 0
+        number_of_samples_for_which_comparisons_are_true = 0
+        number_of_samples_for_which_comparisons_are_false = 0
+        number_of_values_that_are_outliers = 0
+        if standard_column_is_available:
+            series_of_values = manifest[name_of_standard_column]
+            minimum_value = series_of_values.min()
+            median_value = series_of_values.median()
+            maximum_value = series_of_values.max()
+            number_of_values = series_of_values.size
+            series_of_indicators_that_comparisons_are_true = manifest[f"comparison_is_true_for_{name_of_standard_column}"]
+            number_of_samples_for_which_comparisons_are_true = (series_of_indicators_that_comparisons_are_true == True).sum()
+            number_of_samples_for_which_comparisons_are_false = (series_of_indicators_that_comparisons_are_true == False).sum()
+            number_of_values_that_are_outliers = (manifest[f"{name_of_standard_column}_is_outlier"] == True).sum()
+        list_of_dictionaries_of_information_for_first_table_of_QC_summary.append(
+            {
+                "name of standard column": name_of_standard_column,
+                "comparison": comparison,
+                "threshold": threshold,
+                "name of source": name_of_source if name_of_source is not None else "not available",
+                "availability": "available" if standard_column_is_available else "not available",
+                "Min": minimum_value,
+                "Median": median_value,
+                "Max": maximum_value,
+                "number of values": number_of_values,
+                "number of samples for which comparisons are true": number_of_samples_for_which_comparisons_are_true,
+                "number of samples_for_which_comparisons are false": number_of_samples_for_which_comparisons_are_false,
+                "number of values that are outliers": number_of_values_that_are_outliers
+            }
+        )
+    list_of_dictionaries_of_information_for_second_table_of_QC_summary: list[dict] = []
+    number_of_samples = manifest.shape[0]
+    number_of_samples_included_in_expression_matrix = manifest["Included"].sum()
+    number_of_samples_excluded_from_expression_matrix = number_of_samples - number_of_samples_included_in_expression_matrix
+    def add_row(description: str, number_of_samples: int):
+        list_of_dictionaries_of_information_for_second_table_of_QC_summary.append(
+            {
+                "description": description,
+                "number of samples": number_of_samples
+            }
+        )
+    add_row("number of samples", number_of_samples)
+    add_row("number of samples included in expression matrix", number_of_samples_included_in_expression_matrix)
+    add_row("number of samples excluded from expression matrix", number_of_samples_excluded_from_expression_matrix)
+    add_row("Value of QCCheck is not \"Pass\".", (~manifest["QC_Pass"]).sum())
+    add_row(f"Number of indicators that comparisons are false is at least 2.", (manifest["number_of_indicators_that_comparisons_are_false"] >= 2).sum())
+    for name_of_standard_column in ["MappedReads", "ExonicRate", "AlignmentRate", "rRNARate", "Duplication"]:
+        name_of_source = dictionary_of_names_of_standard_columns_and_sources.get(name_of_standard_column)
+        if name_of_source is None:
+            add_row(f"Standard column {name_of_standard_column} is not available.", None)
         else:
-            n_pass = n_fail = n_out = n_nonnull = 0
-            v_min = v_med = v_max = None
-
-        rows_metrics.append({
-            "Type": "metric",
-            "Metric": metric,
-            "SourceColumn": source if source is not None else "not available",
-            "Availability": avail_label,
-            "ThresholdDirection": th["direction"],
-            "ThresholdValue": th["threshold"],
-            "N_nonnull": n_nonnull,
-            "N_pass_threshold": n_pass,
-            "N_fail_threshold": n_fail,
-            "N_outliers_>3SD": n_out,
-            "Min": v_min,
-            "Median": v_med,
-            "Max": v_max
-        })
-
-    # Counts included/excluded by reason (high-level & breakdown)
-    total_n = int(manifest.shape[0])
-    n_included = int(manifest["Included"].sum())
-    n_excluded = int(total_n - n_included)
-
-    rows_reasons: list[dict] = []
-    def add_reason(name: str, count: int):
-        rows_reasons.append({"Type": "reason", "Reason": name, "Count": int(count)})
-
-    add_reason("TOTAL", total_n)
-    add_reason("Included", n_included)
-    add_reason("Excluded", n_excluded)
-
-    add_reason('QCCheck != "Pass"', int((~manifest["QC_Pass"].fillna(False)).sum()))
-    add_reason(">=2 thresholds failed", int((manifest["number_of_indicators_that_comparisons_are_false"] >= 2).fillna(False).sum()))
-    for metric in ["MappedReads", "ExonicRate", "AlignmentRate", "rRNARate", "Duplication"]:
-        source = dictionary_of_names_of_standard_columns_and_sources.get(metric)
-        if source is None:
-            add_reason(f"{metric} outlier (not available)", 0)
-        else:
-            add_reason(f"{metric} outlier", int((manifest[f"{metric}_is_outlier"] == True).sum()))
-    add_reason("AssignedPrimarySite missing", int((~manifest["sample_has_assigned_primary_site"]).sum()))
-    add_reason("Not cutaneous", int((manifest["sample_has_assigned_primary_site"] & ~manifest["sample_is_cutaneous"]).sum()))
-
-    qc_summary_df = pd.concat([
-        pd.DataFrame(rows_metrics),
-        pd.DataFrame(rows_reasons)
-    ], ignore_index=True)
-    qc_summary_df.to_csv("qc_summary.csv", index=False)
+            add_row(f"{name_of_standard_column} is outlier.", (manifest[f"{name_of_standard_column}_is_outlier"] == True).sum())
+    add_row("Sample does not have assigned primary site.", (~manifest["sample_has_assigned_primary_site"]).sum())
+    add_row("Sample is not cutaneous.", (manifest["sample_has_assigned_primary_site"] & ~manifest["sample_is_cutaneous"]).sum())
+    first_data_frame_of_information_of_QC_summary = pd.DataFrame(list_of_dictionaries_of_information_for_first_table_of_QC_summary)
+    second_data_frame_of_information_of_QC_summary = pd.DataFrame(list_of_dictionaries_of_information_for_second_table_of_QC_summary)
+    with open(paths.QC_summary_of_CSVs, 'w') as QC_summary_of_CSVs:
+        first_data_frame_of_information_of_QC_summary.to_csv(QC_summary_of_CSVs, index = False)
+        QC_summary_of_CSVs.write('\n')
+        second_data_frame_of_information_of_QC_summary.to_csv(QC_summary_of_CSVs, index = False)
+    print("QC summary of Comma Separated Values was saved.")
 
     # Markdown summary ("brief")
     thresholds_lines = []
@@ -537,7 +540,7 @@ def create_expression_matrices():
     md.append("# QC Summary")
     md.append("")
     md.append(f"- Generated: {_fmt_ts(datetime.now().timestamp())}")
-    md.append(f"- Total SLIDs: **{total_n}** | Included: **{n_included}** | Excluded: **{n_excluded}**")
+    md.append(f"- Total SLIDs: **{number_of_samples}** | Included: **{number_of_samples_included_in_expression_matrix}** | Excluded: **{number_of_samples_excluded_from_expression_matrix}**")
     md.append("")
     md.append("## Thresholds & Availability")
     md += thresholds_lines
@@ -550,9 +553,9 @@ def create_expression_matrices():
     md.append(f"- Expression dir: `{paths.gene_and_transcript_expression_results}` (latest file mtime: {_fmt_ts(expr_latest)})")
     md.append("")
     md.append("## Exclusion breakdown (counts)")
-    for row in rows_reasons:
-        if row["Type"] == "reason" and row["Reason"] not in ("TOTAL", "Included", "Excluded"):
-            md.append(f"- {row['Reason']}: **{row['Count']}**")
+    for row in list_of_dictionaries_of_information_for_second_table_of_QC_summary:
+        if row["description"] not in ("number of samples", "number of samples included in expression matrix", "number of samples excluded from expression matrix"):
+            md.append(f"- {row['description']}: **{row['number of samples']}**")
 
     with open("qc_summary.md", "w", encoding="utf-8") as f:
         f.write("\n".join(md))
