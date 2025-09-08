@@ -25,6 +25,7 @@ class Paths():
         self.output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors = self.root / "../pair_clinical_data_and_stages_of_tumors/output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors.csv"
         # outputs
         self.manifest = self.outputs_of_creating_expression_matrices / "manifest.csv"
+        self.QC_summary_in_Markdown = self.outputs_of_creating_expression_matrices / "QC_summary.md"
         self.QC_summary_of_CSVs = self.outputs_of_creating_expression_matrices / "QC_summary.csv"
 
     def ensure_dependencies_for_creating_expression_matrices_exist(self):

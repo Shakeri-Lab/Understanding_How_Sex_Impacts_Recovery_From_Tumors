@@ -92,34 +92,6 @@ def _rowwise_zscore(df: pd.DataFrame) -> pd.DataFrame:
     return z
 
 
-def _fmt_ts(ts: float | None) -> str:
-    if ts is None:
-        return "NA"
-    return datetime.fromtimestamp(ts, tz=timezone.utc).astimezone().isoformat(timespec="seconds")
-
-
-def _latest_mtime_in_dir(dir_path) -> float | None:
-    try:
-        files = list(dir_path.glob("*"))
-    except Exception:
-        return None
-    if not files:
-        return None
-    try:
-        return max(f.stat().st_mtime for f in files)
-    except Exception:
-        return None
-
-
-def safe_bool(x, default: bool = False) -> bool:
-    try:
-        if pd.isna(x):
-            return default
-    except TypeError:
-        return default
-    return bool(x)
-
-
 def create_full_expression_matrix(list_of_paths: str) -> pd.DataFrame:
     dictionary_of_sample_IDs_and_series_of_expressions: dict[str, pd.Series] = {}
     for path in list_of_paths:
@@ -267,7 +239,7 @@ def provide_name_of_first_column_whose_name_matches_a_candidate(
     return None
 
 
-def standardize_columns(QC_data: pd.DataFrame, manifest: pd.DataFrame) -> dict[str, str]:
+def create_dictionary_of_names_of_standard_columns_and_sources(QC_data):
     dictionary_of_names_of_standard_columns_and_possible_sources = {
         "AlignmentRate": ["AlignmentRate", "PercentAligned", "pct_aligned"],
         "rRNARate": ["rRNA Rate", "rRNARate", "Pct_rRNA"],
@@ -279,13 +251,20 @@ def standardize_columns(QC_data: pd.DataFrame, manifest: pd.DataFrame) -> dict[s
         name_of_standard_column: provide_name_of_first_column_whose_name_matches_a_candidate(QC_data, list_of_candidates)
         for name_of_standard_column, list_of_candidates in dictionary_of_names_of_standard_columns_and_possible_sources.items()
     }
+    return dictionary_of_names_of_standard_columns_and_sources
+
+
+def standardize_columns(
+    QC_data: pd.DataFrame,
+    dictionary_of_names_of_standard_columns_and_sources: dict[str, str],
+    manifest: pd.DataFrame
+) -> dict[str, str]:
     for name_of_standard_column, name_of_source in dictionary_of_names_of_standard_columns_and_sources.items():
         if name_of_source is not None:
             manifest[name_of_standard_column] = pd.to_numeric(QC_data[name_of_source], errors = "raise")
         else:
             manifest[name_of_standard_column] = pd.NA
     print(f"Dictionary of names of standard columns and sources is\n{dictionary_of_names_of_standard_columns_and_sources}.")
-    return dictionary_of_names_of_standard_columns_and_sources
 
 
 def create_series_of_indicators_that_comparisons_are_true(series: pd.Series, direction: str, threshold: float) -> pd.Series:
@@ -364,10 +343,7 @@ def provide_reason_to_exclude_sample(row, dictionary_of_names_of_standard_column
     return " ".join(list_of_reasons)
 
 
-def create_expression_matrices():
-    list_of_paths = list(paths.gene_and_transcript_expression_results.glob("*.genes.results"))
-    full_expression_matrix = create_full_expression_matrix(list_of_paths)
-    QC_data = load_QC_data()
+def create_manifest(QC_data, dictionary_of_names_of_standard_columns_and_sources) -> pd.DataFrame:
     clinical_molecular_linkage_data = load_clinical_molecular_linkage_data()
     output_of_pipeline = load_output_of_pipeline()
     diagnosis_data = load_diagnosis_data()
@@ -378,7 +354,7 @@ def create_expression_matrices():
         diagnosis_data
     )
     manifest["QC_Pass"] = QC_data["QCCheck"].eq("Pass")
-    dictionary_of_names_of_standard_columns_and_sources = standardize_columns(QC_data, manifest)
+    standardize_columns(QC_data, dictionary_of_names_of_standard_columns_and_sources, manifest)
     list_of_names_of_columns_of_indicators_that_comparisons_are_true = add_to_manifest_columns_of_indicators_that_comparisons_are_true(
         manifest,
         dictionary_of_names_of_standard_columns_and_sources
@@ -438,7 +414,14 @@ def create_expression_matrices():
     manifest_to_save.to_csv(paths.manifest, index = False)
     print("Manifest was saved.")
     print(f"Manifest has shape {manifest_to_save.shape}.")
+    return manifest
 
+
+def create_QC_summary_of_CSVs(
+    QC_data: pd.DataFrame,
+    dictionary_of_names_of_standard_columns_and_sources: dict[str, str],
+    manifest: pd.DataFrame
+):
     list_of_dictionaries_of_information_for_first_table_of_QC_summary: list[dict] = []
     for name_of_standard_column, dictionary_of_directions_and_thresholds in dictionary_of_names_of_standard_columns_and_dictionaries_of_directions_and_thresholds.items():
         comparison = dictionary_of_directions_and_thresholds["direction"]
@@ -509,56 +492,102 @@ def create_expression_matrices():
         QC_summary_of_CSVs.write('\n')
         second_data_frame_of_information_of_QC_summary.to_csv(QC_summary_of_CSVs, index = False)
     print("QC summary of Comma Separated Values was saved.")
+    return list_of_dictionaries_of_information_for_second_table_of_QC_summary
 
-    # Markdown summary ("brief")
-    thresholds_lines = []
-    for metric, th in dictionary_of_names_of_standard_columns_and_dictionaries_of_directions_and_thresholds.items():
-        src = dictionary_of_names_of_standard_columns_and_sources.get(metric)
-        thresholds_lines.append(f"- **{metric}** ({'available' if src else 'not available'}; source: `{src if src else 'NA'}`): "
-                                f"{'≥' if th['direction']=='ge' else '≤'} {th['threshold']}")
 
-    # Data/vintage paths (with mod-times)
-    try:
-        qc_mtime = os.path.getmtime(paths.QC_data)
-    except Exception:
-        qc_mtime = None
-    try:
-        cml_mtime = os.path.getmtime(paths.clinical_molecular_linkage_data)
-    except Exception:
-        cml_mtime = None
-    try:
-        pairing_mtime = os.path.getmtime(paths.output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors)
-    except Exception:
-        pairing_mtime = None
-    try:
-        dx_mtime = os.path.getmtime(paths.diagnosis_data)
-    except Exception:
-        dx_mtime = None
-    expr_latest = _latest_mtime_in_dir(paths.gene_and_transcript_expression_results)
-
-    md = []
-    md.append("# QC Summary")
-    md.append("")
-    md.append(f"- Generated: {_fmt_ts(datetime.now().timestamp())}")
-    md.append(f"- Total SLIDs: **{number_of_samples}** | Included: **{number_of_samples_included_in_expression_matrix}** | Excluded: **{number_of_samples_excluded_from_expression_matrix}**")
-    md.append("")
-    md.append("## Thresholds & Availability")
-    md += thresholds_lines
-    md.append("")
-    md.append("## Data sources & vintage")
-    md.append(f"- QC data: `{paths.QC_data}` (mtime: {_fmt_ts(qc_mtime)})")
-    md.append(f"- Clinical–molecular linkage: `{paths.clinical_molecular_linkage_data}` (mtime: {_fmt_ts(cml_mtime)})")
-    md.append(f"- Pairing output: `{paths.output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors}` (mtime: {_fmt_ts(pairing_mtime)})")
-    md.append(f"- Diagnosis data: `{paths.diagnosis_data}` (mtime: {_fmt_ts(dx_mtime)})")
-    md.append(f"- Expression dir: `{paths.gene_and_transcript_expression_results}` (latest file mtime: {_fmt_ts(expr_latest)})")
-    md.append("")
-    md.append("## Exclusion breakdown (counts)")
+def create_QC_summary_in_Markdown(
+    dictionary_of_names_of_standard_columns_and_sources: dict[str, str],
+    list_of_dictionaries_of_information_for_second_table_of_QC_summary: list[dict],
+    manifest: pd.DataFrame
+):
+    list_of_contents_of_QC_summary_in_Markdown = []
+    list_of_contents_of_QC_summary_in_Markdown.append(
+        f'''# QC Summary\n
+This summary was generated at {format_timestamp(datetime.now().timestamp())}.
+'''
+    )
+    list_of_contents_describing_availability_and_comparisons = []
+    for name_of_standard_column, dictionary_of_directions_and_thresholds in dictionary_of_names_of_standard_columns_and_dictionaries_of_directions_and_thresholds.items():
+        name_of_source = dictionary_of_names_of_standard_columns_and_sources.get(name_of_standard_column)
+        standard_column_is_available = "available" if name_of_source else "not available"
+        comparison = "at least" if dictionary_of_directions_and_thresholds["direction"] == "ge" else "at most"
+        threshold = dictionary_of_directions_and_thresholds["threshold"]
+        list_of_contents_describing_availability_and_comparisons.append(
+            f'''Standard column `{name_of_standard_column}` is {standard_column_is_available}.\n
+Standard column `{name_of_standard_column}` has {"source " + name_of_source if name_of_source else "no source"}.\n
+Values in standard column {name_of_standard_column} are compared as {comparison} {threshold}.
+'''
+        )
+    list_of_contents_of_QC_summary_in_Markdown += list_of_contents_describing_availability_and_comparisons
+    number_of_samples = manifest.shape[0]
+    number_of_samples_included_in_expression_matrix = manifest["Included"].sum()
+    number_of_samples_excluded_from_expression_matrix = number_of_samples - number_of_samples_included_in_expression_matrix
+    list_of_contents_of_QC_summary_in_Markdown.append(
+        f'''The number of samples in the manifest is {number_of_samples}.\n
+The number of samples included in the expression matrix is {number_of_samples_included_in_expression_matrix}.\n
+The number of samples excluded from the expression matrix is {number_of_samples_excluded_from_expression_matrix}.
+'''
+    )
     for row in list_of_dictionaries_of_information_for_second_table_of_QC_summary:
-        if row["description"] not in ("number of samples", "number of samples included in expression matrix", "number of samples excluded from expression matrix"):
-            md.append(f"- {row['description']}: **{row['number of samples']}**")
+        if row["description"] not in (
+            "number of samples",
+            "number of samples included in expression matrix",
+            "number of samples excluded from expression matrix",
+            "Standard column AlignmentRate is not available.",
+            "Standard column Duplication is not available."
+        ):
+            description = row["description"].strip(".")
+            number_of_samples = row["number of samples"]
+            list_of_contents_of_QC_summary_in_Markdown.append(
+                f"{description} for {number_of_samples} samples.\n"
+            )
 
-    with open("qc_summary.md", "w", encoding="utf-8") as f:
-        f.write("\n".join(md))
+    qc_mtime = format_timestamp(os.path.getmtime(paths.QC_data))
+    cml_mtime = format_timestamp(os.path.getmtime(paths.clinical_molecular_linkage_data))
+    pairing_mtime = format_timestamp(os.path.getmtime(paths.output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors))
+    dx_mtime = format_timestamp(os.path.getmtime(paths.diagnosis_data))
+    expr_latest = format_timestamp(get_latest_timestamp_of_file(paths.gene_and_transcript_expression_results))
+    list_of_contents_of_QC_summary_in_Markdown.append(
+        f'''Gene and transcript expression results live at {paths.gene_and_transcript_expression_results} and were last modified at {expr_latest}.\n
+QC data lives at {paths.QC_data} and was last modified at {qc_mtime}.\n
+Clinical molecular linkage data lives at {paths.clinical_molecular_linkage_data} and was last modified at {cml_mtime}.\n
+Diagnosis data lives at {paths.diagnosis_data} and was last modified at {dx_mtime}.\n
+Output of pipeline for pairing clinical data and stages of tumors lives at {paths.output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors} and was last modified at {pairing_mtime}.'''
+    )
+    with open(paths.QC_summary_in_Markdown, 'w') as f:
+        f.write("\n".join(list_of_contents_of_QC_summary_in_Markdown))
+    print("QC summary in Markdown was saved.")
+
+
+def format_timestamp(timestamp: float) -> str:
+    return datetime.fromtimestamp(timestamp, tz = timezone.utc).astimezone().isoformat(timespec = "seconds")
+
+
+def get_latest_timestamp_of_file(path_to_directory):
+    list_of_paths_of_files = list(path_to_directory.glob("*"))
+    return max(path_of_file.stat().st_mtime for path_of_file in list_of_paths_of_files)
+
+
+def main():
+    paths.ensure_dependencies_for_creating_expression_matrices_exist()
+    list_of_paths = list(paths.gene_and_transcript_expression_results.glob("*.genes.results"))
+    full_expression_matrix = create_full_expression_matrix(list_of_paths)
+    QC_data = load_QC_data()
+    dictionary_of_names_of_standard_columns_and_sources = create_dictionary_of_names_of_standard_columns_and_sources(QC_data)
+    manifest = create_manifest(QC_data, dictionary_of_names_of_standard_columns_and_sources)
+    list_of_dictionaries_of_information_for_second_table_of_QC_summary = create_QC_summary_of_CSVs(
+        QC_data,
+        dictionary_of_names_of_standard_columns_and_sources,
+        manifest
+    )
+    create_QC_summary_in_Markdown(
+        dictionary_of_names_of_standard_columns_and_sources,
+        list_of_dictionaries_of_information_for_second_table_of_QC_summary,
+        manifest
+    )
+
+
+
 
     # Restrict Ensembl TPM to included SLIDs (this is the *pre low-expression* matrix)
     list_of_included_SLIDs = manifest.loc[manifest["Included"], "SLID"].dropna().unique().tolist()
@@ -616,5 +645,4 @@ def create_expression_matrices():
 
 
 if __name__ == "__main__":
-    paths.ensure_dependencies_for_creating_expression_matrices_exist()
-    create_expression_matrices()
+    main()
