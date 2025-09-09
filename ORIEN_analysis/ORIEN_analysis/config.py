@@ -24,9 +24,20 @@ class Paths():
         self.diagnosis_data = self.root / "../../Clinical_Data/24PRJ217UVA_NormalizedFiles/24PRJ217UVA_20241112_Diagnosis_V4.csv"
         self.output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors = self.root / "../pair_clinical_data_and_stages_of_tumors/output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors.csv"
         # outputs
+        self.full_expression_matrix = self.outputs_of_creating_expression_matrices / "full_expression_matrix.csv" # EM1
         self.manifest = self.outputs_of_creating_expression_matrices / "manifest.csv"
         self.QC_summary_in_Markdown = self.outputs_of_creating_expression_matrices / "QC_summary.md"
         self.QC_summary_of_CSVs = self.outputs_of_creating_expression_matrices / "QC_summary.csv"
+        self.expression_matrix_with_SLIDs_approved_by_manifest = self.outputs_of_creating_expression_matrices / "expression_matrix_with_SLIDs_approved_by_manifest.csv" # EM2
+        self.data_frame_of_Ensembl_IDs_and_HGNC_symbols = self.outputs_of_creating_expression_matrices / "data_frame_of_Ensembl_IDs_and_HGNC_symbols.csv"
+        self.expression_matrix_with_HGNC_symbols_and_SLIDs_approved_by_manifest = self.outputs_of_creating_expression_matrices / "expression_matrix_with_HGNC_symbols_and_SLIDs_approved_by_manifest.csv" # EM3
+        self.filtered_expression_matrix_with_SLIDs_approved_by_manifest = self.outputs_of_creating_expression_matrices / "filtered_expression_matrix_with_SLIDs_approved_by_manifest.csv" # EM4
+        self.filtered_expression_matrix_with_HGNC_symbols_and_SLIDs_approved_by_manifest = self.outputs_of_creating_expression_matrices / "filtered_expression_matrix_with_HGNC_symbols_and_SLIDs_approved_by_manifest.csv" # EM5
+        self.logged_filtered_expression_matrix_with_SLIDs_approved_by_manifest = self.outputs_of_creating_expression_matrices / "logged_filtered_expression_matrix_with_SLIDs_approved_by_manifest.csv" # EM6
+        self.logged_filtered_expression_matrix_with_HGNC_symbols_and_SLIDs_approved_by_manifest = self.outputs_of_creating_expression_matrices / "logged_filtered_expression_matrix_with_HGNC_symbols_and_SLIDs_approved_by_manifest.csv" # EM7
+        self.z_scored_filtered_expression_matrix_with_SLIDs_approved_by_manifest = self.outputs_of_creating_expression_matrices / "z_scored_logged_filtered_expression_matrix_with_SLIDs_approved_by_manifest.csv" # EM8
+        self.z_scored_filtered_expression_matrix_with_HGNC_symbols_and_SLIDs_approved_by_manifest = self.outputs_of_creating_expression_matrices / "z_scored_logged_filtered_expression_matrix_with_HGNC_symbols_and_SLIDs_approved_by_manifest.csv" # EM9
+
 
     def ensure_dependencies_for_creating_expression_matrices_exist(self):
         for path in [

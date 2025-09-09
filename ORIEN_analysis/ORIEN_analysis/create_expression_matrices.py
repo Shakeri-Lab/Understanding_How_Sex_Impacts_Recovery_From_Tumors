@@ -18,80 +18,6 @@ from functools import reduce
 import operator
 
 
-def _build_ensembl_to_hgnc_mapping(expr_files: list) -> pd.Series:
-    """
-    Build a Series mapping Ensembl ID (no version) -> HGNC symbol,
-    using the user's provided approach (first non-empty per gene_id).
-    """
-    if not expr_files:
-        raise Exception(f"No .genes.results files were found in {paths.gene_and_transcript_expression_results}.")
-    ser = (
-        pd.concat(
-            [pd.read_csv(f, sep="\t", usecols=["gene_id", "gene_symbol"]) for f in expr_files],
-            ignore_index=True
-        )
-        .assign(gene_id=lambda df: df["gene_id"].astype(str).str.replace(r"\.\d+$", "", regex=True))
-        .query("gene_id != ''")
-        .query("gene_symbol != ''")
-        .drop_duplicates("gene_id")
-        .set_index("gene_id")["gene_symbol"]
-    )
-    return ser
-
-
-def _collapse_to_hgnc_median(tpm_ensembl: pd.DataFrame, ens_to_hgnc: pd.Series) -> pd.DataFrame:
-    """
-    Align Ensembl->HGNC mapping to TPM rows (Ensembl IDs without version),
-    keep only mapped rows, attach HGNC, and collapse duplicates by per-sample median.
-    """
-    # Align mapping to the TPM row index (labels = Ensembl IDs)
-    hgnc_aligned = ens_to_hgnc.reindex(tpm_ensembl.index)
-
-    # Keep rows with a non-null HGNC symbol
-    keep_mask = hgnc_aligned.notna()
-    dropped = int((~keep_mask).sum())
-    if dropped > 0:
-        print(f"Dropping {dropped} Ensembl IDs without HGNC mapping.")
-
-    # Subset TPM by the aligned boolean mask (indexes now match)
-    tpm_mapped = tpm_ensembl.loc[keep_mask].copy()
-
-    # Attach HGNC as a column (same order as tpm_mapped rows)
-    tpm_mapped["HGNC"] = hgnc_aligned.loc[keep_mask].astype(str).values
-
-    # Collapse Ensembl duplicates to HGNC by per-sample median
-    tpm_hgnc = tpm_mapped.groupby("HGNC", sort=False).median(numeric_only=True)
-    return tpm_hgnc
-
-
-def _low_expression_filter(tpm_df: pd.DataFrame, threshold: float = 1.0, min_prop: float = 0.20) -> tuple[pd.DataFrame, pd.Series]:
-    """
-    Keep genes with TPM > threshold in at least ceil(min_prop * n_samples) samples.
-    Returns (filtered_df, mask_used).
-    """
-    n_samples = tpm_df.shape[1]
-    if n_samples == 0:
-        return tpm_df.copy(), pd.Series(False, index=tpm_df.index)
-    min_count = max(1, math.ceil(min_prop * n_samples))
-    mask = (tpm_df > threshold).sum(axis=1) >= min_count
-    return tpm_df.loc[mask], mask
-
-
-def _log2_tpm_plus1(df: pd.DataFrame) -> pd.DataFrame:
-    return np.log2(df.astype(float) + 1.0)
-
-
-def _rowwise_zscore(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Gene-wise z-score across samples (rows standardized).
-    Uses population SD (ddof=0). Constant rows become 0.
-    """
-    means = df.mean(axis=1)
-    stds = df.std(axis=1, ddof=0).replace(0.0, np.nan)
-    z = df.sub(means, axis=0).div(stds, axis=0).fillna(0.0)
-    return z
-
-
 def create_full_expression_matrix(list_of_paths: str) -> pd.DataFrame:
     dictionary_of_sample_IDs_and_series_of_expressions: dict[str, pd.Series] = {}
     for path in list_of_paths:
@@ -568,80 +494,177 @@ def get_latest_timestamp_of_file(path_to_directory):
     return max(path_of_file.stat().st_mtime for path_of_file in list_of_paths_of_files)
 
 
+def create_series_of_Ensembl_IDs_and_HGNC_symbols(list_of_paths: list) -> pd.Series:
+    series_of_Ensembl_IDs_and_HGNC_symbols = (
+        pd.concat(
+            [
+                pd.read_csv(
+                    file_of_gene_results,
+                    sep = '\t',
+                    usecols = ["gene_id", "gene_symbol"],
+                    dtype = {
+                        "gene_id": str,
+                        "gene_symbol": str
+                    }
+                )
+                for file_of_gene_results in list_of_paths
+            ]
+        )
+        .assign(
+            gene_id = lambda df: df["gene_id"].astype(str).str.replace(r"\.\d+$", "", regex = True)
+        )
+        .drop_duplicates("gene_id")
+        .set_index("gene_id")
+        ["gene_symbol"]
+    )
+    return series_of_Ensembl_IDs_and_HGNC_symbols
+
+
+def create_expression_matrix_with_HGNC_symbols(
+    expression_matrix: pd.DataFrame,
+    series_of_Ensembl_IDs_and_HGNC_symbols: pd.Series
+) -> pd.DataFrame:
+    expression_matrix_with_HGNC_symbols = expression_matrix.copy()
+    expression_matrix_with_HGNC_symbols["HGNC_symbol"] = series_of_Ensembl_IDs_and_HGNC_symbols
+    expression_matrix_with_HGNC_symbols = (
+        expression_matrix_with_HGNC_symbols
+        .groupby(
+            "HGNC_symbol",
+            sort = False
+        )
+        .median()
+    )
+    return expression_matrix_with_HGNC_symbols
+
+
+def apply_filter(expression_matrix: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series]:
+    """
+    Keep genes with TPM > threshold in at least ceil(min_prop * n_samples) samples.
+    Returns (filtered_df, mask_used).
+    """
+    proportion_of_samples = 0.2
+    threshold = 1.0
+    number_of_samples = expression_matrix.shape[1]
+    number_of_samples_that_must_have_expressions_greater_than_threshold = math.ceil(proportion_of_samples * number_of_samples)
+    series_of_indicators_that_more_than_the_required_number_of_samples_have_expressions_greater_than_threshold = (
+        (expression_matrix > threshold).sum(axis = 1) >= number_of_samples_that_must_have_expressions_greater_than_threshold
+    )
+    filtered_expression_matrix = expression_matrix.loc[
+        series_of_indicators_that_more_than_the_required_number_of_samples_have_expressions_greater_than_threshold
+    ]
+    print(
+        f"Expression matrix after applying filter has shape {filtered_expression_matrix.shape}.\n"
+        f"{series_of_indicators_that_more_than_the_required_number_of_samples_have_expressions_greater_than_threshold.sum()} out of " +
+        f"{len(series_of_indicators_that_more_than_the_required_number_of_samples_have_expressions_greater_than_threshold)} rows were kept."
+    )
+    return filtered_expression_matrix
+
+
+def apply_log(expression_matrix: pd.DataFrame) -> pd.DataFrame:
+    return np.log2(expression_matrix + 1.0)
+
+
+def z_score(expression_matrix: pd.DataFrame) -> pd.DataFrame:
+    series_of_means = expression_matrix.mean(axis = 1)
+    series_of_standard_deviations = expression_matrix.std(axis = 1)
+    z_score = expression_matrix.sub(series_of_means, axis = 0).div(series_of_standard_deviations, axis = 0)
+    return z_score
+
+
 def main():
     paths.ensure_dependencies_for_creating_expression_matrices_exist()
     list_of_paths = list(paths.gene_and_transcript_expression_results.glob("*.genes.results"))
     full_expression_matrix = create_full_expression_matrix(list_of_paths)
+    full_expression_matrix.to_csv(paths.full_expression_matrix)
+
     QC_data = load_QC_data()
     dictionary_of_names_of_standard_columns_and_sources = create_dictionary_of_names_of_standard_columns_and_sources(QC_data)
     manifest = create_manifest(QC_data, dictionary_of_names_of_standard_columns_and_sources)
+
     list_of_dictionaries_of_information_for_second_table_of_QC_summary = create_QC_summary_of_CSVs(
         QC_data,
         dictionary_of_names_of_standard_columns_and_sources,
         manifest
     )
+
     create_QC_summary_in_Markdown(
         dictionary_of_names_of_standard_columns_and_sources,
         list_of_dictionaries_of_information_for_second_table_of_QC_summary,
         manifest
     )
 
+    list_of_included_SLIDs = manifest.loc[manifest["Included"], "SLID"].tolist()
+    expression_matrix_with_SLIDs_approved_by_manifest = full_expression_matrix.loc[
+        :,
+        [name_of_column for name_of_column in full_expression_matrix.columns if name_of_column in list_of_included_SLIDs]
+    ]
+    expression_matrix_with_SLIDs_approved_by_manifest.to_csv(paths.expression_matrix_with_SLIDs_approved_by_manifest)
+    print(
+        f'''Expression matrix with SLIDs approved by manifest was saved.
+Expression matrix with SLIDs approved by manifest has shape {expression_matrix_with_SLIDs_approved_by_manifest.shape}.'''
+    )
 
+    series_of_Ensembl_IDs_and_HGNC_symbols = create_series_of_Ensembl_IDs_and_HGNC_symbols(list_of_paths)
+    series_of_Ensembl_IDs_and_HGNC_symbols.to_csv(paths.data_frame_of_Ensembl_IDs_and_HGNC_symbols)
+    print("Data frame of Ensembl IDs and HGNC symbols was saved.")
 
+    expression_matrix_with_HGNC_symbols_and_SLIDs_approved_by_manifest = create_expression_matrix_with_HGNC_symbols(
+        expression_matrix_with_SLIDs_approved_by_manifest,
+        series_of_Ensembl_IDs_and_HGNC_symbols
+    )
+    expression_matrix_with_HGNC_symbols_and_SLIDs_approved_by_manifest.to_csv(
+        paths.expression_matrix_with_HGNC_symbols_and_SLIDs_approved_by_manifest
+    )
+    print(
+        f'''Expression matrix with HGNC symbols and SLIDs approved by manifest was saved.
+Expression matrix with HGNC symbols and SLIDs approved by manifest has shape {expression_matrix_with_HGNC_symbols_and_SLIDs_approved_by_manifest.shape}.'''
+    )
 
-    # Restrict Ensembl TPM to included SLIDs (this is the *pre low-expression* matrix)
-    list_of_included_SLIDs = manifest.loc[manifest["Included"], "SLID"].dropna().unique().tolist()
-    tpm_ensembl_pre = full_expression_matrix.loc[:, [c for c in full_expression_matrix.columns if c in list_of_included_SLIDs]].copy()
-    tpm_ensembl_pre.to_csv("tpm_ensembl_pre_filter.csv")
-    print(f"TPM (Ensembl) pre-filter matrix has shape {tpm_ensembl_pre.shape}.")
-    # Keep old name for backward-compatibility
-    tpm_ensembl_pre.to_csv("filtered_expression_matrix.csv")
+    filtered_expression_matrix_with_SLIDs_approved_by_manifest = apply_filter(expression_matrix_with_SLIDs_approved_by_manifest)
+    filtered_expression_matrix_with_SLIDs_approved_by_manifest.to_csv(
+        paths.filtered_expression_matrix_with_SLIDs_approved_by_manifest
+    )
+    print("Filtered expression matrix with SLIDs approved by manifest was saved.")
 
-    # === Ensembl→HGNC mapping & HGNC collapse (median) ======================
-    ens_to_hgnc = _build_ensembl_to_hgnc_mapping(list_of_paths)
-    # Save mapping as both the configured series path and a two-column table
-    try:
-        ens_to_hgnc.to_csv("data_frame_of_Ensembl_IDs_and_HGNC_symbols.csv")
-        print(f"Saved Ensembl→HGNC series to \"data_frame_of_Ensembl_IDs_and_HGNC_symbols.csv\".")
-    except Exception as e:
-        print(f"Warning: could not write mapping series to data_frame_of_Ensembl_IDs_and_HGNC_symbols.csv ({e}).")
-    mapping_df = ens_to_hgnc.rename("HGNC").rename_axis("EnsemblID").reset_index()
-    mapping_df.to_csv("ensembl_to_hgnc_mapping.csv", index=False)
+    filtered_expression_matrix_with_HGNC_symbols_and_SLIDs_approved_by_manifest = apply_filter(
+        expression_matrix_with_HGNC_symbols_and_SLIDs_approved_by_manifest
+    )
+    filtered_expression_matrix_with_HGNC_symbols_and_SLIDs_approved_by_manifest.to_csv(
+        paths.filtered_expression_matrix_with_HGNC_symbols_and_SLIDs_approved_by_manifest
+    )
+    print("Filtered expression matrix with HGNC symbols and SLIDs approved by manifest was saved.")
 
-    tpm_hgnc_pre = _collapse_to_hgnc_median(tpm_ensembl_pre, ens_to_hgnc)
-    tpm_hgnc_pre.to_csv("tpm_hgnc_pre_filter.csv")
-    print(f"TPM (HGNC-collapsed, median) pre-filter matrix has shape {tpm_hgnc_pre.shape}.")
+    logged_filtered_expression_matrix_with_SLIDs_approved_by_manifest = apply_log(
+        filtered_expression_matrix_with_SLIDs_approved_by_manifest
+    )
+    logged_filtered_expression_matrix_with_SLIDs_approved_by_manifest.to_csv(
+        paths.logged_filtered_expression_matrix_with_SLIDs_approved_by_manifest
+    )
+    print("Logged filtered expression matrix with SLIDs approved by manifest was saved.")
 
-    # === Low-expression filtering: TPM > 1 in ≥ 20% samples =================
-    tpm_ensembl_post, mask_ens = _low_expression_filter(tpm_ensembl_pre, threshold=1.0, min_prop=0.20)
-    tpm_ensembl_post.to_csv("tpm_ensembl_post_filter.csv")
-    print(f"TPM (Ensembl) post-filter (TPM>1 in ≥20%) has shape {tpm_ensembl_post.shape} "
-          f"(kept {mask_ens.sum()} / {mask_ens.size} genes).")
+    logged_filtered_expression_matrix_with_HGNC_symbols_and_SLIDs_approved_by_manifest = apply_log(
+        filtered_expression_matrix_with_HGNC_symbols_and_SLIDs_approved_by_manifest
+    )
+    logged_filtered_expression_matrix_with_HGNC_symbols_and_SLIDs_approved_by_manifest.to_csv(
+        paths.logged_filtered_expression_matrix_with_HGNC_symbols_and_SLIDs_approved_by_manifest
+    )
+    print("Logged filtered expression matrix with HGNC symbols and SLIDs approved by manifest was saved.")
 
-    tpm_hgnc_post, mask_hgnc = _low_expression_filter(tpm_hgnc_pre, threshold=1.0, min_prop=0.20)
-    tpm_hgnc_post.to_csv("tpm_hgnc_post_filter.csv")
-    print(f"TPM (HGNC) post-filter (TPM>1 in ≥20%) has shape {tpm_hgnc_post.shape} "
-          f"(kept {mask_hgnc.sum()} / {mask_hgnc.size} genes).")
+    z_scored_filtered_expression_matrix_with_SLIDs_approved_by_manifest = z_score(
+        filtered_expression_matrix_with_SLIDs_approved_by_manifest
+    )
+    z_scored_filtered_expression_matrix_with_SLIDs_approved_by_manifest.to_csv(
+        paths.z_scored_filtered_expression_matrix_with_SLIDs_approved_by_manifest
+    )
+    print("z scored filtered expression matrix with SLIDs approved by manifest was saved.")
 
-    # === Transforms: log2(TPM+1) and gene-wise z-scores =====================
-    # (Save for both Ensembl and HGNC post-filter; HGNC versions are typically used for PCA/signatures)
-    log2_ens = _log2_tpm_plus1(tpm_ensembl_post)
-    log2_ens.to_csv("log2_tpm_plus1_ensembl_post_filter.csv")
-    z_ens = _rowwise_zscore(log2_ens)  # z-score usually applied after log
-    z_ens.to_csv("zscore_ensembl_post_filter.csv")
-
-    log2_hgnc = _log2_tpm_plus1(tpm_hgnc_post)
-    log2_hgnc.to_csv("log2_tpm_plus1_hgnc_post_filter.csv")
-    z_hgnc = _rowwise_zscore(log2_hgnc)
-    z_hgnc.to_csv("zscore_hgnc_post_filter.csv")
-
-    print("CSV and Markdown QC summaries were written.")
-    print("Saved:")
-    print(" - tpm_ensembl_pre_filter.csv / tpm_ensembl_post_filter.csv")
-    print(" - tpm_hgnc_pre_filter.csv / tpm_hgnc_post_filter.csv")
-    print(" - log2_tpm_plus1_ensembl_post_filter.csv / zscore_ensembl_post_filter.csv")
-    print(" - log2_tpm_plus1_hgnc_post_filter.csv / zscore_hgnc_post_filter.csv")
-    print(" - ensembl_to_hgnc_mapping.csv (and mapping series to paths.series_of_Ensembl_IDs_and_HGNC_symbols)")
+    z_scored_filtered_expression_matrix_with_HGNC_symbols_and_SLIDs_approved_by_manifest = z_score(
+        filtered_expression_matrix_with_HGNC_symbols_and_SLIDs_approved_by_manifest
+    )
+    z_scored_filtered_expression_matrix_with_HGNC_symbols_and_SLIDs_approved_by_manifest.to_csv(
+        paths.z_scored_filtered_expression_matrix_with_HGNC_symbols_and_SLIDs_approved_by_manifest
+    )
+    print("z scored filtered expression matrix with HGNC symbols and SLIDs approved by manifest was saved.")
 
 
 if __name__ == "__main__":
