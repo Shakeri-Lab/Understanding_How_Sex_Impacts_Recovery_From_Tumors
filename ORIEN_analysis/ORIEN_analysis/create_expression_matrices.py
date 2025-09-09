@@ -18,7 +18,7 @@ from functools import reduce
 import operator
 
 
-def create_full_expression_matrix(list_of_paths: str) -> pd.DataFrame:
+def create_full_expression_matrix(list_of_paths: list) -> pd.DataFrame:
     dictionary_of_sample_IDs_and_series_of_expressions: dict[str, pd.Series] = {}
     for path in list_of_paths:
         sample_ID = os.path.basename(path).removesuffix(".genes.results")
@@ -180,16 +180,27 @@ def create_dictionary_of_names_of_standard_columns_and_sources(QC_data):
     return dictionary_of_names_of_standard_columns_and_sources
 
 
+def ensure_rates_are_proportions(series: pd.Series) -> pd.Series:
+    series = pd.to_numeric(series, errors = "raise")
+    if series.max() > 1.0:
+        series = series / 100.0
+    return series
+
+
 def standardize_columns(
     QC_data: pd.DataFrame,
     dictionary_of_names_of_standard_columns_and_sources: dict[str, str],
     manifest: pd.DataFrame
-) -> dict[str, str]:
+):
     for name_of_standard_column, name_of_source in dictionary_of_names_of_standard_columns_and_sources.items():
-        if name_of_source is not None:
-            manifest[name_of_standard_column] = pd.to_numeric(QC_data[name_of_source], errors = "raise")
-        else:
+        if name_of_source is None:
             manifest[name_of_standard_column] = pd.NA
+        else:
+            source = QC_data[name_of_source]
+            if name_of_standard_column in {"MappedReads"}:
+                manifest[name_of_standard_column] = pd.to_numeric(source, errors = "raise")
+            else:
+                manifest[name_of_standard_column] = ensure_rates_are_proportions(source)
     print(f"Dictionary of names of standard columns and sources is\n{dictionary_of_names_of_standard_columns_and_sources}.")
 
 
@@ -240,9 +251,9 @@ def add_to_manifest_columns_of_indicators_that_values_are_outliers(
     dictionary_of_names_of_standard_columns_and_sources: dict[str, str]
 ):
     list_of_names_of_columns_of_indicators_that_values_are_outliers = []
-    for name_of_standard_column, dictionary_of_directions_and_thresholds in dictionary_of_names_of_standard_columns_and_dictionaries_of_directions_and_thresholds.items():
+    for name_of_standard_column in dictionary_of_names_of_standard_columns_and_dictionaries_of_directions_and_thresholds.keys():
         if dictionary_of_names_of_standard_columns_and_sources.get(name_of_standard_column) is None:
-            manifest[f"{name_of_standard_column}_is_outlier"] = False
+            manifest[f"{name_of_standard_column}_is_outlier"] = pd.NA
         else:
             manifest[f"{name_of_standard_column}_is_outlier"] = create_series_of_indicators_that_values_are_outliers(
                 manifest[name_of_standard_column]
@@ -259,7 +270,8 @@ def provide_reason_to_exclude_sample(row, dictionary_of_names_of_standard_column
     if number_of_indicators_that_comparisons_are_false >= 2:
         list_of_reasons.append(f"Number of indicators that comparisons are false is {number_of_indicators_that_comparisons_are_false}.")
     for name_of_standard_column in ["AlignmentRate", "Duplication", "ExonicRate", "MappedReads", "rRNARate"]:
-        if row.get(f"{name_of_standard_column}_is_outlier"):
+        value_is_outlier = False if (row.get(f"{name_of_standard_column}_is_outlier") is pd.NA) else row.get(f"{name_of_standard_column}_is_outlier")
+        if value_is_outlier:
             list_of_reasons.append(f"{name_of_standard_column} is outlier.")
     if not row.get("sample_has_assigned_primary_site"):
         list_of_reasons.append("Sample does not have assigned primary site.")
@@ -353,20 +365,22 @@ def create_QC_summary_of_CSVs(
         comparison = dictionary_of_directions_and_thresholds["direction"]
         threshold = dictionary_of_directions_and_thresholds["threshold"]
         name_of_source = dictionary_of_names_of_standard_columns_and_sources.get(name_of_standard_column)
-        standard_column_is_available = name_of_source is not None and QC_data[name_of_standard_column].notna().any()
+        standard_column_is_available = name_of_source is not None and manifest[name_of_standard_column].notna().any()
         minimum_value = None
         median_value = None
         maximum_value = None
-        number_of_values = 0
-        number_of_samples_for_which_comparisons_are_true = 0
-        number_of_samples_for_which_comparisons_are_false = 0
-        number_of_values_that_are_outliers = 0
+        number_of_values = None
+        number_of_non_NA_values = None
+        number_of_samples_for_which_comparisons_are_true = None
+        number_of_samples_for_which_comparisons_are_false = None
+        number_of_values_that_are_outliers = None
         if standard_column_is_available:
             series_of_values = manifest[name_of_standard_column]
             minimum_value = series_of_values.min()
             median_value = series_of_values.median()
             maximum_value = series_of_values.max()
             number_of_values = series_of_values.size
+            number_of_non_NA_values = series_of_values.notna().sum()
             series_of_indicators_that_comparisons_are_true = manifest[f"comparison_is_true_for_{name_of_standard_column}"]
             number_of_samples_for_which_comparisons_are_true = (series_of_indicators_that_comparisons_are_true == True).sum()
             number_of_samples_for_which_comparisons_are_false = (series_of_indicators_that_comparisons_are_true == False).sum()
@@ -378,10 +392,11 @@ def create_QC_summary_of_CSVs(
                 "threshold": threshold,
                 "name of source": name_of_source if name_of_source is not None else "not available",
                 "availability": "available" if standard_column_is_available else "not available",
-                "Min": minimum_value,
-                "Median": median_value,
-                "Max": maximum_value,
+                "minimum": minimum_value,
+                "median": median_value,
+                "maximum": maximum_value,
                 "number of values": number_of_values,
+                "number of non NA values": number_of_non_NA_values,
                 "number of samples for which comparisons are true": number_of_samples_for_which_comparisons_are_true,
                 "number of samples_for_which_comparisons are false": number_of_samples_for_which_comparisons_are_false,
                 "number of values that are outliers": number_of_values_that_are_outliers
@@ -537,11 +552,7 @@ def create_expression_matrix_with_HGNC_symbols(
     return expression_matrix_with_HGNC_symbols
 
 
-def apply_filter(expression_matrix: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series]:
-    """
-    Keep genes with TPM > threshold in at least ceil(min_prop * n_samples) samples.
-    Returns (filtered_df, mask_used).
-    """
+def apply_filter(expression_matrix: pd.DataFrame) -> pd.DataFrame:
     proportion_of_samples = 0.2
     threshold = 1.0
     number_of_samples = expression_matrix.shape[1]
