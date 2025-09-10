@@ -1,10 +1,42 @@
 '''
 create_expression_matrices.py
 
-We build an expression matrix with 60,609 Ensembl IDs and 333 sample IDs.
-We filter the expression matrix to columns with sample IDs
-in a data frame of filtered QC data and IDs of cutaneous specimens
-output by our pipeline for pairing clinical data and stages of tumors.
+
+Creating expression matrices earlier used data from all gene and transcript results.
+Different genes and samples were included for creating an enrichment matrix, CD8 analysis, and CD8 groups analysis.
+
+We created a full expression matrix (EM1).
+
+We created a manifest using gene and transcript results, QC data, clinical molecular linkage data, diagnosis data, and the output of our pipeline for pairing clinical data and stages of tumors.
+The manifest may be used to include in or exclude samples from expression matrices.
+We created expression matrices approved by the manifest / restricted to cutaneous samples specified by the output of our pipeline that pass QC.
+
+We created a QC summary of Comma Separated Values.
+
+We created a QC summary in Markdown.
+
+We created an expression matrix with SLIDs approved by the manifest and Ensembl IDs (EM2).
+
+We created a data frame of Ensembl IDs and HGNC symbols.
+
+We created an expression matrix with SLIDs approved by the manifest and HGNC symbols (EM3).
+
+We created an expression matrix with SLIDs approved by the manifest, Ensembl IDs, and filtering to rows where at least 20 percent of samples had expressions greater than 1 (EM4).
+
+We created an expression matrix with SLIDs approved by the manifest, HGNC symbols, and filtering to rows where at least 20 percent of samples had expressions greater than 1 (EM5).
+
+We created an expression matrix with SLIDs approved by the manifest, Ensembl IDs, filtering, and applying a log (EM6).
+
+We created an expression matrix with SLIDs approved by the manifest, HGNC symbols, filtering, and applying a log (EM7).
+
+We created an expression matrix with SLIDs approved by the manifest, Ensembl IDs, filtering, and z scoring (EM8).
+
+We created an expression matrix with SLIDs approved by the manifest, Ensembl IDs, filtering, and z scoring (EM9).
+
+TODO: Implement batch handling.
+TODO: Create a patient level manifest.
+TODO: Use EM5 to create an enrichment matrix.
+TODO: Use either EM6 or EM7 to conduct CD8 analysis and CD8 groups analysis.
 '''
 
 
