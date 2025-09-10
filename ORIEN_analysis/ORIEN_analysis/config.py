@@ -35,8 +35,8 @@ class Paths():
         self.filtered_expression_matrix_with_HGNC_symbols_and_SLIDs_approved_by_manifest = self.outputs_of_creating_expression_matrices / "filtered_expression_matrix_with_HGNC_symbols_and_SLIDs_approved_by_manifest.csv" # EM5
         self.logged_filtered_expression_matrix_with_SLIDs_approved_by_manifest = self.outputs_of_creating_expression_matrices / "logged_filtered_expression_matrix_with_SLIDs_approved_by_manifest.csv" # EM6
         self.logged_filtered_expression_matrix_with_HGNC_symbols_and_SLIDs_approved_by_manifest = self.outputs_of_creating_expression_matrices / "logged_filtered_expression_matrix_with_HGNC_symbols_and_SLIDs_approved_by_manifest.csv" # EM7
-        self.z_scored_filtered_expression_matrix_with_SLIDs_approved_by_manifest = self.outputs_of_creating_expression_matrices / "z_scored_logged_filtered_expression_matrix_with_SLIDs_approved_by_manifest.csv" # EM8
-        self.z_scored_filtered_expression_matrix_with_HGNC_symbols_and_SLIDs_approved_by_manifest = self.outputs_of_creating_expression_matrices / "z_scored_logged_filtered_expression_matrix_with_HGNC_symbols_and_SLIDs_approved_by_manifest.csv" # EM9
+        self.z_scored_filtered_expression_matrix_with_SLIDs_approved_by_manifest = self.outputs_of_creating_expression_matrices / "z_scored_filtered_expression_matrix_with_SLIDs_approved_by_manifest.csv" # EM8
+        self.z_scored_filtered_expression_matrix_with_HGNC_symbols_and_SLIDs_approved_by_manifest = self.outputs_of_creating_expression_matrices / "z_scored_filtered_expression_matrix_with_HGNC_symbols_and_SLIDs_approved_by_manifest.csv" # EM9
 
 
     def ensure_dependencies_for_creating_expression_matrices_exist(self):
