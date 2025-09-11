@@ -21,7 +21,9 @@ class Paths():
         # -----
         # <no files>
         # outputs
-        # <no files>
+        self.enrichment_data_frame_per_xCell = self.outputs_of_running_xCell_analysis / "enrichment_data_frame_per_xCell.csv"
+        self.enrichment_data_frame_per_xCell2_and_Pan_Cancer = self.outputs_of_running_xCell_analysis / "enrichment_data_frame_per_xCell2_and_Pan_Cancer.csv"
+        self.focused_enrichment_data_frame_per_xCell = self.outputs_of_running_xCell_analysis / "focused_enrichment_data_frame_per_xCell.csv"
 
         # ORIEN_analysis/create_expression_matrices.py
         # dependencies
