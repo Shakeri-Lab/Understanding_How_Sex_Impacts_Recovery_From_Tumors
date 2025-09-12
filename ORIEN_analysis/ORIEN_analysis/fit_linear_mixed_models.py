@@ -1,9 +1,9 @@
 import argparse
-from ORIEN_analysis.config import paths
+from statsmodels.stats.multitest import multipletests
 import numpy as np
+from ORIEN_analysis.config import paths
 import pandas as pd
 import statsmodels.formula.api as smf
-from statsmodels.stats.multitest import multipletests
 
 
 def numericize_age(age) -> float:
@@ -109,10 +109,56 @@ def create_data_frame_of_enrichment_scores_clinical_data_and_QC_data(path_of_exp
     return data_frame_of_enrichment_scores_and_clinical_and_QC_data, list_of_cell_types
 
 
+def matrix_condition_number(exog: np.ndarray, drop_constant: bool = True) -> float:
+    """
+    Compute the 2-norm (spectral-norm) condition number of the fixed-effects
+    design matrix.
+
+    Parameters
+    ----------
+    exog : array-like (n_obs × n_params)
+        The design matrix returned by `model.exog` in statsmodels.
+    drop_constant : bool, default True
+        If True, columns with zero variance (e.g. the intercept) are removed
+        before computing the condition number—otherwise an all-ones column
+        makes the result explode.
+
+    Returns
+    -------
+    float
+        κ(X) = σ_max / σ_min  (ratio of largest to smallest non-zero singular
+        values).  Returns ``np.inf`` if the matrix is rank-deficient, and
+        ``np.nan`` if no columns remain after dropping constants.
+    """
+    X = np.asarray(exog, dtype=float)
+
+    if drop_constant:
+        # keep only columns whose sample variance is non-zero
+        keep = X.std(axis=0) > 0
+        X = X[:, keep]
+        if X.size == 0:
+            return np.nan                          # all columns were constant
+
+    # handle rank deficiency / numerical underflow robustly
+    try:
+        # full_matrices=False gives economy-size SVD (faster, less memory)
+        _, sing_vals, _ = np.linalg.svd(X, full_matrices=False)
+    except np.linalg.LinAlgError:
+        return np.inf                              # SVD failed ⇒ treat as ill-conditioned
+
+    # discard tiny singular values below numeric tolerance
+    tol = np.finfo(float).eps * max(X.shape) * sing_vals[0]
+    sing_vals = sing_vals[sing_vals > tol]
+    if sing_vals.size == 0:
+        return np.inf                              # effectively rank-deficient
+
+    return float(sing_vals[0] / sing_vals[-1])
+
+
 def fit_linear_mixed_models(
     data_frame_of_enrichment_scores_clinical_data_and_QC_data: pd.DataFrame,
     list_of_cell_types: list[str],
-    diagnose: bool
+    models_should_be_diagnosed: bool
 ) -> pd.DataFrame:    
     list_of_results = []
     for cell_type in list_of_cell_types:
@@ -130,37 +176,35 @@ def fit_linear_mixed_models(
         ].rename(
             columns = {cell_type: "Score"}
         )
-        data_frame["Score"] = pd.to_numeric(data_frame["Score"], errors = "raise")
-        data_frame["AgeAtClinicalRecordCreation"] = data_frame["AgeAtClinicalRecordCreation"].apply(numericize_age)
-        data_frame["SequencingDepth"] = pd.to_numeric(data_frame["SequencingDepth"], errors = "raise")
         data_frame["indicator_of_sex"] = (data_frame["Sex"] == "Male").astype(int)
+        data_frame["AgeAtClinicalRecordCreation"] = data_frame["AgeAtClinicalRecordCreation"].apply(numericize_age)
 
-        if diagnose:
+        if models_should_be_diagnosed:
             # 1. Within-patient replication
-            replication_counts = data_frame.groupby("PATIENT_ID").size()
+            replication_counts = data_frame.groupby("ORIENAvatarKey").size()
             frac_singletons = (replication_counts <= 1).mean()
-            logger.info(
+            print(
                 "Diagnostic - %s: %.1f%% of patients contribute only one sample.",
                 cell_type, 100 * frac_singletons
             )
 
             # 3. Spread of the response
             score_std = data_frame["Score"].std(ddof = 0)
-            logger.info("Diagnostic - %s: response std = %.4f", cell_type, score_std)
+            print("Diagnostic - %s: response std = %.4f", cell_type, score_std)
 
             # 4. Categorical level sparsity
             sparsity_msgs = []
-            for cat in ["STAGE_AT_ICB", "NexusBatch"]:
+            for cat in ["stage_at_start_of_ICB_therapy", "NexusBatch"]:
                 lvl_counts = data_frame[cat].value_counts()
                 rare_lvls  = lvl_counts[lvl_counts < 3]
                 if not rare_lvls.empty:
                     sparsity_msgs.append(f"{cat}: {len(rare_lvls)} sparse levels")
             if sparsity_msgs:
-                logger.info("Diagnostic - %s: %s", cell_type, "; ".join(sparsity_msgs))
+                print("Diagnostic - %s: %s", cell_type, "; ".join(sparsity_msgs))
 
             # 6. Scaling of numeric predictors
             scale_summary = data_frame[["AgeAtClinicalRecordCreation", "SequencingDepth"]].describe().loc[["mean", "std"]]
-            logger.info("Diagnostic - %s: numeric predictor scale\n%s", cell_type, scale_summary.to_string())
+            print("Diagnostic - %s: numeric predictor scale\n%s", cell_type, scale_summary.to_string())
         
         formula = (
             f"Score ~ " +
@@ -178,33 +222,32 @@ def fit_linear_mixed_models(
         )
         mixed_linear_model_results_wrapper = mixed_linear_model.fit(reml = False)
         
-        if diagnose:
+        if models_should_be_diagnosed:
             # 2. Random-effect variance & boundary fit indicator
             try:
                 rand_var = mixed_linear_model_results_wrapper.cov_re.iloc[0, 0]
             except Exception:
                 rand_var = np.nan
-            logger.info("Diagnostic - %s: random-effect variance = %.6g", cell_type, rand_var)
+            print("Diagnostic - %s: random-effect variance = %.6g", cell_type, rand_var)
 
             # 5. Design-matrix condition number (fixed effects only)
             cond_num = matrix_condition_number(mixed_linear_model.exog)
-            logger.info("Diagnostic - %s: design-matrix condition number = %.2e", cell_type, cond_num)
+            print("Diagnostic - %s: design-matrix condition number = %.2e", cell_type, cond_num)
 
             # 7. AIC comparison with OLS (no random intercept)
             try:
                 ols_res = smf.ols(formula, data_frame).fit()
-                logger.info(
+                print(
                     "Diagnostic - %s: AIC (mixed) = %.1f ; AIC (OLS) = %.1f",
                     cell_type, mixed_linear_model_results_wrapper.aic, ols_res.aic
                 )
             except Exception as exc:
-                logger.info("Diagnostic - %s: could not fit OLS for AIC comparison (%s)", cell_type, exc)
+                print("Diagnostic - %s: could not fit OLS for AIC comparison (%s)", cell_type, exc)
         
         parameter_for_Sex = mixed_linear_model_results_wrapper.params["indicator_of_sex"]
         standard_error_of_parameter_for_Sex = mixed_linear_model_results_wrapper.bse["indicator_of_sex"]
         p_value_for_Sex = mixed_linear_model_results_wrapper.pvalues["indicator_of_sex"]
         number_of_patients = data_frame["ORIENAvatarKey"].nunique()
-        
         list_of_results.append(
             (
                 cell_type,
@@ -214,7 +257,6 @@ def fit_linear_mixed_models(
                 number_of_patients
             )
         )
-
     data_frame_of_results = pd.DataFrame(
         list_of_results,
         columns = [
@@ -228,10 +270,10 @@ def fit_linear_mixed_models(
     return data_frame_of_results
 
 
-
 def adjust_p_values_for_Sex(data_frame_of_results_of_fitting_LMMs: pd.DataFrame) -> pd.DataFrame:
     '''
-    p values for the Sex coefficient are adjusted across all cell types with the Benjamini-Hochberg procedure and a False Discovery Rate of 10 percent.
+    p values for the Sex coefficient are adjusted across all cell types
+    with the Benjamini-Hochberg procedure and a False Discovery Rate of 10 percent.
     '''
     indicator_of_whether_to_reject_null_hypothesis, array_of_q_values, _, _ = multipletests(
         data_frame_of_results_of_fitting_LMMs["p value for Sex"],
