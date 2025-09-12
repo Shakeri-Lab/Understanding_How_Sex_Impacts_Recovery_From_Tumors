@@ -1,6 +1,11 @@
 # ORIEN_analysis
 
-To run `create_expression_matrices.py` and `run_xCell_analysis.py`, from `Understanding_How_Sex_Impacts_Recovery_From_Tumors`, run
+To run
+- `create_expression_matrices.py`,
+- `run_xCell_analysis.py`,
+- `fit_linear_mixed_models.py`, and
+- `compare_enrichment_scores.py`,
+from `Understanding_How_Sex_Impacts_Recovery_From_Tumors`, run
 - `ijob -A shakeri-lab -p standard -t 24:00:00 --mem=16G -c 1 -v -J <name of job>`
 - `module list`
 - `module load miniforge` (To unload, create new terminal. TODO: Consider whether there is a command to unload.)
@@ -18,6 +23,8 @@ To run `create_expression_matrices.py` and `run_xCell_analysis.py`, from `Unders
 - `conda run --name conda_environment R -e 'options(repos = c(CRAN = "https://cloud.r-project.org")); install.packages("remotes"); remotes::install_github("dviraran/xCell"); remotes::install_github("AlmogAngel/xCell2")'`
 - `python -m ORIEN_analysis.create_expression_matrices`  
 - `python -m ORIEN_analysis.run_xCell_analysis`
+- `python -m ORIEN_analysis.fit_linear_mixed_models --diagnose`
+- `python -m ORIEN_analysis.compare_enrichment_scores --adjust-covariates`
 
 ## Dependencies of `bioconductor-gsva`
 

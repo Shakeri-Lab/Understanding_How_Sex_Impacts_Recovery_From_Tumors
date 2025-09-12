@@ -67,6 +67,21 @@ class Paths():
         self.significant_results_of_fitting_LMMs_per_xCell2_and_Pan_Cancer = self.outputs_of_fitting_LMMs / "significant_results_of_fitting_LMMs_per_xCell2_and_Pan_Cancer.csv"
 
 
+        # ORIEN_analysis/compare_enrichment_scores.py
+        # dependencies
+        self.outputs_of_comparing_enrichment_scores = self.output / "comparing_enrichment_scores"
+        # -----
+        # self.enrichment_data_frame_per_xCell, which is defined above
+        # self.enrichment_data_frame_per_xCell2_and_Pan_Cancer, which is defined above
+        # outputs
+        # <no files>
+        self.comparisons_for_females_and_males_and_xCell = self.outputs_of_comparing_enrichment_scores / "comparisons_for_female_and_males_and_xCell.csv"
+        self.comparisons_for_ICB_naive_and_experienced_samples_of_females_and_xCell = self.outputs_of_comparing_enrichment_scores / "comparisons_for_ICB_naive_and_experienced_samples_of_females_and_xCell.csv"
+        self.comparisons_for_ICB_naive_and_experienced_samples_of_males_and_xCell = self.outputs_of_comparing_enrichment_scores / "comparisons_for_ICB_naive_and_experienced_samples_of_males_and_xCell"
+        self.comparisons_for_females_and_males_and_xCell2_and_Pan_Cancer = self.outputs_of_comparing_enrichment_scores / "comparisons_for_females_and_males_and_xCell2_and_Pan_Cancer.csv"
+        self.comparisons_for_ICB_naive_and_experienced_samples_of_females_and_xCell2_and_Pan_Cancer = self.outputs_of_comparing_enrichment_scores / "comparisons_for_ICB_naive_and_experienced_samples_of_females_and_xCell2_and_Pan_Cancer.csv"
+        self.comparisons_for_ICB_naive_and_experienced_samples_of_males_and_xCell2_and_Pan_Cancer = self.outputs_of_comparing_enrichment_scores / "comparisons_for_ICB_naive_and_experienced_samples_of_males_and_xCell2_and_Pan_Cancer.csv"
+
 
     def ensure_dependencies_for_creating_expression_matrices_exist(self):
         for path in [
@@ -91,7 +106,7 @@ class Paths():
         for path in [
             self.filtered_expression_matrix_with_HGNC_symbols_and_SLIDs_approved_by_manifest
         ]:
-            assert os.path.exists(path), f"The dependency of creating expression matrices `{path}` does not exist."
+            assert os.path.exists(path), f"The dependency of running xCell analysis `{path}` does not exist."
 
 
     def ensure_dependencies_for_fitting_LMMs_exist(self):
@@ -104,6 +119,18 @@ class Paths():
             self.enrichment_data_frame_per_xCell2_and_Pan_Cancer
         ]:
             assert os.path.exists(path), f"The dependency of fitting LMMs `{path}` does not exist."
+
+
+    def ensure_dependencies_for_comparing_enrichment_scores_exist(self):
+        for path in [
+            self.outputs_of_comparing_enrichment_scores
+        ]:
+            os.makedirs(path, exist_ok = True)
+        for path in [
+            self.enrichment_data_frame_per_xCell,
+            self.enrichment_data_frame_per_xCell2_and_Pan_Cancer
+        ]:
+            assert os.path.exists(path), f"The dependency of comparing enrichment scores `{path}` does not exist."
 
 
 paths = Paths()
