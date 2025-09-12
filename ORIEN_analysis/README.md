@@ -14,6 +14,7 @@ To run `create_expression_matrices.py` and `run_xCell_analysis.py`, from `Unders
 - `conda install numpy==2.3.3` (`conda uninstall libblas libcblas libgfortran libgfortran5 liblapack libopenblas libstdcxx numpy`)
 - `conda install pandas==2.3.2` (`conda uninstall pandas python-dateutil python-tzdata pytz six`)
 - `conda install rpy2==3.6.2` (`conda uninstall rpy2`)
+- `conda install statsmodels` (`conda uninstall patsy scipy statsmodels`)
 - `conda run --name conda_environment R -e 'options(repos = c(CRAN = "https://cloud.r-project.org")); install.packages("remotes"); remotes::install_github("dviraran/xCell"); remotes::install_github("AlmogAngel/xCell2")'`
 - `python -m ORIEN_analysis.create_expression_matrices`  
 - `python -m ORIEN_analysis.run_xCell_analysis`
