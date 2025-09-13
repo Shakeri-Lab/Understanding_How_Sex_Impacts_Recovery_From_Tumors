@@ -24,7 +24,7 @@ from `Understanding_How_Sex_Impacts_Recovery_From_Tumors`, run
 - `python -m ORIEN_analysis.create_expression_matrices`  
 - `python -m ORIEN_analysis.run_xCell_analysis`
 - `python -m ORIEN_analysis.fit_linear_mixed_models --diagnose`
-- `python -m ORIEN_analysis.compare_enrichment_scores --adjust-covariates`
+- `python -m ORIEN_analysis.compare_enrichment_scores --adjust_covariates`
 
 ## Dependencies of `bioconductor-gsva`
 

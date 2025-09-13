@@ -15,7 +15,7 @@ def numericize_age(age) -> float:
         return float(age)
 
 
-def create_data_frame_of_enrichment_scores_clinical_data_and_QC_data(path_of_expression_matrix) -> tuple[pd.DataFrame, list[str]]:
+def create_data_frame_of_enrichment_scores_and_clinical_and_QC_data(path_of_expression_matrix) -> tuple[pd.DataFrame, list[str]]:
     QC_data = pd.read_csv(paths.QC_data)
     QC_data["SequencingDepth"] = np.log10(QC_data["TotalReads"])
     clinical_molecular_linkage_data = pd.read_csv(paths.clinical_molecular_linkage_data)
@@ -94,7 +94,9 @@ def create_data_frame_of_enrichment_scores_clinical_data_and_QC_data(path_of_exp
         .drop(columns = ["SLID"])
     )
     data_frame_of_enrichment_scores_and_clinical_and_QC_data["patient_has_received_ICB_therapy"] = (
-        data_frame_of_enrichment_scores_and_clinical_and_QC_data["patient_has_received_ICB_therapy"].fillna(False).astype(bool)
+        data_frame_of_enrichment_scores_and_clinical_and_QC_data["patient_has_received_ICB_therapy"]
+        .astype("boolean")
+        .fillna(False)
     )
     data_frame_of_enrichment_scores_and_clinical_and_QC_data["stage_at_start_of_ICB_therapy"] = (
         data_frame_of_enrichment_scores_and_clinical_and_QC_data["stage_at_start_of_ICB_therapy"].fillna("Unknown")
@@ -306,7 +308,7 @@ def main():
     for path_of_enrichment_data_frame, tuple_of_paths_of_results_of_fitting_LMMs in dictionary_of_paths_of_enrichment_data_frames_and_tuples_of_paths_of_results_of_fitting_LMMs.items():
         path_of_results_of_fitting_LMMs = tuple_of_paths_of_results_of_fitting_LMMs[0]
         path_of_significant_results_of_fitting_LMMs = tuple_of_paths_of_results_of_fitting_LMMs[1]
-        data_frame_of_enrichment_scores_and_clinical_and_QC_data, list_of_cell_types = create_data_frame_of_enrichment_scores_clinical_data_and_QC_data(path_of_enrichment_data_frame)
+        data_frame_of_enrichment_scores_and_clinical_and_QC_data, list_of_cell_types = create_data_frame_of_enrichment_scores_and_clinical_and_QC_data(path_of_enrichment_data_frame)
         data_frame_of_results_of_fitting_LMMs = fit_linear_mixed_models(data_frame_of_enrichment_scores_and_clinical_and_QC_data, list_of_cell_types, args.diagnose)
         data_frame_of_results_of_fitting_LMMs = adjust_p_values_for_Sex(data_frame_of_results_of_fitting_LMMs)
         data_frame_of_results_of_fitting_LMMs.sort_values("q value for Sex").to_csv(path_of_results_of_fitting_LMMs, index = False)

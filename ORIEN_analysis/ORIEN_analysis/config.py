@@ -77,7 +77,7 @@ class Paths():
         # <no files>
         self.comparisons_for_females_and_males_and_xCell = self.outputs_of_comparing_enrichment_scores / "comparisons_for_female_and_males_and_xCell.csv"
         self.comparisons_for_ICB_naive_and_experienced_samples_of_females_and_xCell = self.outputs_of_comparing_enrichment_scores / "comparisons_for_ICB_naive_and_experienced_samples_of_females_and_xCell.csv"
-        self.comparisons_for_ICB_naive_and_experienced_samples_of_males_and_xCell = self.outputs_of_comparing_enrichment_scores / "comparisons_for_ICB_naive_and_experienced_samples_of_males_and_xCell"
+        self.comparisons_for_ICB_naive_and_experienced_samples_of_males_and_xCell = self.outputs_of_comparing_enrichment_scores / "comparisons_for_ICB_naive_and_experienced_samples_of_males_and_xCell.csv"
         self.comparisons_for_females_and_males_and_xCell2_and_Pan_Cancer = self.outputs_of_comparing_enrichment_scores / "comparisons_for_females_and_males_and_xCell2_and_Pan_Cancer.csv"
         self.comparisons_for_ICB_naive_and_experienced_samples_of_females_and_xCell2_and_Pan_Cancer = self.outputs_of_comparing_enrichment_scores / "comparisons_for_ICB_naive_and_experienced_samples_of_females_and_xCell2_and_Pan_Cancer.csv"
         self.comparisons_for_ICB_naive_and_experienced_samples_of_males_and_xCell2_and_Pan_Cancer = self.outputs_of_comparing_enrichment_scores / "comparisons_for_ICB_naive_and_experienced_samples_of_males_and_xCell2_and_Pan_Cancer.csv"

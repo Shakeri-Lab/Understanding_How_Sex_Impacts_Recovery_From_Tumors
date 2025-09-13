@@ -5,8 +5,8 @@ This script compares enrichment scores produced by xCell or xCell2 for
 - ICB-naive tumors (0) and ICB-experienced (1) tumors of females, and
 - ICB-naive tumors and ICB-experienced tumors of males
 across various cell types.
-This script for each family of tumors and cell type
-performs a 2 sided Mann-Whitney U Test / Wilcoxon Rank Sum Test.
+This script for each cell type and category of tumors
+performs a 2 sided Mann-Whitney U Test / Wilcoxon Ranak Sum Test.
 
 This script optionally removes variability due to age at clinical record creation and stage at start of ICB therapy before comparing.
 
@@ -79,7 +79,7 @@ import re
 import scipy.stats as ss
 from ORIEN_analysis.config import paths
 from ORIEN_analysis.fit_linear_mixed_models import (
-    create_data_frame_of_enrichment_scores_clinical_data_and_QC_data
+    create_data_frame_of_enrichment_scores_and_clinical_and_QC_data
 )
 import statsmodels.formula.api as smf
 from statsmodels.stats.multitest import multipletests
@@ -92,39 +92,40 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def bh_fdr(pvals: pd.Series) -> pd.Series:
+def determine_FDRs(series_of_p_values: pd.Series) -> pd.Series:
     '''
     Provide a series of False Discovery Rates based on a series of p values.
     '''
-    _, q, _, _ = multipletests(pvals, method = "fdr_bh")
-    return pd.Series(q, index = pvals.index)
+    _, q, _, _ = multipletests(series_of_p_values, method = "fdr_bh")
+    return pd.Series(q, index = series_of_p_values.index)
 
 
-def make_result_table(stat_df: pd.DataFrame, family: str, out_path: Path) -> None:
+def save_data_frame_of_cell_types_and_statistics(
+    data_frame_of_cell_types_and_statistics: pd.DataFrame, category: str, path: Path
+) -> None:
     '''
-    Save a data frame with added columns FDR, significant, and suggestive.
-    Log numbers of cell types that are significant / suggestive for each family of tests.
+    Save a data frame of cell types and statistics with added columns FDR, significant, and suggestive.
+    Log numbers of cell types that are significant / suggestive for each category of tests.
     '''
-    stat_df["FDR"] = bh_fdr(stat_df["pval"])
-    stat_df["significant"] = stat_df["FDR"] <= 0.05
-    stat_df["suggestive"] = (stat_df["FDR"] > 0.05) & (stat_df["FDR"] <= 0.20)
-    stat_df.sort_values("FDR").to_csv(out_path, index = False)
+    data_frame_of_cell_types_and_statistics["FDR"] = determine_FDRs(data_frame_of_cell_types_and_statistics["p_value"])
+    data_frame_of_cell_types_and_statistics["significant"] = data_frame_of_cell_types_and_statistics["FDR"] <= 0.05
+    data_frame_of_cell_types_and_statistics["suggestive"] = (
+        (data_frame_of_cell_types_and_statistics["FDR"] > 0.05) & (data_frame_of_cell_types_and_statistics["FDR"] <= 0.20)
+    )
+    data_frame_of_cell_types_and_statistics.sort_values("FDR").to_csv(path, index = False)
     logger.info(
-        "[%s] %d/%d significant (FDR ≤ 0.05); %d additional suggestive (0.05 < FDR ≤ 0.20)",
-        family,
-        stat_df["significant"].sum(),
-        len(stat_df),
-        stat_df["suggestive"].sum()
+        f"For category {category}, " +
+        f"{data_frame_of_cell_types_and_statistics["significant"].sum()} out of " +
+        f"{len(data_frame_of_cell_types_and_statistics)} cell types are significant. " +
+        f"{data_frame_of_cell_types_and_statistics["suggestive"].sum()} additional cell types are suggestive.",
     )
 
 
-def wilcoxon_table(
-    df: pd.DataFrame,
+def create_data_frame_of_cell_types_and_statistics(
+    data_frame_of_enrichment_scores_and_clinical_and_QC_data: pd.DataFrame,
     list_cell_types: list[str],
-    group_var: str,
-    group_a,
-    group_b,
-    adjust_covariates: bool
+    category: str,
+    covariates_will_be_adjusted: bool
 ) -> pd.DataFrame:
     '''
     Perform Mann-Whitney U Tests / Wilcoxon Rank Sum Tests for every cell type.
@@ -135,61 +136,83 @@ def wilcoxon_table(
     Returns
     -------
     a data frame with 
+    - cell types,
     - numbers of samples corresponding to female and male patients or
     - numbers of ICB-naive and ICB-experienced samples,
-    - U statistic, and
-    - p value
+    - U statistics, and
+    - p values
 
     For each cell type,
     Choose either the raw enrichment scores for that cell type or the residuals of a linear model of
     enrichment score vs. age at clinical record creation and stage at start of ICB therapy.
     In the first case, split enrichment scores by sex or experience of ICB therapy.
-    In the second case, split residuals.
-    Find a U statistic and a p value using the Mann–Whitney U Test / Wilcoxon Rank Sum Test.
+    In the second case, split residuals by sex or experience of ICB therapy.
+    Find a U statistic and a p value using the Mann-Whitney U Test / Wilcoxon Rank Sum Test.
     Record in a row corresponding to a cell type of a data frame
     - numbers of samples corresponding to female and male patients or
     - numbers of ICB-naive and ICB-experienced samples,
     - U statistic, and
     - p value.
     '''
-    rows = []
-    mask = df[group_var].isin([group_a, group_b])
-    for ct in list_cell_types:
-        sub = df.loc[mask, [ct, group_var]].dropna()
-        if adjust_covariates:
-            sub_for_lm = df.loc[mask, [ct, "AgeAtClinicalRecordCreation", "stage_at_start_of_ICB_therapy"]].dropna()
-            if not (sub_for_lm.index == sub.index).all():
-                raise ValueError("sub_for_lm has fewer rows than sub.")
-            model = smf.ols(f"{ct} ~ AgeAtClinicalRecordCreation + C(stage_at_start_of_ICB_therapy)", data = sub_for_lm).fit()
-            residuals = model.resid
-            sub = sub.assign(resid = residuals.loc[sub.index]).dropna(subset = ["resid"])
-            values_a = sub.loc[sub[group_var] == group_a, "resid"]
-            values_b = sub.loc[sub[group_var] == group_b, "resid"]
+    list_of_dictionaries_of_cell_types_and_statistics = []
+    for cell_type in list_cell_types:
+        data_frame_of_enrichment_scores_and_indicators = data_frame_of_enrichment_scores_and_clinical_and_QC_data[
+            [cell_type, category]
+        ].copy()
+
+        if covariates_will_be_adjusted:
+            data_frame_of_enrichment_scores_ages_and_stages = data_frame_of_enrichment_scores_and_clinical_and_QC_data[
+                [cell_type, "AgeAtClinicalRecordCreation", "stage_at_start_of_ICB_therapy"]
+            ]
+            model = smf.ols(
+                f"{cell_type} ~ AgeAtClinicalRecordCreation + C(stage_at_start_of_ICB_therapy)",
+                data = data_frame_of_enrichment_scores_ages_and_stages
+            ).fit()
+            series_of_residuals = model.resid
+            data_frame_of_enrichment_scores_and_indicators["residual"] = series_of_residuals.loc[
+                data_frame_of_enrichment_scores_and_indicators.index
+            ]
+            series_of_values_for_indicator_0 = data_frame_of_enrichment_scores_and_indicators.loc[
+                data_frame_of_enrichment_scores_and_indicators[category] == 0,
+                "residual"
+            ]
+            series_of_values_for_indicator_1 = data_frame_of_enrichment_scores_and_indicators.loc[
+                data_frame_of_enrichment_scores_and_indicators[category] == 1,
+                "residual"
+            ]
         else:
-            values_a = sub.loc[sub[group_var] == group_a, ct]
-            values_b = sub.loc[sub[group_var] == group_b, ct]
+            series_of_values_for_indicator_0 = data_frame_of_enrichment_scores_and_indicators.loc[
+                data_frame_of_enrichment_scores_and_indicators[category] == 0,
+                cell_type
+            ]
+            series_of_values_for_indicator_1 = data_frame_of_enrichment_scores_and_indicators.loc[
+                data_frame_of_enrichment_scores_and_indicators[category] == 1,
+                cell_type
+            ]
 
-        if len(values_a) < 3 or len(values_b) < 3:
-            raise Exception("Enrichment scores for a group are too few to estimate U statistic.")
-
-        U, p = ss.mannwhitneyu(values_a, values_b, alternative = "two-sided")
-        rows.append(
+        U_statistic, p_value = ss.mannwhitneyu(
+            series_of_values_for_indicator_0,
+            series_of_values_for_indicator_1,
+            alternative = "two-sided"
+        )
+        list_of_dictionaries_of_cell_types_and_statistics.append(
             dict(
-                cell_type = ct,
-                n_a = len(values_a),
-                n_b = len(values_b),
-                U_stat = U,
-                pval = p
+                cell_type = cell_type,
+                number_of_samples_for_indicator_0 = len(series_of_values_for_indicator_0),
+                number_of_samples_for_indicator_1 = len(series_of_values_for_indicator_1),
+                U_statistic = U_statistic,
+                p_value = p_value
             )
         )
-    return pd.DataFrame(rows)
+    data_frame_of_cell_types_and_statistics = pd.DataFrame(list_of_dictionaries_of_cell_types_and_statistics)
+    return data_frame_of_cell_types_and_statistics
 
 
 def main():
     paths.ensure_dependencies_for_comparing_enrichment_scores_exist()
     
-    parser = argparse.ArgumentParser(description = "Compare enrichment scores by family and cell type.")
-    parser.add_argument("--adjust-covariates", action = "store_true", help = "Regress out Age and Stage before rank tests.")
+    parser = argparse.ArgumentParser(description = "Compare enrichment scores by category and cell type.")
+    parser.add_argument("--adjust_covariates", action = "store_true", help = "Regress out Age and Stage before rank tests.")
     args = parser.parse_args()
 
     dictionary_of_paths = {
@@ -210,53 +233,61 @@ def main():
         path_to_comparisons_for_ICB_naive_and_experienced_samples_of_females = tuple_of_paths_to_comparisons[1]
         path_to_comparisons_for_ICB_naive_and_experienced_samples_of_males = tuple_of_paths_to_comparisons[2]
     
-        df, list_of_cell_types = create_data_frame_of_enrichment_scores_clinical_data_and_QC_data(
+        data_frame, list_of_cell_types = create_data_frame_of_enrichment_scores_and_clinical_and_QC_data(
             path_to_enrichment_data
         )
-        df["indicator_of_sex"] = (df["Sex"] == "Male").astype(int)
-        df["integer_indicating_that_patient_has_received_ICB_therapy"] = df["patient_has_received_ICB_therapy"].astype(int)
-        df = df.rename(
+        data_frame["indicator_of_sex"] = (data_frame["Sex"] == "Male").astype(int)
+        data_frame["integer_indicating_that_patient_has_received_ICB_therapy"] = (
+            data_frame["patient_has_received_ICB_therapy"].astype(int)
+        )
+        data_frame = data_frame.rename(
             columns = lambda cell_type: cell_type.replace(' ', '_').replace('-', '_').replace('+', "plus").replace(',', '')
         )
-        
-        dupes = df.columns[df.columns.duplicated()]
-        if len(dupes):
-            raise ValueError(f"Duplicate column names after cleaning: {sorted(dupes)}")
-        
         list_of_cell_types = [
             cell_type.replace(' ', '_').replace('-', '_').replace('+', "plus").replace(',', '')
             for cell_type in list_of_cell_types
         ]
 
-        set_of_cell_types = set(list_of_cell_types)
-        if len(set_of_cell_types) != len(list_of_cell_types):
-            raise ValueError("Set and list of cell types are different.")
-
-        sex_tbl = wilcoxon_table(
-            df,
+        data_frame_of_cell_types_and_statistics = create_data_frame_of_cell_types_and_statistics(
+            data_frame,
             list_of_cell_types,
-            group_var = "indicator_of_sex",
-            group_a = 0,
-            group_b = 1,
-            adjust_covariates = args.adjust_covariates
-        ).rename(columns = {"n_a": "n_F", "n_b": "n_M"})
-        make_result_table(sex_tbl, "Sex F vs M", path_to_comparisons_for_females_and_males)
+            category = "indicator_of_sex",
+            covariates_will_be_adjusted = args.adjust_covariates
+        ).rename(
+            columns = {
+                "number_of_samples_for_indicator_0": "number_of_samples_for_females",
+                "number_of_samples_for_indicator_1": "number_of_samples_for_males"
+            }
+        )
+        save_data_frame_of_cell_types_and_statistics(
+            data_frame_of_cell_types_and_statistics,
+            "female / male",
+            path_to_comparisons_for_females_and_males
+        )
 
-        out_map = {
+        dictionary_of_indicators_of_sex_and_paths_to_comparisons_for_ICB_naive_and_experienced_samples = {
             0: path_to_comparisons_for_ICB_naive_and_experienced_samples_of_females,
             1: path_to_comparisons_for_ICB_naive_and_experienced_samples_of_males,
         }
-        for sex_code, out_path in out_map.items():
-            sex_df = df[df["indicator_of_sex"] == sex_code]
-            icb_tbl = wilcoxon_table(
-                sex_df,
+        for indicator_of_sex, path in dictionary_of_indicators_of_sex_and_paths_to_comparisons_for_ICB_naive_and_experienced_samples.items():
+            data_frame_for_indicator = data_frame[data_frame["indicator_of_sex"] == indicator_of_sex]
+            data_frame_of_cell_types_and_statistics = create_data_frame_of_cell_types_and_statistics(
+                data_frame_for_indicator,
                 list_of_cell_types,
-                group_var = "integer_indicating_that_patient_has_received_ICB_therapy",
-                group_a = 0,
-                group_b = 1,
-                adjust_covariates = args.adjust_covariates
-            ).rename(columns = {"n_a": "n_Naive", "n_b": "n_Exp"})
-            make_result_table(icb_tbl, f"ICB within sex={sex_code}", out_path)
+                category = "integer_indicating_that_patient_has_received_ICB_therapy",
+                covariates_will_be_adjusted = args.adjust_covariates
+            ).rename(
+                columns = {
+                    "number_of_samples_for_indicator_0": "number_of_naive_samples",
+                    "number_of_samples_for_indicator_1": "number_of_experienced_samples"
+                }
+            )
+            group = "females" if indicator_of_sex == 0 else "males"
+            save_data_frame_of_cell_types_and_statistics(
+                data_frame_of_cell_types_and_statistics,
+                f"naive / experienced for {group}",
+                path
+            )
 
 
 if __name__ == "__main__":
