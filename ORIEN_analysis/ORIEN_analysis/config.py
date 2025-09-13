@@ -16,6 +16,16 @@ class Paths():
         # outputs
         # <no files>
 
+        # ORIEN_analysis/pair_clinical_data_and_stages_of_tumors.py
+        # dependencies
+        self.outputs_of_pairing_clinical_data_and_stages_of_tumors = self.output / "pairing_clinical_data_and_stages_of_tumors"
+        # -----
+        self.clinical_molecular_linkage_data = self.normalized_clinical_data / "24PRJ217UVA_20241112_ClinicalMolLinkage_V4.csv"
+        self.diagnosis_data = self.normalized_clinical_data / "24PRJ217UVA_20241112_Diagnosis_V4.csv"
+        self.metastatic_disease_data = self.normalized_clinical_data / "24PRJ217UVA_20241112_MetastaticDisease_V4.csv"
+        # outputs
+        self.output_of_pairing_clinical_data_and_stages_of_tumors = self.outputs_of_pairing_clinical_data_and_stages_of_tumors / "output_of_pairing_clinical_data_and_stages_of_tumors.csv"
+
         # ORIEN_analysis/create_expression_matrices.py
         # dependencies
         self.gene_and_transcript_expression_results = self.root / "../../RNAseq/gene_and_transcript_expression_results"
@@ -23,9 +33,9 @@ class Paths():
         self.outputs_of_creating_expression_matrices = self.output / "creating_expression_matrices"
         # -----
         self.QC_data = self.manifest_and_QC_files / "24PRJ217UVA_20250130_RNASeq_QCMetrics.csv"
-        self.clinical_molecular_linkage_data = self.normalized_clinical_data / "24PRJ217UVA_20241112_ClinicalMolLinkage_V4.csv"
-        self.diagnosis_data = self.normalized_clinical_data / "24PRJ217UVA_NormalizedFiles/24PRJ217UVA_20241112_Diagnosis_V4.csv"
-        self.output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors = self.root / "../pair_clinical_data_and_stages_of_tumors/output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors.csv"
+        # self.clinical_molecular_linkage_data, which is defined above
+        # self.diagnosis_data, which is defined above
+        # self.output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors, which is defined above
         # outputs
         self.full_expression_matrix = self.outputs_of_creating_expression_matrices / "full_expression_matrix.csv" # EM1
         self.manifest = self.outputs_of_creating_expression_matrices / "manifest.csv"
@@ -83,6 +93,19 @@ class Paths():
         self.comparisons_for_ICB_naive_and_experienced_samples_of_males_and_xCell2_and_Pan_Cancer = self.outputs_of_comparing_enrichment_scores / "comparisons_for_ICB_naive_and_experienced_samples_of_males_and_xCell2_and_Pan_Cancer.csv"
 
 
+    def ensure_dependencies_for_pairing_clinical_data_and_stages_of_tumors_exist(self):
+        for path in [
+            self.outputs_of_pairing_clinical_data_and_stages_of_tumors
+        ]:
+            os.makedirs(path, exist_ok = True)
+        for path in [
+            self.clinical_molecular_linkage_data,
+            self.diagnosis_data,
+            self.metastatic_disease_data
+        ]:
+            assert os.path.exists(path), f"The dependency of creating expression matrices `{path}` does not exist."
+
+
     def ensure_dependencies_for_creating_expression_matrices_exist(self):
         for path in [
             self.gene_and_transcript_expression_results,
@@ -93,7 +116,7 @@ class Paths():
             self.QC_data,
             self.clinical_molecular_linkage_data,
             self.diagnosis_data,
-            self.output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors
+            self.output_of_pairing_clinical_data_and_stages_of_tumors
         ]:
             assert os.path.exists(path), f"The dependency of creating expression matrices `{path}` does not exist."
 

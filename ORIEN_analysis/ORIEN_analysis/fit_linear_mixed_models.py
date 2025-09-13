@@ -180,6 +180,7 @@ def fit_linear_mixed_models(
         )
         data_frame["indicator_of_sex"] = (data_frame["Sex"] == "Male").astype(int)
         data_frame["AgeAtClinicalRecordCreation"] = data_frame["AgeAtClinicalRecordCreation"].apply(numericize_age)
+        data_frame["patient_has_received_ICB_therapy"] = data_frame["patient_has_received_ICB_therapy"].astype(bool)
 
         if models_should_be_diagnosed:
             # 1. Within-patient replication

@@ -1,6 +1,7 @@
 # ORIEN_analysis
 
 To run
+- `pair_clinical_data_and_stages_of_tumors.py`,
 - `create_expression_matrices.py`,
 - `run_xCell_analysis.py`,
 - `fit_linear_mixed_models.py`, and

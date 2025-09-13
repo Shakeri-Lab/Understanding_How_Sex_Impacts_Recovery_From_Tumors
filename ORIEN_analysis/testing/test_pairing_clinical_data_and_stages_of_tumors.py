@@ -5,18 +5,19 @@ pytest -q test_pipeline_for_pairing_clinical_data_and_stages_of_tumors.py > outp
 Verify that the output of the pipeline for pairing clinical data and stages of tumors exactly matches ORIEN Tumor Staging Key.
 '''
 
-import pandas as pd
-from pandas.testing import assert_frame_equal
 from pathlib import Path
-from pipeline_for_pairing_clinical_data_and_stages_of_tumors import run_pipeline
+from pandas.testing import assert_frame_equal
+from ORIEN_analysis.config import paths
+import pandas as pd
 import pytest
+from ORIEN_analysis.pair_clinical_data_and_stages_of_tumors import run_pipeline
 
 
-PATH_TO_CLINICAL_DATA = Path("../../Clinical_Data/24PRJ217UVA_NormalizedFiles")
+PATH_TO_CLINICAL_DATA = Path("../Clinical_Data/24PRJ217UVA_NormalizedFiles")
 PATH_TO_CLINICAL_MOLECULAR_LINKAGE_DATA = PATH_TO_CLINICAL_DATA / "24PRJ217UVA_20241112_ClinicalMolLinkage_V4.csv"
 PATH_TO_DIAGNOSIS_DATA = PATH_TO_CLINICAL_DATA / "24PRJ217UVA_20241112_Diagnosis_V4.csv"
 PATH_TO_METASTATIC_DISEASE_DATA = PATH_TO_CLINICAL_DATA / "24PRJ217UVA_20241112_MetastaticDisease_V4.csv"
-PATH_TO_KEY = "ORIEN_Tumor_Staging_Key.csv"
+PATH_TO_KEY = "ORIEN_analysis/ORIEN_Tumor_Staging_Key.csv"
 
 @pytest.fixture(scope = "session")
 def output_of_pipeline() -> pd.DataFrame:

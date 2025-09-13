@@ -109,7 +109,7 @@ def load_clinical_molecular_linkage_data():
 
 def load_output_of_pipeline():
     output_of_pipeline = pd.read_csv(
-        paths.output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors,
+        paths.output_of_pairing_clinical_data_and_stages_of_tumors,
         dtype = {
             "AvatarKey": str,
             "AssignedPrimarySite": str
@@ -517,7 +517,7 @@ The number of samples excluded from the expression matrix is {number_of_samples_
 
     qc_mtime = format_timestamp(os.path.getmtime(paths.QC_data))
     cml_mtime = format_timestamp(os.path.getmtime(paths.clinical_molecular_linkage_data))
-    pairing_mtime = format_timestamp(os.path.getmtime(paths.output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors))
+    pairing_mtime = format_timestamp(os.path.getmtime(paths.output_of_pairing_clinical_data_and_stages_of_tumors))
     dx_mtime = format_timestamp(os.path.getmtime(paths.diagnosis_data))
     expr_latest = format_timestamp(get_latest_timestamp_of_file(paths.gene_and_transcript_expression_results))
     list_of_contents_of_QC_summary_in_Markdown.append(
@@ -525,7 +525,7 @@ The number of samples excluded from the expression matrix is {number_of_samples_
 QC data lives at {paths.QC_data} and was last modified at {qc_mtime}.\n
 Clinical molecular linkage data lives at {paths.clinical_molecular_linkage_data} and was last modified at {cml_mtime}.\n
 Diagnosis data lives at {paths.diagnosis_data} and was last modified at {dx_mtime}.\n
-Output of pipeline for pairing clinical data and stages of tumors lives at {paths.output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors} and was last modified at {pairing_mtime}.'''
+Output of pipeline for pairing clinical data and stages of tumors lives at {paths.output_of_pairing_clinical_data_and_stages_of_tumors} and was last modified at {pairing_mtime}.'''
     )
     with open(paths.QC_summary_in_Markdown, 'w') as f:
         f.write("\n".join(list_of_contents_of_QC_summary_in_Markdown))

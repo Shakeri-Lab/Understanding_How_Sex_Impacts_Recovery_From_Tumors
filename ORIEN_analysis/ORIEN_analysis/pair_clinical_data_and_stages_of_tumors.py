@@ -23,12 +23,11 @@ A melanoma diagnosis is a row in `24PRJ217UVA_20241112_Diagnosis_V4.csv` with a 
 A sequenced tumor is a row in `24PRJ217UVA_20241112_MetastaticDisease_V4.csv` with a value of "Tumor" in column with label "Tumor/Germline".
 '''
 
-import argparse
-import logging
-import pandas as pd
 from pathlib import Path
+import logging
+from ORIEN_analysis.config import paths
+import pandas as pd
 import re
-from typing import Optional, Tuple
 
 
 def add_counts(data_frame_of_clinical_molecular_linkage_data: pd.DataFrame, data_frame_of_diagnosis_data: pd.DataFrame) -> pd.DataFrame:
@@ -947,7 +946,7 @@ def load_data(
     path_to_clinical_molecular_linkage_data: Path,
     path_to_diagnosis_data: Path,
     path_to_metastatic_disease_data: Path
-) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     
     logging.info("Clinical molecular linkage data will be loaded.")
     data_frame_of_clinical_molecular_linkage_data = pd.read_csv(path_to_clinical_molecular_linkage_data, dtype = str)
@@ -971,23 +970,15 @@ def load_data(
 
 
 def main():
-    parser = argparse.ArgumentParser(description = "Pair clinical data and stages of tumors.")
-    parser.add_argument("--path_to_clinical_molecular_linkage_data", required = True, type = Path)
-    parser.add_argument("--path_to_diagnosis_data", required = True, type = Path)
-    parser.add_argument("--path_to_metastatic_disease_data", required = True, type = Path)
-    parser.add_argument("--path_to_output_data", required = True, type = Path)
-    args = parser.parse_args()
-
     logging.basicConfig(level = logging.INFO, format = "%(levelname)s: %(message)s")
-
+    paths.ensure_dependencies_for_pairing_clinical_data_and_stages_of_tumors_exist()
     output_data = run_pipeline(
-        path_to_clinical_molecular_linkage_data = args.path_to_clinical_molecular_linkage_data,
-        path_to_diagnosis_data = args.path_to_diagnosis_data,
-        path_to_metastatic_disease_data = args.path_to_metastatic_disease_data
+        path_to_clinical_molecular_linkage_data = paths.clinical_molecular_linkage_data,
+        path_to_diagnosis_data = paths.diagnosis_data,
+        path_to_metastatic_disease_data = paths.metastatic_disease_data
     )
-
-    logging.info(f"{len(output_data)} rows will be written to {args.path_to_output_data}.")
-    output_data.to_csv(args.path_to_output_data, index = False)
+    logging.info(f"{len(output_data)} rows will be written to {paths.output_of_pairing_clinical_data_and_stages_of_tumors}.")
+    output_data.to_csv(paths.output_of_pairing_clinical_data_and_stages_of_tumors, index = False)
 
 
 if __name__ == "__main__":
