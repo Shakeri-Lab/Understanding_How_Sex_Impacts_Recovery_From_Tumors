@@ -16,7 +16,7 @@ class Paths():
         # outputs
         # <no files>
 
-        # ORIEN_analysis/pair_clinical_data_and_stages_of_tumors.py
+        # ORIEN_analysis/ORIEN_analysis/pair_clinical_data_and_stages_of_tumors.py
         # dependencies
         self.outputs_of_pairing_clinical_data_and_stages_of_tumors = self.output / "pairing_clinical_data_and_stages_of_tumors"
         # -----
@@ -26,7 +26,7 @@ class Paths():
         # outputs
         self.output_of_pairing_clinical_data_and_stages_of_tumors = self.outputs_of_pairing_clinical_data_and_stages_of_tumors / "output_of_pairing_clinical_data_and_stages_of_tumors.csv"
 
-        # ORIEN_analysis/create_expression_matrices.py
+        # ORIEN_analysis/ORIEN_analysis/create_expression_matrices.py
         # dependencies
         self.gene_and_transcript_expression_results = self.root / "../../RNAseq/gene_and_transcript_expression_results"
         self.manifest_and_QC_files = self.root / "../../Manifest_and_QC_Files"
@@ -51,7 +51,7 @@ class Paths():
         self.z_scored_filtered_expression_matrix_with_SLIDs_approved_by_manifest = self.outputs_of_creating_expression_matrices / "z_scored_filtered_expression_matrix_with_SLIDs_approved_by_manifest.csv" # EM8
         self.z_scored_filtered_expression_matrix_with_HGNC_symbols_and_SLIDs_approved_by_manifest = self.outputs_of_creating_expression_matrices / "z_scored_filtered_expression_matrix_with_HGNC_symbols_and_SLIDs_approved_by_manifest.csv" # EM9
 
-        # ORIEN_analysis/run_xCell_analysis.py
+        # ORIEN_analysis/ORIEN_analysis/run_xCell_analysis.py
         # dependencies
         self.outputs_of_running_xCell_analysis = self.output / "running_xCell_analysis"
         # -----
@@ -61,7 +61,7 @@ class Paths():
         self.enrichment_data_frame_per_xCell2_and_Pan_Cancer = self.outputs_of_running_xCell_analysis / "enrichment_data_frame_per_xCell2_and_Pan_Cancer.csv"
         self.focused_enrichment_data_frame_per_xCell = self.outputs_of_running_xCell_analysis / "focused_enrichment_data_frame_per_xCell.csv"
 
-        # ORIEN_analysis/fit_linear_mixed_models.py
+        # ORIEN_analysis/ORIEN_analysis/fit_linear_mixed_models.py
         # dependencies
         self.outputs_of_fitting_LMMs = self.output / "fitting_linear_mixed_models"
         # -----
@@ -77,7 +77,7 @@ class Paths():
         self.significant_results_of_fitting_LMMs_per_xCell2_and_Pan_Cancer = self.outputs_of_fitting_LMMs / "significant_results_of_fitting_LMMs_per_xCell2_and_Pan_Cancer.csv"
 
 
-        # ORIEN_analysis/compare_enrichment_scores.py
+        # ORIEN_analysis/ORIEN_analysis/compare_enrichment_scores.py
         # dependencies
         self.outputs_of_comparing_enrichment_scores = self.output / "comparing_enrichment_scores"
         # -----
@@ -91,6 +91,15 @@ class Paths():
         self.comparisons_for_females_and_males_and_xCell2_and_Pan_Cancer = self.outputs_of_comparing_enrichment_scores / "comparisons_for_females_and_males_and_xCell2_and_Pan_Cancer.csv"
         self.comparisons_for_ICB_naive_and_experienced_samples_of_females_and_xCell2_and_Pan_Cancer = self.outputs_of_comparing_enrichment_scores / "comparisons_for_ICB_naive_and_experienced_samples_of_females_and_xCell2_and_Pan_Cancer.csv"
         self.comparisons_for_ICB_naive_and_experienced_samples_of_males_and_xCell2_and_Pan_Cancer = self.outputs_of_comparing_enrichment_scores / "comparisons_for_ICB_naive_and_experienced_samples_of_males_and_xCell2_and_Pan_Cancer.csv"
+
+
+        # ORIEN_analysis/ORIEN_analysis/aim.py
+        # dependencies
+        self.outputs_of_completing_Aim_1_2 = self.output / "completing_Aim_1_2"
+        # -----
+        self.gene_sets = self.root / "gene_sets.json"
+        # outputs
+        # <no files>
 
 
     def ensure_dependencies_for_pairing_clinical_data_and_stages_of_tumors_exist(self):
