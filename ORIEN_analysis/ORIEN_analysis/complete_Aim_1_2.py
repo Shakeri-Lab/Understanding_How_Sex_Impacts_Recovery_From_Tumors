@@ -102,13 +102,13 @@ def map_sex_to_binary(
     female_label: str
 ) -> pd.Series:
     """
-    Map sex column to binary series: female=1, male=0 (default).
+    Map sex column to binary series: female=0, male=1.
     Accepts case-insensitive labels.
     """
     s = meta[sex_col].astype(str)
     m = male_label.lower()
     f = female_label.lower()
-    vals = s.str.lower().map({m: 0, f: 1})
+    vals = s.str.lower().map({f: 0, m: 1})
     if vals.isna().any():
         bad = meta.loc[vals.isna(), [ "sample_id", sex_col ]]
         raise ValueError(
@@ -216,7 +216,8 @@ def run_fgsea(
         res_r = fgsea.fgseaMultilevel(
             pathways = pathways_r,
             stats = stats_r,
-            minSize = min_size
+            minSize = min_size,
+            maxSize = max_size
         )
     else:
         res_r = fgsea.fgsea(
@@ -289,6 +290,25 @@ def module_score(
     return z.mean(axis=0).rename("score")
 
 
+def robust_log2_ratio(numer: pd.Series, denom: pd.Series) -> pd.Series:
+    '''
+    Visualization-only log2 ratio between two centered scores.
+    Ensures strictly positive arguments to log2 by:
+    1) shifting both series so the global minimum is > 0
+    2) adding a data-scaled pseudocount to avoid tiny denominators
+    '''
+    base = pd.concat([numer, denom])
+    min_val = float(base.min())
+    # shift so the smallest value becomes ~1e-6
+    shift_pos = (-min_val + 1e-6) if min_val <= 0 else 1e-6
+    # pseudocount based on typical scale of the data
+    pseudo = max(float(base.abs().median()), 0.25)
+    num_pos = numer + shift_pos + pseudo
+    den_pos = denom + shift_pos + pseudo
+    # strictly positive by construction; no invalid log2
+    return np.log2(num_pos / den_pos)
+
+
 def cliff_delta(x: np.ndarray, y: np.ndarray) -> float:
     """
     Cliff's delta effect size: P(X>Y)-P(X<Y).
@@ -308,31 +328,32 @@ def cliff_delta(x: np.ndarray, y: np.ndarray) -> float:
 
 def compare_by_sex(
     scores: pd.Series,         # indexed by sample_id
-    sex01: pd.Series,          # 0=male, 1=female aligned to sample_id
+    sex01: pd.Series,          # 1=male, 0=female aligned to sample_id
     label: str
 ) -> pd.DataFrame:
     """
     Mann-Whitney test of score by sex, with Cliff's delta.
+    sex01 coding: 0=female, 1=male.
     """
     common = scores.index.intersection(sex01.index)
     s = scores.loc[common]
     y = sex01.loc[common]
 
-    x = s[y == 0].to_numpy()  # males
-    z = s[y == 1].to_numpy()  # females
-    if len(x) == 0 or len(z) == 0:
+    f = s[y == 0].to_numpy()  # females
+    m = s[y == 1].to_numpy()  # males
+    if len(f) == 0 or len(m) == 0:
         raise ValueError("One of the sex groups is empty after alignment.")
-    u_stat, pval = mannwhitneyu(x, z, alternative="two-sided")
-    delta = cliff_delta(z, x)  # positive -> higher in females
+    u_stat, pval = mannwhitneyu(f, m, alternative="two-sided")
+    delta = cliff_delta(m, f)  # positive -> higher in males
     return pd.DataFrame({
         "contrast": [label],
-        "n_male": [len(x)],
-        "n_female": [len(z)],
+        "n_female": [len(f)],
+        "n_male": [len(m)],
         "mw_u": [u_stat],
         "pval": [pval],
-        "cliffs_delta_female_minus_male": [delta],
-        "mean_male": [float(np.mean(x))],
-        "mean_female": [float(np.mean(z))]
+        "cliffs_delta_male_minus_female": [delta],
+        "mean_female": [float(np.mean(f))],
+        "mean_male": [float(np.mean(m))]
     }).set_index("contrast")
 
 
@@ -340,7 +361,7 @@ def compare_by_sex(
 
 def volcano_from_fgsea(res_df: pd.DataFrame, out_png: str):
     '''
-    Volcano-like plot: NES vs -log10(FDR) using 'padj' from fgsea.
+    Volcano-like plot: NES vs. FDR using 'padj' from fgsea.
     '''
     df = res_df.copy()
     if df.empty:
@@ -348,17 +369,17 @@ def volcano_from_fgsea(res_df: pd.DataFrame, out_png: str):
         return
     if "padj" not in df.columns:
         raise ValueError("fgsea results are missing 'padj' (FDR) column.")
-    df["neglog10FDR"] = -np.log10(df["padj"].replace(0, np.nextafter(0, 1)))
+    df["FDR"] = df["padj"].replace(0, np.nextafter(0, 1))
     plt.figure(figsize=(7, 5))
     ax = sns.scatterplot(
-        data=df, x="NES", y="neglog10FDR",
+        data=df, x="NES", y="FDR",
         hue=(df["padj"] < 0.1), style=(df["padj"] < 0.05),
         s=60
     )
-    ax.axhline(-np.log10(0.1), ls="--", lw=1)
+    ax.axhline(0.1, ls="--", lw=1)
     ax.axvline(0, ls=":", lw=1)
     ax.set_xlabel("Normalized Enrichment Score (NES)")
-    ax.set_ylabel("-log10(FDR)")
+    ax.set_ylabel("FDR")
     ax.set_title("fgsea results (sex pre-ranked)")
     if ax.get_legend() is not None:
         ax.legend(title = "FDR thresholds")
@@ -373,7 +394,7 @@ def box_by_sex(scores: pd.Series, sex01: pd.Series, title: str, out_png: str):
         "score": scores.loc[common].values,
         "sex01": sex01.loc[common].values
     })
-    df["sex"] = np.where(df["sex01"] == 1, "Female", "Male")
+    df["sex"] = np.where(df["sex01"] == 0, "Female", "Male")
     plt.figure(figsize=(5, 5))
     ax = sns.boxplot(data=df, x="sex", y="score")
     sns.stripplot(data=df, x="sex", y="score", color="black", alpha=0.5)
@@ -448,7 +469,8 @@ def main(args: argparse.Namespace):
     # 3) Pre-ranked stats
     stats_df = point_biserial_by_gene(expr, sex01)
     preranked = build_preranked_vector(stats_df, break_ties=True)
-    stats_df.assign(stat=stats_df["r"]).to_csv(outdir / "preranked_stats_point_biserial.csv")
+    stats_df.to_csv(outdir / "preranked_stats_point_biserial.csv")
+    stats_df = stats_df.assign(stat=stats_df["r"])
 
     # 4) Gene sets
     #gene_sets = load_gene_sets(args.gene_sets)
@@ -495,21 +517,21 @@ def main(args: argparse.Namespace):
 
     score_b = module_score(expr, cd8_b_genes).rename("CD8_B_score")
     score_g = module_score(expr, cd8_g_genes).rename("CD8_G_score")
-    # Difference and log-ratio
+    # Difference (primary metric) and robust log-ratio (for visualization only)
     diff = (score_g - score_b).rename("CD8_G_minus_CD8_B")
-    eps = 1e-6
-    min_val = float(pd.concat([score_b, score_g]).min())
-    shift = (-min_val + eps) if min_val <= 0 else 0.0
-    ratio = np.log2((score_g + shift) / (score_b + shift)).rename("log_2_CD8_G_over_CD8_B")
+    base = pd.concat([score_b, score_g])
+    c = max(float(base.abs().median()), 0.25)
+    ratio_robust = robust_log2_ratio(score_g, score_b).rename("log2_CD8_G_over_CD8_B_robust")
 
-    combined = pd.concat([score_b, score_g, diff, ratio], axis=1)
+    # Save only B, G, and difference; ratio is visualization-only
+    combined = pd.concat([score_b, score_g, diff], axis = 1)
     combined.index.name = "sample_id"
     combined.to_csv(outdir / "sample_module_scores_CD8_B_vs_CD8_G.csv")
 
     # 7) Stats by sex for key contrasts
     tests = []
     tests.append(compare_by_sex(diff, sex01, "CD8_G_minus_CD8_B"))
-    tests.append(compare_by_sex(ratio, sex01, "log2_CD8_G_over_CD8_B"))
+    # (No ratio in hypothesis testing; visualization-only)
 
     # Add each fine cluster as well
     for lb in fine_labels:
@@ -520,12 +542,19 @@ def main(args: argparse.Namespace):
     stats_tbl["fdr"] = multipletests(stats_tbl["pval"].values, method="fdr_bh")[1]
     stats_tbl.to_csv(outdir / "by_sex_tests_CD8_scores.csv")
 
-    # 8) Plots: box by sex for CD8_G-CD8_B and log2 ratio
+    # 8) Plots: box by sex for CD8_G-CD8_B and (robust) log2 ratio (visualization only)
     try:
         box_by_sex(diff, sex01, "CD8_G - CD8_B (module score) by sex",
                    str(outdir / "box_CD8_G_minus_CD8_B_by_sex.png"))
-        box_by_sex(ratio, sex01, "log2(CD8_G / CD8_B) (module score) by sex",
-                   str(outdir / "box_log2_CD8G_over_CD8B_by_sex.png"))
+        # Clip extremes for display so a few near-zero denominators don't dominate the axis.
+        rlow, rhigh = np.nanpercentile(ratio_robust, [1, 99])
+        ratio_for_plot = ratio_robust.clip(lower=rlow, upper=rhigh)
+        box_by_sex(
+            ratio_for_plot,
+            sex01,
+            "log2(CD8_G / CD8_B) (module score) by sex - robust (display only)",
+            str(outdir / "box_log2_CD8G_over_CD8B_by_sex.png")
+        )
     except Exception as e:
         print(f"[WARN] Boxplot failed: {e}")
 
@@ -535,19 +564,20 @@ def main(args: argparse.Namespace):
             "Aim 1.2 — CD8 TIL phenotypes by sex\n"
             "-----------------------------------\n"
             "Files:\n"
-            "  - preranked_stats_point_biserial.csv: gene-level r vs sex (female=1, male=0).\n"
+            "  - preranked_stats_point_biserial.csv: gene-level r vs sex (female=0, male=1).\n"
             "  - fgsea_results.csv: fgsea on pre-ranked stats (NES, ES, pval, padj [BH-FDR], leading edge).\n"
-            "  - fgsea_volcano.png: NES vs -log10(FDR) scatter (FDR = padj).\n"
+            "  - fgsea_volcano.png: NES vs FDR scatter (FDR = padj).\n"
             "  - sample_module_scores_CD8_1_to_6.csv: per-sample module scores for fine clusters.\n"
-            "  - sample_module_scores_CD8_B_vs_CD8_G.csv: per-sample CD8_B, CD8_G, diff, log2 ratio.\n"
-            "  - by_sex_tests_CD8_scores.csv: Mann-Whitney + Cliff's delta + FDR across contrasts.\n"
+            "  - sample_module_scores_CD8_B_vs_CD8_G.csv: per-sample CD8_B, CD8_G, and difference (CD8_G_minus_CD8_B) (ratio is visualization-only).\n"
+            "  - by_sex_tests_CD8_scores.csv: Mann-Whitney + Cliff's delta + FDR across contrasts (no ratio tests). Cliff's delta: positive = higher in males\n"
             "  - box_*.png: box/strip plots by sex for key contrasts.\n"
             "\n"
             "Methods:\n"
             "  - Pre-ranking uses point-biserial (Pearson vs binary sex), with tiny deterministic tie-breaking.\n"
-            "  - fgsea: Multilevel by default (recommended); min/max size filter applied.\n"
+            "  - fgsea: Multilevel by default (recommended); min size filter applied.\n"
             "  - Module scores = mean z-scored expression across genes in the set.\n"
             "  - CD8_B = union of CD8_1,2,3; CD8_G = union of CD8_4,5,6.\n"
+            "  - Robust log2 ratio uses a shift-to-positive plus data-scaled pseudocount and is shown for visualization (clipped to 1st-99th percentiles).\n"
         )
 
     print(f"[DONE] Outputs written to: {outdir}")
