@@ -4,6 +4,7 @@ import numpy as np
 from ORIEN_analysis.config import paths
 import pandas as pd
 import statsmodels.formula.api as smf
+from scipy import stats
 
 
 def numericize_age(age) -> float:
@@ -251,13 +252,79 @@ def fit_linear_mixed_models(
         standard_error_of_parameter_for_Sex = mixed_linear_model_results_wrapper.bse["indicator_of_sex"]
         p_value_for_Sex = mixed_linear_model_results_wrapper.pvalues["indicator_of_sex"]
         number_of_patients = data_frame["ORIENAvatarKey"].nunique()
+
+        '''
+        We create a matrix of fixed effects rows corresponding to samples and columns corresponding to fixed effects.
+        This matrix has columns corresponding to
+        - intercept,
+        - indicator of sex,
+        - age at clinical record creation,
+        - each non-reference level of stage at start of ICB therapy,
+        - each non-reference level of indicator that patient has received ICB therapy (i.e., level True),
+        - each non-reference level of ID of batch, and
+        - sequencing depth.
+        '''        
+        matrix_of_fixed_effects = pd.DataFrame(
+            mixed_linear_model_results_wrapper.model.exog,
+            columns = mixed_linear_model_results_wrapper.model.exog_names
+        )
+        series_of_values_of_parameters_of_fixed_effects = mixed_linear_model_results_wrapper.fe_params
+        matrix_of_fixed_effects_with_indicator_of_sex_0 = matrix_of_fixed_effects.copy()
+        matrix_of_fixed_effects_with_indicator_of_sex_0["indicator_of_sex"] = 0
+        series_of_predicted_enrichment_scores_for_females = (
+            matrix_of_fixed_effects_with_indicator_of_sex_0 @ series_of_values_of_parameters_of_fixed_effects
+        )
+        expected_enrichment_score_given_patient_is_female_and_other_objects_have_certain_values = (
+            series_of_predicted_enrichment_scores_for_females.mean()
+        )
+        matrix_of_fixed_effects_with_indicator_of_sex_1 = matrix_of_fixed_effects.copy()
+        matrix_of_fixed_effects_with_indicator_of_sex_1["indicator_of_sex"] = 1
+        series_of_predicted_enrichment_scores_for_males = (
+            matrix_of_fixed_effects_with_indicator_of_sex_1 @ series_of_values_of_parameters_of_fixed_effects
+        )
+        expected_enrichment_score_given_patient_is_male_and_other_objects_have_certain_values = (
+            series_of_predicted_enrichment_scores_for_males.mean()
+        )
+        difference_between_expected_values = (
+            expected_enrichment_score_given_patient_is_male_and_other_objects_have_certain_values -
+            expected_enrichment_score_given_patient_is_female_and_other_objects_have_certain_values
+        )
+        percent_difference_between_expected_values = (
+            difference_between_expected_values /
+            expected_enrichment_score_given_patient_is_female_and_other_objects_have_certain_values *
+            100.0
+        )
+        log_fold_change = np.log2(
+            expected_enrichment_score_given_patient_is_male_and_other_objects_have_certain_values /
+            expected_enrichment_score_given_patient_is_female_and_other_objects_have_certain_values
+        )
+        standard_deviation_of_enrichment_score = data_frame["Score"].std()
+        standardized_parameter_for_Sex = parameter_for_Sex / standard_deviation_of_enrichment_score
+        confidence_level = 0.95
+        critical_value = stats.norm.ppf((confidence_level + 1) / 2)
+        lower_bound_of_confidence_interval_for_parameter_for_Sex = (
+            parameter_for_Sex - critical_value * standard_error_of_parameter_for_Sex
+        )
+        upper_bound_of_confidence_interval_for_parameter_for_Sex = (
+            parameter_for_Sex + critical_value * standard_error_of_parameter_for_Sex
+        )
+        standard_deviation_of_residuals = np.sqrt(mixed_linear_model_results_wrapper.scale)
         list_of_results.append(
             (
                 cell_type,
                 parameter_for_Sex,
                 standard_error_of_parameter_for_Sex,
                 p_value_for_Sex,
-                number_of_patients
+                number_of_patients,
+                expected_enrichment_score_given_patient_is_female_and_other_objects_have_certain_values,
+                expected_enrichment_score_given_patient_is_male_and_other_objects_have_certain_values,
+                difference_between_expected_values,
+                percent_difference_between_expected_values,
+                log_fold_change,
+                standardized_parameter_for_Sex,
+                lower_bound_of_confidence_interval_for_parameter_for_Sex,
+                upper_bound_of_confidence_interval_for_parameter_for_Sex,
+                standard_deviation_of_residuals
             )
         )
     data_frame_of_results = pd.DataFrame(
@@ -267,7 +334,16 @@ def fit_linear_mixed_models(
             "parameter for Sex",
             "standard error of parameter for Sex",
             "p value for Sex",
-            "number of patients"
+            "number of patients",
+            "expected enrichment score given patient is female and other objects have certain values",
+            "expected enrichment score given patient is male and other objects have certain values",
+            "difference between expected values",
+            "percent difference between expected values",
+            "log fold change",
+            "standardized parameter of Sex",
+            "lower bound of confidence interval for parameter for Sex",
+            "upper bound of confidence interval for parameter for Sex",
+            "standard deviation of residuals"
         ]
     )
     return data_frame_of_results
