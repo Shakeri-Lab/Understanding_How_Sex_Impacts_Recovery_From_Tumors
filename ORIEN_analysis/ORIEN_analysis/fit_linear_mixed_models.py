@@ -1,4 +1,3 @@
-import argparse
 from statsmodels.stats.multitest import multipletests
 import numpy as np
 from ORIEN_analysis.config import paths
@@ -112,56 +111,65 @@ def create_data_frame_of_enrichment_scores_and_clinical_and_QC_data(path_of_expr
     return data_frame_of_enrichment_scores_and_clinical_and_QC_data, list_of_cell_types
 
 
-def matrix_condition_number(exog: np.ndarray, drop_constant: bool = True) -> float:
-    """
-    Compute the 2-norm (spectral-norm) condition number of the fixed-effects
-    design matrix.
-
-    Parameters
-    ----------
-    exog : array-like (n_obs × n_params)
-        The design matrix returned by `model.exog` in statsmodels.
-    drop_constant : bool, default True
-        If True, columns with zero variance (e.g. the intercept) are removed
-        before computing the condition number—otherwise an all-ones column
-        makes the result explode.
-
-    Returns
-    -------
-    float
-        κ(X) = σ_max / σ_min  (ratio of largest to smallest non-zero singular
-        values).  Returns ``np.inf`` if the matrix is rank-deficient, and
-        ``np.nan`` if no columns remain after dropping constants.
-    """
-    X = np.asarray(exog, dtype=float)
-
-    if drop_constant:
-        # keep only columns whose sample variance is non-zero
-        keep = X.std(axis=0) > 0
-        X = X[:, keep]
-        if X.size == 0:
-            return np.nan                          # all columns were constant
-
-    # handle rank deficiency / numerical underflow robustly
-    try:
-        # full_matrices=False gives economy-size SVD (faster, less memory)
-        _, sing_vals, _ = np.linalg.svd(X, full_matrices=False)
-    except np.linalg.LinAlgError:
-        return np.inf                              # SVD failed ⇒ treat as ill-conditioned
-
-    # discard tiny singular values below numeric tolerance
-    tol = np.finfo(float).eps * max(X.shape) * sing_vals[0]
-    sing_vals = sing_vals[sing_vals > tol]
-    if sing_vals.size == 0:
-        return np.inf                              # effectively rank-deficient
-
-    return float(sing_vals[0] / sing_vals[-1])
+def try_to_fit_different_models(formula: str, data_frame: pd.DataFrame):
+    series_of_unique_patient_IDs_and_numbers_of_occurrences = data_frame["ORIENAvatarKey"].value_counts()
+    series_of_unique_batch_IDs_and_numbers_of_occurrences = data_frame["NexusBatch"].value_counts()
+    use_patient_re = (series_of_unique_patient_IDs_and_numbers_of_occurrences >= 2).sum() >= 2
+    use_batch_vc = (series_of_unique_batch_IDs_and_numbers_of_occurrences >= 2).sum() >= 1 and data_frame["NexusBatch"].nunique() >= 2
+    if use_patient_re and use_batch_vc:
+        md = smf.mixedlm(
+            formula,
+            data_frame,
+            groups = data_frame["ORIENAvatarKey"],
+            re_formula = "1",
+            vc_formula = {"batch": "0 + C(NexusBatch)"}
+        )
+        return md.fit(reml = False), "mixed_patient_batch"
+    if use_patient_re:
+        md = smf.mixedlm(
+            formula,
+            data_frame,
+            groups = data_frame["ORIENAvatarKey"],
+            re_formula = "1"
+        )
+        return md.fit(reml = False), "mixed_patient"
+    if use_batch_vc:
+        ols = smf.ols(formula, data_frame).fit(
+            cov_type = "cluster",
+            cov_kwds = {"groups": data_frame["NexusBatch"]}
+        )
+        return ols, "ols_cluster_batch"
+    if data_frame["ORIENAvatarKey"].nunique() >= 2:
+        ols = smf.ols(formula, data_frame).fit(
+            cov_type = "cluster",
+            cov_kwds = {"groups": data_frame["ORIENAvatarKey"]}
+        )
+        return ols, "ols_cluster_patient"
+    ols = smf.ols(formula, data_frame).fit()
+    return ols, "ols"
 
 
-def fit_linear_mixed_models(
+def get_statistics(regression_results_wrapper, variable):
+    list_of_names_of_fixed_effects = regression_results_wrapper.model.exog_names
+    series_of_parameters_of_fixed_effects = regression_results_wrapper.params.loc[list_of_names_of_fixed_effects]
+    parameter = series_of_parameters_of_fixed_effects[variable]
+    
+    series_of_standard_errors_of_parameters = regression_results_wrapper.bse
+    series_of_standard_errors_of_parameters_of_fixed_effects = series_of_standard_errors_of_parameters.loc[
+        list_of_names_of_fixed_effects
+    ]
+    standard_error = series_of_standard_errors_of_parameters_of_fixed_effects[variable]
+
+    series_of_p_values_of_parameters = regression_results_wrapper.pvalues
+    series_of_p_values_of_parameters_of_fixed_effects = series_of_p_values_of_parameters.loc[list_of_names_of_fixed_effects]
+    p_value = series_of_p_values_of_parameters_of_fixed_effects[variable]
+
+    return parameter, standard_error, p_value
+
+
+def fit_models(
     data_frame_of_enrichment_scores_clinical_data_and_QC_data: pd.DataFrame,
-    list_of_cell_types: list[str],
-    models_should_be_diagnosed: bool
+    list_of_cell_types: list[str]
 ) -> pd.DataFrame:    
     list_of_results = []
     for cell_type in list_of_cell_types:
@@ -182,75 +190,19 @@ def fit_linear_mixed_models(
         data_frame["indicator_of_sex"] = (data_frame["Sex"] == "Male").astype(int)
         data_frame["AgeAtClinicalRecordCreation"] = data_frame["AgeAtClinicalRecordCreation"].apply(numericize_age)
         data_frame["patient_has_received_ICB_therapy"] = data_frame["patient_has_received_ICB_therapy"].astype(bool)
-
-        if models_should_be_diagnosed:
-            # 1. Within-patient replication
-            replication_counts = data_frame.groupby("ORIENAvatarKey").size()
-            frac_singletons = (replication_counts <= 1).mean()
-            print(
-                "Diagnostic - %s: %.1f%% of patients contribute only one sample.",
-                cell_type, 100 * frac_singletons
-            )
-
-            # 3. Spread of the response
-            score_std = data_frame["Score"].std(ddof = 0)
-            print("Diagnostic - %s: response std = %.4f", cell_type, score_std)
-
-            # 4. Categorical level sparsity
-            sparsity_msgs = []
-            for cat in ["stage_at_start_of_ICB_therapy", "NexusBatch"]:
-                lvl_counts = data_frame[cat].value_counts()
-                rare_lvls  = lvl_counts[lvl_counts < 3]
-                if not rare_lvls.empty:
-                    sparsity_msgs.append(f"{cat}: {len(rare_lvls)} sparse levels")
-            if sparsity_msgs:
-                print("Diagnostic - %s: %s", cell_type, "; ".join(sparsity_msgs))
-
-            # 6. Scaling of numeric predictors
-            scale_summary = data_frame[["AgeAtClinicalRecordCreation", "SequencingDepth"]].describe().loc[["mean", "std"]]
-            print("Diagnostic - %s: numeric predictor scale\n%s", cell_type, scale_summary.to_string())
-        
         formula = (
             f"Score ~ " +
             "indicator_of_sex + " +
             "AgeAtClinicalRecordCreation + " +
             "C(stage_at_start_of_ICB_therapy) + " +
-            "C(patient_has_received_ICB_therapy) + " +
-            "C(NexusBatch) + " +
+            "patient_has_received_ICB_therapy + " +
             "SequencingDepth"
         ) # C means "make categorical".
-        mixed_linear_model = smf.mixedlm(
-            formula,
-            data_frame,
-            groups = data_frame["ORIENAvatarKey"]
+        regression_results_wrapper, model_kind = try_to_fit_different_models(formula, data_frame)
+        parameter_for_Sex, standard_error_of_parameter_for_Sex, p_value_for_Sex = get_statistics(
+            regression_results_wrapper,
+            "indicator_of_sex"
         )
-        mixed_linear_model_results_wrapper = mixed_linear_model.fit(reml = False)
-        
-        if models_should_be_diagnosed:
-            # 2. Random-effect variance & boundary fit indicator
-            try:
-                rand_var = mixed_linear_model_results_wrapper.cov_re.iloc[0, 0]
-            except Exception:
-                rand_var = np.nan
-            print("Diagnostic - %s: random-effect variance = %.6g", cell_type, rand_var)
-
-            # 5. Design-matrix condition number (fixed effects only)
-            cond_num = matrix_condition_number(mixed_linear_model.exog)
-            print("Diagnostic - %s: design-matrix condition number = %.2e", cell_type, cond_num)
-
-            # 7. AIC comparison with OLS (no random intercept)
-            try:
-                ols_res = smf.ols(formula, data_frame).fit()
-                print(
-                    "Diagnostic - %s: AIC (mixed) = %.1f ; AIC (OLS) = %.1f",
-                    cell_type, mixed_linear_model_results_wrapper.aic, ols_res.aic
-                )
-            except Exception as exc:
-                print("Diagnostic - %s: could not fit OLS for AIC comparison (%s)", cell_type, exc)
-        
-        parameter_for_Sex = mixed_linear_model_results_wrapper.params["indicator_of_sex"]
-        standard_error_of_parameter_for_Sex = mixed_linear_model_results_wrapper.bse["indicator_of_sex"]
-        p_value_for_Sex = mixed_linear_model_results_wrapper.pvalues["indicator_of_sex"]
         number_of_patients = data_frame["ORIENAvatarKey"].nunique()
 
         '''
@@ -260,19 +212,22 @@ def fit_linear_mixed_models(
         - indicator of sex,
         - age at clinical record creation,
         - each non-reference level of stage at start of ICB therapy,
-        - each non-reference level of indicator that patient has received ICB therapy (i.e., level True),
-        - each non-reference level of ID of batch, and
+        - each non-reference level of indicator that patient has received ICB therapy (i.e., level True), and
         - sequencing depth.
         '''        
         matrix_of_fixed_effects = pd.DataFrame(
-            mixed_linear_model_results_wrapper.model.exog,
-            columns = mixed_linear_model_results_wrapper.model.exog_names
+            regression_results_wrapper.model.exog,
+            columns = regression_results_wrapper.model.exog_names
         )
-        series_of_values_of_parameters_of_fixed_effects = mixed_linear_model_results_wrapper.fe_params
+        series_of_values_of_parameters = getattr(
+            regression_results_wrapper,
+            "fe_params",
+            regression_results_wrapper.params
+        ).reindex(matrix_of_fixed_effects.columns)
         matrix_of_fixed_effects_with_indicator_of_sex_0 = matrix_of_fixed_effects.copy()
         matrix_of_fixed_effects_with_indicator_of_sex_0["indicator_of_sex"] = 0
         series_of_predicted_enrichment_scores_for_females = (
-            matrix_of_fixed_effects_with_indicator_of_sex_0 @ series_of_values_of_parameters_of_fixed_effects
+            matrix_of_fixed_effects_with_indicator_of_sex_0 @ series_of_values_of_parameters
         )
         expected_enrichment_score_given_patient_is_female_and_other_objects_have_certain_values = (
             series_of_predicted_enrichment_scores_for_females.mean()
@@ -280,7 +235,7 @@ def fit_linear_mixed_models(
         matrix_of_fixed_effects_with_indicator_of_sex_1 = matrix_of_fixed_effects.copy()
         matrix_of_fixed_effects_with_indicator_of_sex_1["indicator_of_sex"] = 1
         series_of_predicted_enrichment_scores_for_males = (
-            matrix_of_fixed_effects_with_indicator_of_sex_1 @ series_of_values_of_parameters_of_fixed_effects
+            matrix_of_fixed_effects_with_indicator_of_sex_1 @ series_of_values_of_parameters
         )
         expected_enrichment_score_given_patient_is_male_and_other_objects_have_certain_values = (
             series_of_predicted_enrichment_scores_for_males.mean()
@@ -299,7 +254,9 @@ def fit_linear_mixed_models(
             expected_enrichment_score_given_patient_is_female_and_other_objects_have_certain_values
         )
         standard_deviation_of_enrichment_score = data_frame["Score"].std()
-        standardized_parameter_for_Sex = parameter_for_Sex / standard_deviation_of_enrichment_score
+        parameter_for_Sex_standardized_by_standard_deviation_of_enrichment_score = (
+            parameter_for_Sex / standard_deviation_of_enrichment_score
+        )
         confidence_level = 0.95
         critical_value = stats.norm.ppf((confidence_level + 1) / 2)
         lower_bound_of_confidence_interval_for_parameter_for_Sex = (
@@ -308,10 +265,19 @@ def fit_linear_mixed_models(
         upper_bound_of_confidence_interval_for_parameter_for_Sex = (
             parameter_for_Sex + critical_value * standard_error_of_parameter_for_Sex
         )
-        standard_deviation_of_residuals = np.sqrt(mixed_linear_model_results_wrapper.scale)
+        variance_of_residuals = getattr(
+            regression_results_wrapper,
+            "scale",
+            getattr(regression_results_wrapper, "mse_resid", np.nan)
+        )
+        standard_deviation_of_residuals = np.sqrt(variance_of_residuals)
+        parameter_for_Sex_standardized_by_standard_deviation_of_residuals = (
+            parameter_for_Sex / standard_deviation_of_residuals
+        )
         list_of_results.append(
             (
                 cell_type,
+                model_kind,
                 parameter_for_Sex,
                 standard_error_of_parameter_for_Sex,
                 p_value_for_Sex,
@@ -321,16 +287,18 @@ def fit_linear_mixed_models(
                 difference_between_expected_values,
                 percent_difference_between_expected_values,
                 log_fold_change,
-                standardized_parameter_for_Sex,
+                parameter_for_Sex_standardized_by_standard_deviation_of_enrichment_score,
                 lower_bound_of_confidence_interval_for_parameter_for_Sex,
                 upper_bound_of_confidence_interval_for_parameter_for_Sex,
-                standard_deviation_of_residuals
+                standard_deviation_of_residuals,
+                parameter_for_Sex_standardized_by_standard_deviation_of_residuals
             )
         )
     data_frame_of_results = pd.DataFrame(
         list_of_results,
         columns = [
             "cell type",
+            "type of model",
             "parameter for Sex",
             "standard error of parameter for Sex",
             "p value for Sex",
@@ -340,10 +308,11 @@ def fit_linear_mixed_models(
             "difference between expected values",
             "percent difference between expected values",
             "log fold change",
-            "standardized parameter of Sex",
+            "parameter for Sex standardized by standard deviation of enrichment score",
             "lower bound of confidence interval for parameter for Sex",
             "upper bound of confidence interval for parameter for Sex",
-            "standard deviation of residuals"
+            "standard deviation of residuals",
+            "parameter for Sex standardized by standard deviation of residuals"
         ]
     )
     return data_frame_of_results
@@ -367,10 +336,6 @@ def adjust_p_values_for_Sex(data_frame_of_results_of_fitting_LMMs: pd.DataFrame)
 def main():
     paths.ensure_dependencies_for_fitting_LMMs_exist()
 
-    parser = argparse.ArgumentParser(description = "Fit linear mixed models of xCell enrichment scores.")
-    parser.add_argument("-d", "--diagnose", action = "store_true", help = "Run diagnostics for each cell type.")
-    args = parser.parse_args()
-
     dictionary_of_paths_of_enrichment_data_frames_and_tuples_of_paths_of_results_of_fitting_LMMs = {
         paths.enrichment_data_frame_per_xCell: (
             paths.results_of_fitting_LMMs_per_xCell,
@@ -386,7 +351,7 @@ def main():
         path_of_results_of_fitting_LMMs = tuple_of_paths_of_results_of_fitting_LMMs[0]
         path_of_significant_results_of_fitting_LMMs = tuple_of_paths_of_results_of_fitting_LMMs[1]
         data_frame_of_enrichment_scores_and_clinical_and_QC_data, list_of_cell_types = create_data_frame_of_enrichment_scores_and_clinical_and_QC_data(path_of_enrichment_data_frame)
-        data_frame_of_results_of_fitting_LMMs = fit_linear_mixed_models(data_frame_of_enrichment_scores_and_clinical_and_QC_data, list_of_cell_types, args.diagnose)
+        data_frame_of_results_of_fitting_LMMs = fit_models(data_frame_of_enrichment_scores_and_clinical_and_QC_data, list_of_cell_types)
         data_frame_of_results_of_fitting_LMMs = adjust_p_values_for_Sex(data_frame_of_results_of_fitting_LMMs)
         data_frame_of_results_of_fitting_LMMs.sort_values("q value for Sex").to_csv(path_of_results_of_fitting_LMMs, index = False)
         data_frame_of_results_of_fitting_LMMs.query("significant").sort_values("q value for Sex").to_csv(path_of_significant_results_of_fitting_LMMs, index = False)
