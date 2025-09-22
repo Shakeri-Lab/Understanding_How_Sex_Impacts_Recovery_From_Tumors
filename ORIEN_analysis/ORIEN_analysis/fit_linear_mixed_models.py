@@ -52,8 +52,6 @@ def create_data_frame_of_enrichment_scores_and_clinical_and_QC_data(path_of_expr
         ).abs()
         row_of_diagnosis_data = diagnosis_data_for_patient.sort_values("time_between_start_of_ICB_therapy_and_diagnosis").iloc[0]
         stage = row_of_diagnosis_data.get("PathGroupStage")
-        if pd.isna(stage):
-            stage = row_of_diagnosis_data.get("ClinGroupStage")
         return stage
     data_frame_of_patient_information["stage_at_start_of_ICB_therapy"] = data_frame_of_patient_information.apply(
         determine_stage_at_start_of_ICB_therapy,
@@ -189,12 +187,12 @@ def fit_models(
         )
         data_frame["indicator_of_sex"] = (data_frame["Sex"] == "Male").astype(int)
         data_frame["AgeAtClinicalRecordCreation"] = data_frame["AgeAtClinicalRecordCreation"].apply(numericize_age)
-        data_frame["patient_has_received_ICB_therapy"] = data_frame["patient_has_received_ICB_therapy"].astype(bool)
+        data_frame["patient_has_received_ICB_therapy"] = data_frame["patient_has_received_ICB_therapy"].astype(int)
         formula = (
             f"Score ~ " +
             "indicator_of_sex + " +
             "AgeAtClinicalRecordCreation + " +
-            "C(stage_at_start_of_ICB_therapy) + " +
+            "C(stage_at_start_of_ICB_therapy, Treatment(reference='Unknown')) + " +
             "patient_has_received_ICB_therapy + " +
             "SequencingDepth"
         ) # C means "make categorical".
@@ -223,7 +221,7 @@ def fit_models(
             regression_results_wrapper,
             "fe_params",
             regression_results_wrapper.params
-        ).reindex(matrix_of_fixed_effects.columns)
+        )
         matrix_of_fixed_effects_with_indicator_of_sex_0 = matrix_of_fixed_effects.copy()
         matrix_of_fixed_effects_with_indicator_of_sex_0["indicator_of_sex"] = 0
         series_of_predicted_enrichment_scores_for_females = (
@@ -268,7 +266,7 @@ def fit_models(
         variance_of_residuals = getattr(
             regression_results_wrapper,
             "scale",
-            getattr(regression_results_wrapper, "mse_resid", np.nan)
+            np.nan
         )
         standard_deviation_of_residuals = np.sqrt(variance_of_residuals)
         parameter_for_Sex_standardized_by_standard_deviation_of_residuals = (
