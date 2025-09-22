@@ -52,6 +52,16 @@ def create_data_frame_of_enrichment_scores_and_clinical_and_QC_data(path_of_expr
         ).abs()
         row_of_diagnosis_data = diagnosis_data_for_patient.sort_values("time_between_start_of_ICB_therapy_and_diagnosis").iloc[0]
         stage = row_of_diagnosis_data.get("PathGroupStage")
+        if stage in ["IA"]:
+            stage = "I"
+        elif stage in ["IIB", "IIC"]:
+            stage = "II"
+        elif stage in ["IIIA", "IIIB", "IIIC", "IIID"]:
+            stage = "III"
+        elif stage in ["IVB", "IVC"]:
+            stage = "IV"
+        elif stage in ["No TNM applicable for this site/histology combination", "Unknown/Not Applicable", "Unknown/Not Reported"]:
+            stage = "Unknown"
         return stage
     data_frame_of_patient_information["stage_at_start_of_ICB_therapy"] = data_frame_of_patient_information.apply(
         determine_stage_at_start_of_ICB_therapy,
@@ -122,7 +132,7 @@ def try_to_fit_different_models(formula: str, data_frame: pd.DataFrame):
             re_formula = "1",
             vc_formula = {"batch": "0 + C(NexusBatch)"}
         )
-        return md.fit(reml = False), "mixed_patient_batch"
+        return md.fit(), "mixed_patient_batch"
     if use_patient_re:
         md = smf.mixedlm(
             formula,
@@ -130,7 +140,7 @@ def try_to_fit_different_models(formula: str, data_frame: pd.DataFrame):
             groups = data_frame["ORIENAvatarKey"],
             re_formula = "1"
         )
-        return md.fit(reml = False), "mixed_patient"
+        return md.fit(), "mixed_patient"
     if use_batch_vc:
         ols = smf.ols(formula, data_frame).fit(
             cov_type = "cluster",
