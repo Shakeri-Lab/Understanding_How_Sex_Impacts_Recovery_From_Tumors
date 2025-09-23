@@ -1,3 +1,4 @@
+from statsmodels.stats.sandwich_covariance import cov_cluster_2groups
 from statsmodels.stats.multitest import multipletests
 import numpy as np
 from ORIEN_analysis.config import paths
@@ -120,41 +121,76 @@ def create_data_frame_of_enrichment_scores_and_clinical_and_QC_data(path_of_expr
 
 
 def try_to_fit_different_models(formula: str, data_frame: pd.DataFrame):
-    series_of_unique_patient_IDs_and_numbers_of_occurrences = data_frame["ORIENAvatarKey"].value_counts()
-    series_of_unique_batch_IDs_and_numbers_of_occurrences = data_frame["NexusBatch"].value_counts()
-    use_patient_re = (series_of_unique_patient_IDs_and_numbers_of_occurrences >= 2).sum() >= 2
-    use_batch_vc = (series_of_unique_batch_IDs_and_numbers_of_occurrences >= 2).sum() >= 1 and data_frame["NexusBatch"].nunique() >= 2
-    if use_patient_re and use_batch_vc:
-        md = smf.mixedlm(
+    df = data_frame.copy()
+
+    for name_of_column in ["AgeAtClinicalRecordCreation", "SequencingDepth"]:
+        series = df[name_of_column]
+        average = df[name_of_column].mean()
+        standard_deviation = df[name_of_column].std()
+        df[name_of_column] = (series - average) / standard_deviation
+
+    series_of_patient_IDs = df["ORIENAvatarKey"]
+    series_of_batch_IDs = df["NexusBatch"]
+    array_of_indices_of_patient_IDs = pd.Categorical(series_of_patient_IDs).codes
+    array_of_indices_of_batch_IDs = pd.Categorical(series_of_batch_IDs).codes
+    series_of_unique_patient_IDs_and_numbers_of_occurrences = series_of_patient_IDs.value_counts()
+    series_of_unique_batch_IDs_and_numbers_of_occurrences = series_of_batch_IDs.value_counts()
+    number_of_unique_patient_IDs = series_of_patient_IDs.nunique()
+    number_of_unique_batch_IDs = series_of_batch_IDs.nunique()
+    number_of_patient_IDs_occurring_multiple_times = (series_of_unique_patient_IDs_and_numbers_of_occurrences >= 2).sum()
+    number_of_batch_IDs_occurring_multiple_times = (series_of_unique_batch_IDs_and_numbers_of_occurrences >= 2).sum()
+    there_are_at_least_2_patient_IDs_that_occur_multiple_times = number_of_patient_IDs_occurring_multiple_times >= 2
+    clusters_of_batch_IDs_exist = (
+        (number_of_batch_IDs_occurring_multiple_times >= 1) and
+        (number_of_unique_batch_IDs >= 2)
+    )
+
+    if there_are_at_least_2_patient_IDs_that_occur_multiple_times:
+        dictionary_of_variance_parameters_and_formulas = (
+            {"batch": "0 + C(NexusBatch)"}
+            if clusters_of_batch_IDs_exist
+            else None
+        )
+        linear_mixed_model = smf.mixedlm(
             formula,
-            data_frame,
-            groups = data_frame["ORIENAvatarKey"],
+            df,
+            groups = series_of_patient_IDs,
             re_formula = "1",
-            vc_formula = {"batch": "0 + C(NexusBatch)"}
+            vc_formula = dictionary_of_variance_parameters_and_formulas
         )
-        return md.fit(), "mixed_patient_batch"
-    if use_patient_re:
-        md = smf.mixedlm(
-            formula,
-            data_frame,
-            groups = data_frame["ORIENAvatarKey"],
-            re_formula = "1"
+        regression_results_wrapper = linear_mixed_model.fit()
+        return regression_results_wrapper, ("mixed_patient_batch" if clusters_of_batch_IDs_exist else "mixed_patient")
+    OLS_model = smf.ols(formula, df)
+    minimum_number_of_clusters_for_reliable_cluster_robust_inference = 10
+    if (
+        (number_of_unique_patient_IDs >= minimum_number_of_clusters_for_reliable_cluster_robust_inference) and
+        (number_of_unique_batch_IDs >= minimum_number_of_clusters_for_reliable_cluster_robust_inference)
+    ):
+        regression_results_wrapper = OLS_model.fit()
+        tuple_of_cluster_robust_covariance_matrices = cov_cluster_2groups(
+            regression_results_wrapper,
+            array_of_indices_of_patient_IDs,
+            array_of_indices_of_batch_IDs
         )
-        return md.fit(), "mixed_patient"
-    if use_batch_vc:
-        ols = smf.ols(formula, data_frame).fit(
+        regression_results_wrapper.cov_params_default = tuple_of_cluster_robust_covariance_matrices[0]
+        regression_results_wrapper.cov_type = "cluster_2groups"
+        regression_results_wrapper.cov_kwds = {"groups": (series_of_patient_IDs, series_of_batch_IDs)}
+        regression_results_wrapper.use_t = False
+        return regression_results_wrapper, "ols_cluster_patient_batch"
+    if number_of_unique_batch_IDs >= minimum_number_of_clusters_for_reliable_cluster_robust_inference:
+        regression_results_wrapper = OLS_model.fit(
             cov_type = "cluster",
-            cov_kwds = {"groups": data_frame["NexusBatch"]}
+            cov_kwds = {"groups": array_of_indices_of_batch_IDs}
         )
-        return ols, "ols_cluster_batch"
-    if data_frame["ORIENAvatarKey"].nunique() >= 2:
-        ols = smf.ols(formula, data_frame).fit(
+        return regression_results_wrapper, "ols_cluster_batch"
+    if number_of_unique_patient_IDs >= minimum_number_of_clusters_for_reliable_cluster_robust_inference:
+        regression_results_wrapper = OLS_model.fit(
             cov_type = "cluster",
-            cov_kwds = {"groups": data_frame["ORIENAvatarKey"]}
+            cov_kwds = {"groups": array_of_indices_of_patient_IDs}
         )
-        return ols, "ols_cluster_patient"
-    ols = smf.ols(formula, data_frame).fit()
-    return ols, "ols"
+        return regression_results_wrapper, "ols_cluster_patient"
+    regression_results_wrapper = OLS_model.fit(cov_type = "HC3")
+    return regression_results_wrapper, "ols_hc3"
 
 
 def get_statistics(regression_results_wrapper, variable):
