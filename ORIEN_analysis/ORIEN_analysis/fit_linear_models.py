@@ -102,6 +102,9 @@ def create_data_frame_of_enrichment_scores_and_clinical_and_QC_data(path_of_expr
         )
         .drop(columns = ["SLID"])
     )
+    data_frame_of_enrichment_scores_and_clinical_and_QC_data["AgeAtClinicalRecordCreation"] = (
+        data_frame_of_enrichment_scores_and_clinical_and_QC_data["AgeAtClinicalRecordCreation"].apply(numericize_age)
+    )
     data_frame_of_enrichment_scores_and_clinical_and_QC_data["patient_has_received_ICB_therapy"] = (
         data_frame_of_enrichment_scores_and_clinical_and_QC_data["patient_has_received_ICB_therapy"]
         .astype("boolean")
@@ -232,7 +235,6 @@ def fit_models(
             columns = {cell_type: "Score"}
         )
         data_frame["indicator_of_sex"] = (data_frame["Sex"] == "Male").astype(int)
-        data_frame["AgeAtClinicalRecordCreation"] = data_frame["AgeAtClinicalRecordCreation"].apply(numericize_age)
         data_frame["patient_has_received_ICB_therapy"] = data_frame["patient_has_received_ICB_therapy"].astype(int)
         formula = (
             f"Score ~ " +
@@ -258,7 +260,7 @@ def fit_models(
         - each non-reference level of stage at start of ICB therapy,
         - each non-reference level of indicator that patient has received ICB therapy (i.e., level True), and
         - sequencing depth.
-        '''        
+        '''
         matrix_of_fixed_effects = pd.DataFrame(
             regression_results_wrapper.model.exog,
             columns = regression_results_wrapper.model.exog_names
@@ -378,7 +380,7 @@ def adjust_p_values_for_Sex(data_frame_of_results_of_fitting_LMMs: pd.DataFrame)
 
 
 def main():
-    paths.ensure_dependencies_for_fitting_LMMs_exist()
+    paths.ensure_dependencies_for_fitting_LMs_exist()
 
     dictionary_of_paths_of_enrichment_data_frames_and_tuples_of_paths_of_results_of_fitting_LMMs = {
         paths.enrichment_data_frame_per_xCell: (

@@ -84,7 +84,8 @@ class Paths():
         # self.enrichment_data_frame_per_xCell, which is defined above
         # self.enrichment_data_frame_per_xCell2_and_Pan_Cancer, which is defined above
         # outputs
-        # <no files>
+        self.plots_for_comparing_enrichment_scores = self.outputs_of_comparing_enrichment_scores / "plots_for_comparing_enrichment_scores"
+        # -----
         self.comparisons_for_females_and_males_and_xCell = self.outputs_of_comparing_enrichment_scores / "comparisons_for_female_and_males_and_xCell.csv"
         self.comparisons_for_ICB_naive_and_experienced_samples_of_females_and_xCell = self.outputs_of_comparing_enrichment_scores / "comparisons_for_ICB_naive_and_experienced_samples_of_females_and_xCell.csv"
         self.comparisons_for_ICB_naive_and_experienced_samples_of_males_and_xCell = self.outputs_of_comparing_enrichment_scores / "comparisons_for_ICB_naive_and_experienced_samples_of_males_and_xCell.csv"
@@ -141,7 +142,7 @@ class Paths():
             assert os.path.exists(path), f"The dependency of running xCell analysis `{path}` does not exist."
 
 
-    def ensure_dependencies_for_fitting_LMMs_exist(self):
+    def ensure_dependencies_for_fitting_LMs_exist(self):
         for path in [
             self.outputs_of_fitting_LMMs
         ]:
@@ -155,7 +156,8 @@ class Paths():
 
     def ensure_dependencies_for_comparing_enrichment_scores_exist(self):
         for path in [
-            self.outputs_of_comparing_enrichment_scores
+            self.outputs_of_comparing_enrichment_scores,
+            self.plots_for_comparing_enrichment_scores
         ]:
             os.makedirs(path, exist_ok = True)
         for path in [
