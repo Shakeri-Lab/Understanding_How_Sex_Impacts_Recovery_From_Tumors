@@ -120,10 +120,10 @@ def create_series_of_enrichment_scores_or_residuals(
     ].copy()
     if covariates_will_be_adjusted:
         data_frame_of_enrichment_scores_ages_and_stages = data_frame_of_enrichment_scores_and_clinical_and_QC_data[
-            [cell_type, "AgeAtClinicalRecordCreation", "stage_at_start_of_ICB_therapy"]
+            [cell_type, "Age_At_Specimen_Collection", "EKN_Assigned_Stage"]
         ]
         OLS_linear_regression_model = smf.ols(
-            f"{cell_type} ~ AgeAtClinicalRecordCreation + C(stage_at_start_of_ICB_therapy, Treatment(reference='Unknown'))",
+            f"{cell_type} ~ Age_At_Specimen_Collection + C(EKN_Assigned_Stage)",
             data = data_frame_of_enrichment_scores_ages_and_stages
         )
         regression_results_wrapper = OLS_linear_regression_model.fit()

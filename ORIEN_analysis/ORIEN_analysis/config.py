@@ -94,7 +94,7 @@ class Paths():
         self.comparisons_for_ICB_naive_and_experienced_samples_of_males_and_xCell2_and_Pan_Cancer = self.outputs_of_comparing_enrichment_scores / "comparisons_for_ICB_naive_and_experienced_samples_of_males_and_xCell2_and_Pan_Cancer.csv"
 
 
-        # ORIEN_analysis/ORIEN_analysis/aim.py
+        # ORIEN_analysis/ORIEN_analysis/complete_Aim_1_2.py
         # dependencies
         self.outputs_of_completing_Aim_1_2 = self.output / "completing_Aim_1_2"
         # -----

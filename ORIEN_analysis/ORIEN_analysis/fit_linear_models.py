@@ -16,14 +16,17 @@ def numericize_age(age) -> float:
         return float(age)
 
 
-def create_data_frame_of_enrichment_scores_and_clinical_and_QC_data(path_of_expression_matrix) -> tuple[pd.DataFrame, list[str]]:
+def create_data_frame_of_enrichment_scores_and_clinical_and_QC_data(
+    path_of_enrichment_matrix
+) -> tuple[pd.DataFrame, list[str]]:
     QC_data = pd.read_csv(paths.QC_data)
     QC_data["SequencingDepth"] = np.log10(QC_data["TotalReads"])
     clinical_molecular_linkage_data = pd.read_csv(paths.clinical_molecular_linkage_data)
-    diagnosis_data = pd.read_csv(paths.diagnosis_data)
-    diagnosis_data["AgeAtDiagnosis"] = diagnosis_data["AgeAtDiagnosis"].apply(numericize_age)
-    enrichment_matrix = pd.read_csv(path_of_expression_matrix)
+    enrichment_matrix = pd.read_csv(path_of_enrichment_matrix)
     medications_data = pd.read_csv(paths.medications_data)
+    output_of_pairing_clinical_data_and_stages_of_tumors = pd.read_csv(
+        paths.output_of_pairing_clinical_data_and_stages_of_tumors
+    )
     patient_data = pd.read_csv(paths.patient_data)
 
     set_of_medications_for_ICB_therapy = {
@@ -33,85 +36,68 @@ def create_data_frame_of_enrichment_scores_and_clinical_and_QC_data(path_of_expr
     }
     medications_data["medication_is_for_ICB_therapy"] = medications_data["Medication"].isin(set_of_medications_for_ICB_therapy)
     medications_data_for_ICB_therapy = medications_data[medications_data["medication_is_for_ICB_therapy"]].copy()
-    medications_data_for_ICB_therapy["age_at_start_of_medication"] = (
-        medications_data_for_ICB_therapy["AgeAtMedStart"].apply(numericize_age)
-    )
-    data_frame_of_patient_information = (
+    data_frame_of_patient_IDs_and_indicators_that_patient_has_received_ICB_therapy = (
         medications_data_for_ICB_therapy
         .groupby("AvatarKey", as_index = False)
         .agg(
-            patient_has_received_ICB_therapy = ("medication_is_for_ICB_therapy", "any"),
-            age_at_start_of_ICB_therapy = ("age_at_start_of_medication", "min")
+            patient_has_received_ICB_therapy = ("medication_is_for_ICB_therapy", "any")
         )
-    )
-
-    def determine_stage_at_start_of_ICB_therapy(row_of_patient_information):
-        age_at_start_of_ICB_therapy = row_of_patient_information["age_at_start_of_ICB_therapy"]
-        diagnosis_data_for_patient = diagnosis_data[diagnosis_data["AvatarKey"] == row_of_patient_information["AvatarKey"]]
-        diagnosis_data_for_patient["time_between_start_of_ICB_therapy_and_diagnosis"] = (
-            age_at_start_of_ICB_therapy - diagnosis_data_for_patient["AgeAtDiagnosis"]
-        ).abs()
-        row_of_diagnosis_data = diagnosis_data_for_patient.sort_values("time_between_start_of_ICB_therapy_and_diagnosis").iloc[0]
-        stage = row_of_diagnosis_data.get("PathGroupStage")
-        if stage in ["IA"]:
-            stage = "I"
-        elif stage in ["IIB", "IIC"]:
-            stage = "II"
-        elif stage in ["IIIA", "IIIB", "IIIC", "IIID"]:
-            stage = "III"
-        elif stage in ["IVB", "IVC"]:
-            stage = "IV"
-        elif stage in ["No TNM applicable for this site/histology combination", "Unknown/Not Applicable", "Unknown/Not Reported"]:
-            stage = "Unknown"
-        return stage
-    data_frame_of_patient_information["stage_at_start_of_ICB_therapy"] = data_frame_of_patient_information.apply(
-        determine_stage_at_start_of_ICB_therapy,
-        axis = 1
     )
 
     data_frame_of_enrichment_scores_and_clinical_and_QC_data = (
-        enrichment_matrix
+        output_of_pairing_clinical_data_and_stages_of_tumors[["ORIENSpecimenID", "EKN Assigned Stage", "AvatarKey"]]
         .merge(
-            clinical_molecular_linkage_data[["RNASeq", "ORIENAvatarKey"]],
+            clinical_molecular_linkage_data[["DeidSpecimenID", "Age At Specimen Collection", "RNASeq"]],
             how = "left",
-            left_on = "SampleID",
-            right_on = "RNASeq"
+            left_on = "ORIENSpecimenID",
+            right_on = "DeidSpecimenID"
         )
-        .drop(columns = "RNASeq")
+        .drop(columns = "DeidSpecimenID")
+        .rename(
+            columns = {
+                "Age At Specimen Collection": "Age_At_Specimen_Collection",
+                "EKN Assigned Stage": "EKN_Assigned_Stage"
+            }
+        )
         .merge(
-            patient_data[["AvatarKey", "AgeAtClinicalRecordCreation", "Sex"]],
+            enrichment_matrix,
             how = "left",
-            left_on = "ORIENAvatarKey",
+            left_on = "RNASeq",
+            right_on = "SampleID"
+        )
+        .dropna(subset = "SampleID")
+        .drop(columns = "SampleID")
+        .merge(
+            patient_data[["AvatarKey", "Sex"]],
+            how = "left",
+            left_on = "AvatarKey",
             right_on = "AvatarKey"
         )
-        .drop(columns = ["AvatarKey"])
         .merge(
-            data_frame_of_patient_information[
-                ["AvatarKey", "patient_has_received_ICB_therapy", "stage_at_start_of_ICB_therapy"]
+            data_frame_of_patient_IDs_and_indicators_that_patient_has_received_ICB_therapy[
+                ["AvatarKey", "patient_has_received_ICB_therapy"]
             ],
             how = "left",
-            left_on = "ORIENAvatarKey",
+            left_on = "AvatarKey",
             right_on = "AvatarKey"
         )
-        .drop(columns = ["AvatarKey"])
         .merge(
             QC_data[["SLID", "NexusBatch", "SequencingDepth"]],
             how = "left",
-            left_on = "SampleID",
+            left_on = "RNASeq",
             right_on = "SLID"
         )
         .drop(columns = ["SLID"])
     )
-    data_frame_of_enrichment_scores_and_clinical_and_QC_data["AgeAtClinicalRecordCreation"] = (
-        data_frame_of_enrichment_scores_and_clinical_and_QC_data["AgeAtClinicalRecordCreation"].apply(numericize_age)
+    data_frame_of_enrichment_scores_and_clinical_and_QC_data["Age_At_Specimen_Collection"] = (
+        data_frame_of_enrichment_scores_and_clinical_and_QC_data["Age_At_Specimen_Collection"].apply(
+            numericize_age
+        )
     )
     data_frame_of_enrichment_scores_and_clinical_and_QC_data["patient_has_received_ICB_therapy"] = (
         data_frame_of_enrichment_scores_and_clinical_and_QC_data["patient_has_received_ICB_therapy"]
         .astype("boolean")
         .fillna(False)
-    )
-    data_frame_of_enrichment_scores_and_clinical_and_QC_data["stage_at_start_of_ICB_therapy"] = (
-        data_frame_of_enrichment_scores_and_clinical_and_QC_data["stage_at_start_of_ICB_therapy"].fillna("Unknown")
     )
 
     list_of_cell_types = [
@@ -126,13 +112,13 @@ def create_data_frame_of_enrichment_scores_and_clinical_and_QC_data(path_of_expr
 def try_to_fit_different_models(formula: str, data_frame: pd.DataFrame):
     df = data_frame.copy()
 
-    for name_of_column in ["AgeAtClinicalRecordCreation", "SequencingDepth"]:
+    for name_of_column in ["Age_At_Specimen_Collection", "SequencingDepth"]:
         series = df[name_of_column]
         average = df[name_of_column].mean()
         standard_deviation = df[name_of_column].std()
         df[name_of_column] = (series - average) / standard_deviation
 
-    series_of_patient_IDs = df["ORIENAvatarKey"]
+    series_of_patient_IDs = df["AvatarKey"]
     series_of_batch_IDs = df["NexusBatch"]
     array_of_indices_of_patient_IDs = pd.Categorical(series_of_patient_IDs).codes
     array_of_indices_of_batch_IDs = pd.Categorical(series_of_batch_IDs).codes
@@ -162,7 +148,8 @@ def try_to_fit_different_models(formula: str, data_frame: pd.DataFrame):
             vc_formula = dictionary_of_variance_parameters_and_formulas
         )
         regression_results_wrapper = linear_mixed_model.fit()
-        return regression_results_wrapper, ("mixed_patient_batch" if clusters_of_batch_IDs_exist else "mixed_patient")
+        type_of_model = "mixed_patient_batch" if clusters_of_batch_IDs_exist else "mixed_patient"
+        return regression_results_wrapper, type_of_model
     OLS_model = smf.ols(formula, df)
     minimum_number_of_clusters_for_reliable_cluster_robust_inference = 10
     if (
@@ -214,7 +201,7 @@ def get_statistics(regression_results_wrapper, variable):
     return parameter, standard_error, p_value
 
 
-def fit_models(
+def fit_linear_models(
     data_frame_of_enrichment_scores_clinical_data_and_QC_data: pd.DataFrame,
     list_of_cell_types: list[str]
 ) -> pd.DataFrame:    
@@ -224,12 +211,12 @@ def fit_models(
             [
                 cell_type,
                 "Sex",
-                "AgeAtClinicalRecordCreation",
-                "stage_at_start_of_ICB_therapy",
+                "Age_At_Specimen_Collection",
+                "EKN_Assigned_Stage",
                 "patient_has_received_ICB_therapy",
                 "NexusBatch",
                 "SequencingDepth",
-                "ORIENAvatarKey"
+                "AvatarKey"
             ]
         ].rename(
             columns = {cell_type: "Score"}
@@ -239,17 +226,17 @@ def fit_models(
         formula = (
             f"Score ~ " +
             "indicator_of_sex + " +
-            "AgeAtClinicalRecordCreation + " +
-            "C(stage_at_start_of_ICB_therapy, Treatment(reference='Unknown')) + " +
+            "Age_At_Specimen_Collection + " +
+            "C(EKN_Assigned_Stage) + " +
             "patient_has_received_ICB_therapy + " +
             "SequencingDepth"
         ) # C means "make categorical".
-        regression_results_wrapper, model_kind = try_to_fit_different_models(formula, data_frame)
+        regression_results_wrapper, type_of_model = try_to_fit_different_models(formula, data_frame)
         parameter_for_Sex, standard_error_of_parameter_for_Sex, p_value_for_Sex = get_statistics(
             regression_results_wrapper,
             "indicator_of_sex"
         )
-        number_of_patients = data_frame["ORIENAvatarKey"].nunique()
+        number_of_patients = data_frame["AvatarKey"].nunique()
 
         '''
         We create a matrix of fixed effects rows corresponding to samples and columns corresponding to fixed effects.
@@ -270,6 +257,7 @@ def fit_models(
             "fe_params",
             regression_results_wrapper.params
         )
+        series_of_values_of_parameters.to_csv("series.csv")
         matrix_of_fixed_effects_with_indicator_of_sex_0 = matrix_of_fixed_effects.copy()
         matrix_of_fixed_effects_with_indicator_of_sex_0["indicator_of_sex"] = 0
         series_of_predicted_enrichment_scores_for_females = (
@@ -311,11 +299,7 @@ def fit_models(
         upper_bound_of_confidence_interval_for_parameter_for_Sex = (
             parameter_for_Sex + critical_value * standard_error_of_parameter_for_Sex
         )
-        variance_of_residuals = getattr(
-            regression_results_wrapper,
-            "scale",
-            np.nan
-        )
+        variance_of_residuals = getattr(regression_results_wrapper, "scale", np.nan)
         standard_deviation_of_residuals = np.sqrt(variance_of_residuals)
         parameter_for_Sex_standardized_by_standard_deviation_of_residuals = (
             parameter_for_Sex / standard_deviation_of_residuals
@@ -323,7 +307,7 @@ def fit_models(
         list_of_results.append(
             (
                 cell_type,
-                model_kind,
+                type_of_model,
                 parameter_for_Sex,
                 standard_error_of_parameter_for_Sex,
                 p_value_for_Sex,
@@ -397,7 +381,7 @@ def main():
         path_of_results_of_fitting_LMMs = tuple_of_paths_of_results_of_fitting_LMMs[0]
         path_of_significant_results_of_fitting_LMMs = tuple_of_paths_of_results_of_fitting_LMMs[1]
         data_frame_of_enrichment_scores_and_clinical_and_QC_data, list_of_cell_types = create_data_frame_of_enrichment_scores_and_clinical_and_QC_data(path_of_enrichment_data_frame)
-        data_frame_of_results_of_fitting_LMMs = fit_models(data_frame_of_enrichment_scores_and_clinical_and_QC_data, list_of_cell_types)
+        data_frame_of_results_of_fitting_LMMs = fit_linear_models(data_frame_of_enrichment_scores_and_clinical_and_QC_data, list_of_cell_types)
         data_frame_of_results_of_fitting_LMMs = adjust_p_values_for_Sex(data_frame_of_results_of_fitting_LMMs)
         data_frame_of_results_of_fitting_LMMs.sort_values("q value for Sex").to_csv(path_of_results_of_fitting_LMMs, index = False)
         data_frame_of_results_of_fitting_LMMs.query("significant").sort_values("q value for Sex").to_csv(path_of_significant_results_of_fitting_LMMs, index = False)
