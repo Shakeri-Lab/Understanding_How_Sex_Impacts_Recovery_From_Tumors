@@ -152,21 +152,6 @@ def try_to_fit_different_models(formula: str, data_frame: pd.DataFrame):
         return regression_results_wrapper, type_of_model
     OLS_model = smf.ols(formula, df)
     minimum_number_of_clusters_for_reliable_cluster_robust_inference = 10
-    if (
-        (number_of_unique_patient_IDs >= minimum_number_of_clusters_for_reliable_cluster_robust_inference) and
-        (number_of_unique_batch_IDs >= minimum_number_of_clusters_for_reliable_cluster_robust_inference)
-    ):
-        regression_results_wrapper = OLS_model.fit()
-        tuple_of_cluster_robust_covariance_matrices = cov_cluster_2groups(
-            regression_results_wrapper,
-            array_of_indices_of_patient_IDs,
-            array_of_indices_of_batch_IDs
-        )
-        regression_results_wrapper.cov_params_default = tuple_of_cluster_robust_covariance_matrices[0]
-        regression_results_wrapper.cov_type = "cluster_2groups"
-        regression_results_wrapper.cov_kwds = {"groups": (series_of_patient_IDs, series_of_batch_IDs)}
-        regression_results_wrapper.use_t = False
-        return regression_results_wrapper, "ols_cluster_patient_batch"
     if number_of_unique_batch_IDs >= minimum_number_of_clusters_for_reliable_cluster_robust_inference:
         regression_results_wrapper = OLS_model.fit(
             cov_type = "cluster",
@@ -257,7 +242,6 @@ def fit_linear_models(
             "fe_params",
             regression_results_wrapper.params
         )
-        series_of_values_of_parameters.to_csv("series.csv")
         matrix_of_fixed_effects_with_indicator_of_sex_0 = matrix_of_fixed_effects.copy()
         matrix_of_fixed_effects_with_indicator_of_sex_0["indicator_of_sex"] = 0
         series_of_predicted_enrichment_scores_for_females = (
