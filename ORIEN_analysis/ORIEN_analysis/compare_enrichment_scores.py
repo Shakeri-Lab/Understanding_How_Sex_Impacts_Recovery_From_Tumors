@@ -123,7 +123,7 @@ def create_series_of_enrichment_scores_or_residuals(
             [cell_type, "Age_At_Specimen_Collection", "EKN_Assigned_Stage"]
         ]
         OLS_linear_regression_model = smf.ols(
-            f"{cell_type} ~ Age_At_Specimen_Collection + C(EKN_Assigned_Stage)",
+            f"{cell_type} ~ Age_At_Specimen_Collection + C(EKN_Assigned_Stage, Treatment(reference='II'))",
             data = data_frame_of_enrichment_scores_ages_and_stages
         )
         regression_results_wrapper = OLS_linear_regression_model.fit()
@@ -251,7 +251,7 @@ def create_plots_for_significant_cell_types_within_sex(
         series_of_values_for_indicator_0, series_of_values_for_indicator_1 = create_series_of_enrichment_scores_or_residuals(
             data_frame_of_enrichment_scores_and_clinical_and_QC_data = data_frame_of_enrichment_scores_and_clinical_and_QC_data_for_sex,
             cell_type = cell_type,
-            category = "integer_indicating_that_patient_has_received_ICB_therapy",
+            category = "integer_indicating_that_patient_received_ICB_therapy_at_or_before_age_of_specimen_collection",
             covariates_will_be_adjusted = covariates_will_be_adjusted
         )
         response = "Residuals" if covariates_will_be_adjusted else "Enrichment Scores"
@@ -314,8 +314,8 @@ def main():
             path_to_enrichment_data
         )
         data_frame["indicator_of_sex"] = (data_frame["Sex"] == "Male").astype(int)
-        data_frame["integer_indicating_that_patient_has_received_ICB_therapy"] = (
-            data_frame["patient_has_received_ICB_therapy"].astype(int)
+        data_frame["integer_indicating_that_patient_received_ICB_therapy_at_or_before_age_of_specimen_collection"] = (
+            data_frame["patient_received_ICB_therapy_at_or_before_age_of_specimen_collection"].astype(int)
         )
         data_frame = data_frame.rename(
             columns = lambda cell_type: cell_type.replace(' ', '_').replace('-', '_').replace('+', "plus").replace(',', '')
@@ -351,7 +351,7 @@ def main():
             data_frame_of_cell_types_and_statistics = create_data_frame_of_cell_types_and_statistics(
                 data_frame_for_indicator,
                 list_of_cell_types,
-                category = "integer_indicating_that_patient_has_received_ICB_therapy",
+                category = "integer_indicating_that_patient_received_ICB_therapy_at_or_before_age_of_specimen_collection",
                 covariates_will_be_adjusted = args.adjust_covariates
             ).rename(
                 columns = {

@@ -34,17 +34,13 @@ def create_data_frame_of_enrichment_scores_and_clinical_and_QC_data(
         "Atezolizumab", # PD‑L1
         "Ipilimumab" # CTLA‑4
     }
-    medications_data["medication_is_for_ICB_therapy"] = medications_data["Medication"].isin(set_of_medications_for_ICB_therapy)
-    medications_data_for_ICB_therapy = medications_data[medications_data["medication_is_for_ICB_therapy"]].copy()
-    data_frame_of_patient_IDs_and_indicators_that_patient_has_received_ICB_therapy = (
-        medications_data_for_ICB_therapy
-        .groupby("AvatarKey", as_index = False)
-        .agg(
-            patient_has_received_ICB_therapy = ("medication_is_for_ICB_therapy", "any")
-        )
+    medications_data["medication_is_for_ICB_therapy"] = medications_data["Medication"].isin(
+        set_of_medications_for_ICB_therapy
     )
+    medications_data_for_ICB_therapy = medications_data[medications_data["medication_is_for_ICB_therapy"]].copy()
+    medications_data_for_ICB_therapy["AgeAtMedStart"] = medications_data_for_ICB_therapy["AgeAtMedStart"].apply(numericize_age)
 
-    data_frame_of_enrichment_scores_and_clinical_and_QC_data = (
+    data_frame_of_output_and_clinical_molecular_linkage_data = (
         output_of_pairing_clinical_data_and_stages_of_tumors[["ORIENSpecimenID", "EKN Assigned Stage", "AvatarKey"]]
         .merge(
             clinical_molecular_linkage_data[["DeidSpecimenID", "Age At Specimen Collection", "RNASeq"]],
@@ -59,6 +55,30 @@ def create_data_frame_of_enrichment_scores_and_clinical_and_QC_data(
                 "EKN Assigned Stage": "EKN_Assigned_Stage"
             }
         )
+    )
+    data_frame_of_output_and_clinical_molecular_linkage_data["Age_At_Specimen_Collection"] = (
+        data_frame_of_output_and_clinical_molecular_linkage_data["Age_At_Specimen_Collection"].apply(numericize_age)
+    )
+    data_frame_of_output_clinical_molecular_linkage_and_medications_data = (
+        data_frame_of_output_and_clinical_molecular_linkage_data[["ORIENSpecimenID", "AvatarKey", "Age_At_Specimen_Collection"]]
+        .merge(
+            medications_data_for_ICB_therapy[["AvatarKey", "AgeAtMedStart"]],
+            on = "AvatarKey",
+            how = "left"
+        )
+    )
+    data_frame_of_output_clinical_molecular_linkage_and_medications_data["patient_received_ICB_therapy_at_or_before_age_of_specimen_collection"] = (
+        data_frame_of_output_clinical_molecular_linkage_and_medications_data["AgeAtMedStart"] <= data_frame_of_output_clinical_molecular_linkage_and_medications_data["Age_At_Specimen_Collection"]
+    )
+    data_frame_of_specimen_IDs_and_indicators_that_patient_received_ICB_therapy = (
+        data_frame_of_output_clinical_molecular_linkage_and_medications_data
+        .groupby("ORIENSpecimenID", as_index = False)
+        ["patient_received_ICB_therapy_at_or_before_age_of_specimen_collection"]
+        .agg(lambda series: series.any())
+    )
+
+    data_frame_of_enrichment_scores_and_clinical_and_QC_data = (
+        data_frame_of_output_and_clinical_molecular_linkage_data
         .merge(
             enrichment_matrix,
             how = "left",
@@ -74,12 +94,12 @@ def create_data_frame_of_enrichment_scores_and_clinical_and_QC_data(
             right_on = "AvatarKey"
         )
         .merge(
-            data_frame_of_patient_IDs_and_indicators_that_patient_has_received_ICB_therapy[
-                ["AvatarKey", "patient_has_received_ICB_therapy"]
+            data_frame_of_specimen_IDs_and_indicators_that_patient_received_ICB_therapy[
+                ["ORIENSpecimenID", "patient_received_ICB_therapy_at_or_before_age_of_specimen_collection"]
             ],
             how = "left",
-            left_on = "AvatarKey",
-            right_on = "AvatarKey"
+            left_on = "ORIENSpecimenID",
+            right_on = "ORIENSpecimenID"
         )
         .merge(
             QC_data[["SLID", "NexusBatch", "SequencingDepth"]],
@@ -89,13 +109,8 @@ def create_data_frame_of_enrichment_scores_and_clinical_and_QC_data(
         )
         .drop(columns = ["SLID"])
     )
-    data_frame_of_enrichment_scores_and_clinical_and_QC_data["Age_At_Specimen_Collection"] = (
-        data_frame_of_enrichment_scores_and_clinical_and_QC_data["Age_At_Specimen_Collection"].apply(
-            numericize_age
-        )
-    )
-    data_frame_of_enrichment_scores_and_clinical_and_QC_data["patient_has_received_ICB_therapy"] = (
-        data_frame_of_enrichment_scores_and_clinical_and_QC_data["patient_has_received_ICB_therapy"]
+    data_frame_of_enrichment_scores_and_clinical_and_QC_data["patient_received_ICB_therapy_at_or_before_age_of_specimen_collection"] = (
+        data_frame_of_enrichment_scores_and_clinical_and_QC_data["patient_received_ICB_therapy_at_or_before_age_of_specimen_collection"]
         .astype("boolean")
         .fillna(False)
     )
@@ -214,7 +229,7 @@ def fit_linear_models(
                 "Sex",
                 "Age_At_Specimen_Collection",
                 "EKN_Assigned_Stage",
-                "patient_has_received_ICB_therapy",
+                "patient_received_ICB_therapy_at_or_before_age_of_specimen_collection",
                 "NexusBatch",
                 "SequencingDepth",
                 "AvatarKey"
@@ -223,13 +238,13 @@ def fit_linear_models(
             columns = {cell_type: "Score"}
         )
         data_frame["indicator_of_sex"] = (data_frame["Sex"] == "Male").astype(int)
-        data_frame["patient_has_received_ICB_therapy"] = data_frame["patient_has_received_ICB_therapy"].astype(int)
+        data_frame["patient_received_ICB_therapy_at_or_before_age_of_specimen_collection"] = data_frame["patient_received_ICB_therapy_at_or_before_age_of_specimen_collection"].astype(int)
         formula = (
             f"Score ~ " +
             "indicator_of_sex + " +
             "Age_At_Specimen_Collection + " +
-            "C(EKN_Assigned_Stage) + " +
-            "patient_has_received_ICB_therapy + " +
+            "C(EKN_Assigned_Stage, Treatment(reference='II')) + " +
+            "patient_received_ICB_therapy_at_or_before_age_of_specimen_collection + " +
             "SequencingDepth"
         ) # C means "make categorical".
         regression_results_wrapper, type_of_model = try_to_fit_different_models(formula, data_frame)
