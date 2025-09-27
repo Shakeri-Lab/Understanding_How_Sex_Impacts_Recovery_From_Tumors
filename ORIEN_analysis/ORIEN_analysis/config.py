@@ -61,9 +61,9 @@ class Paths():
         self.enrichment_data_frame_per_xCell2_and_Pan_Cancer = self.outputs_of_running_xCell_analysis / "enrichment_data_frame_per_xCell2_and_Pan_Cancer.csv"
         self.focused_enrichment_data_frame_per_xCell = self.outputs_of_running_xCell_analysis / "focused_enrichment_data_frame_per_xCell.csv"
 
-        # ORIEN_analysis/ORIEN_analysis/fit_linear_mixed_models.py
+        # ORIEN_analysis/ORIEN_analysis/fit_linear_models.py
         # dependencies
-        self.outputs_of_fitting_LMMs = self.output / "fitting_linear_mixed_models"
+        self.outputs_of_fitting_LMs = self.output / "fitting_linear_models"
         # -----
         # self.enrichment_data_frame_per_xCell, which is defined above
         # self.enrichment_data_frame_per_xCell2_and_Pan_Cancer, which is defined above
@@ -71,10 +71,12 @@ class Paths():
         self.medications_data = self.normalized_clinical_data / "24PRJ217UVA_20241112_Medications_V4.csv"
         self.patient_data = self.normalized_clinical_data / "24PRJ217UVA_20241112_PatientMaster_V4.csv"
         # outputs
-        self.results_of_fitting_LMMs_per_xCell = self.outputs_of_fitting_LMMs / "results_of_fitting_LMMs_per_xCell.csv"
-        self.results_of_fitting_LMMs_per_xCell2_and_Pan_Cancer = self.outputs_of_fitting_LMMs / "results_of_fitting_LMMs_per_xCell2_and_Pan_Cancer.csv"
-        self.significant_results_of_fitting_LMMs_per_xCell = self.outputs_of_fitting_LMMs / "significant_results_of_fitting_LMMs_per_xCell.csv"
-        self.significant_results_of_fitting_LMMs_per_xCell2_and_Pan_Cancer = self.outputs_of_fitting_LMMs / "significant_results_of_fitting_LMMs_per_xCell2_and_Pan_Cancer.csv"
+        self.figures_of_box_plots_of_residuals_by_batch = self.outputs_of_fitting_LMs / "figures_of_box_plots_of_residuals_by_batch"
+        # -----
+        self.results_of_fitting_LMs_per_xCell = self.outputs_of_fitting_LMs / "results_of_fitting_LMs_per_xCell.csv"
+        self.results_of_fitting_LMs_per_xCell2_and_Pan_Cancer = self.outputs_of_fitting_LMs / "results_of_fitting_LMs_per_xCell2_and_Pan_Cancer.csv"
+        self.significant_results_of_fitting_LMs_per_xCell = self.outputs_of_fitting_LMs / "significant_results_of_fitting_LMs_per_xCell.csv"
+        self.significant_results_of_fitting_LMs_per_xCell2_and_Pan_Cancer = self.outputs_of_fitting_LMs / "significant_results_of_fitting_LMs_per_xCell2_and_Pan_Cancer.csv"
 
 
         # ORIEN_analysis/ORIEN_analysis/compare_enrichment_scores.py
@@ -144,14 +146,15 @@ class Paths():
 
     def ensure_dependencies_for_fitting_LMs_exist(self):
         for path in [
-            self.outputs_of_fitting_LMMs
+            self.outputs_of_fitting_LMs,
+            self.figures_of_box_plots_of_residuals_by_batch
         ]:
             os.makedirs(path, exist_ok = True)
         for path in [
             self.enrichment_data_frame_per_xCell,
             self.enrichment_data_frame_per_xCell2_and_Pan_Cancer
         ]:
-            assert os.path.exists(path), f"The dependency of fitting LMMs `{path}` does not exist."
+            assert os.path.exists(path), f"The dependency of fitting LMs `{path}` does not exist."
 
 
     def ensure_dependencies_for_comparing_enrichment_scores_exist(self):

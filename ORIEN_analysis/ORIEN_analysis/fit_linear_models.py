@@ -6,6 +6,10 @@ import pandas as pd
 import statsmodels.formula.api as smf
 from scipy import stats
 
+import matplotlib.pyplot as plt
+import os
+import re
+
 
 def numericize_age(age) -> float:
     if age == "Age 90 or older":
@@ -217,6 +221,59 @@ def get_statistics(regression_results_wrapper, variable):
     return parameter, standard_error, p_value
 
 
+def plot_residuals_by_batch(data_frame: pd.DataFrame, formula: str, cell_type: str) -> None:
+    '''
+    After adjusting for sex, age, stage, ICB status, and sequencing depth,
+    there is still an unmodeled batch effect.
+    Samples within the same batch share a negative or positive offset in residuals from the residual across batches of 0.
+    A shared offset is a common random component that appears in every observation from a batch.
+    Residuals within a batch contain the same random term.
+    Because of this, residuals within a batch are correlated.
+    When we adjust for correlation of residuals of samples in a batch,
+    effective number of samples is reduced toward number of batches,
+    standard errors are inflated,
+    test statistics are deflated, and
+    p values are inflated.
+    '''
+    OLS_linear_model = smf.ols(formula, data_frame).fit()
+    series_of_residuals = OLS_linear_model.resid
+    series_of_batch_IDs = data_frame["NexusBatch"]
+    data_frame_of_residuals_and_batch_IDs = pd.DataFrame(
+        {
+            "residual": series_of_residuals,
+            "batch_ID": series_of_batch_IDs
+        }
+    )
+    index_of_batch_IDs_in_order_by_mean_residual = (
+        data_frame_of_residuals_and_batch_IDs
+        .groupby("batch_ID")
+        ["residual"]
+        .mean()
+        .sort_values()
+        .index
+    )
+    list_of_series_of_residuals = [
+        data_frame_of_residuals_and_batch_IDs.loc[
+            data_frame_of_residuals_and_batch_IDs["batch_ID"] == batch_ID,
+            "residual"
+        ]
+        for batch_ID in index_of_batch_IDs_in_order_by_mean_residual
+    ]
+    fig_width = 0.28 * len(index_of_batch_IDs_in_order_by_mean_residual)
+    fig, ax = plt.subplots(
+        figsize = (fig_width, 4.5)
+    )
+    ax.boxplot(list_of_series_of_residuals)
+    ax.axhline(0.0)
+    ax.set_xticklabels(index_of_batch_IDs_in_order_by_mean_residual, rotation = 90)
+    ax.set_xlabel("batch ID")
+    ax.set_ylabel("box plot of residuals")
+    ax.set_title("Box Plots of Residuals vs. Batch ID")
+    fig.tight_layout()
+    fig.savefig(paths.figures_of_box_plots_of_residuals_by_batch / f"{cell_type}.png")
+    plt.close(fig)
+
+
 def fit_linear_models(
     data_frame_of_enrichment_scores_clinical_data_and_QC_data: pd.DataFrame,
     list_of_cell_types: list[str]
@@ -238,7 +295,9 @@ def fit_linear_models(
             columns = {cell_type: "Score"}
         )
         data_frame["indicator_of_sex"] = (data_frame["Sex"] == "Male").astype(int)
-        data_frame["patient_received_ICB_therapy_at_or_before_age_of_specimen_collection"] = data_frame["patient_received_ICB_therapy_at_or_before_age_of_specimen_collection"].astype(int)
+        data_frame["patient_received_ICB_therapy_at_or_before_age_of_specimen_collection"] = data_frame[
+            "patient_received_ICB_therapy_at_or_before_age_of_specimen_collection"
+        ].astype(int)
         formula = (
             f"Score ~ " +
             "indicator_of_sex + " +
@@ -247,6 +306,7 @@ def fit_linear_models(
             "patient_received_ICB_therapy_at_or_before_age_of_specimen_collection + " +
             "SequencingDepth"
         ) # C means "make categorical".
+        plot_residuals_by_batch(data_frame, formula, cell_type)
         regression_results_wrapper, type_of_model = try_to_fit_different_models(formula, data_frame)
         parameter_for_Sex, standard_error_of_parameter_for_Sex, p_value_for_Sex = get_statistics(
             regression_results_wrapper,
@@ -363,43 +423,43 @@ def fit_linear_models(
     return data_frame_of_results
 
 
-def adjust_p_values_for_Sex(data_frame_of_results_of_fitting_LMMs: pd.DataFrame) -> pd.DataFrame:
+def adjust_p_values_for_Sex(data_frame_of_results_of_fitting_LMs: pd.DataFrame) -> pd.DataFrame:
     '''
     p values for the Sex coefficient are adjusted across all cell types
     with the Benjamini-Hochberg procedure and a False Discovery Rate of 10 percent.
     '''
     indicator_of_whether_to_reject_null_hypothesis, array_of_q_values, _, _ = multipletests(
-        data_frame_of_results_of_fitting_LMMs["p value for Sex"],
+        data_frame_of_results_of_fitting_LMs["p value for Sex"],
         method = "fdr_bh",
         alpha = 0.10
     )
-    data_frame_of_results_of_fitting_LMMs["q value for Sex"] = array_of_q_values
-    data_frame_of_results_of_fitting_LMMs["significant"] = indicator_of_whether_to_reject_null_hypothesis
-    return data_frame_of_results_of_fitting_LMMs
+    data_frame_of_results_of_fitting_LMs["q value for Sex"] = array_of_q_values
+    data_frame_of_results_of_fitting_LMs["significant"] = indicator_of_whether_to_reject_null_hypothesis
+    return data_frame_of_results_of_fitting_LMs
 
 
 def main():
     paths.ensure_dependencies_for_fitting_LMs_exist()
 
-    dictionary_of_paths_of_enrichment_data_frames_and_tuples_of_paths_of_results_of_fitting_LMMs = {
+    dictionary_of_paths_of_enrichment_data_frames_and_tuples_of_paths_of_results_of_fitting_LMs = {
         paths.enrichment_data_frame_per_xCell: (
-            paths.results_of_fitting_LMMs_per_xCell,
-            paths.significant_results_of_fitting_LMMs_per_xCell
+            paths.results_of_fitting_LMs_per_xCell,
+            paths.significant_results_of_fitting_LMs_per_xCell
         ),
         paths.enrichment_data_frame_per_xCell2_and_Pan_Cancer: (
-            paths.results_of_fitting_LMMs_per_xCell2_and_Pan_Cancer,
-            paths.significant_results_of_fitting_LMMs_per_xCell2_and_Pan_Cancer
+            paths.results_of_fitting_LMs_per_xCell2_and_Pan_Cancer,
+            paths.significant_results_of_fitting_LMs_per_xCell2_and_Pan_Cancer
         )
     }
 
-    for path_of_enrichment_data_frame, tuple_of_paths_of_results_of_fitting_LMMs in dictionary_of_paths_of_enrichment_data_frames_and_tuples_of_paths_of_results_of_fitting_LMMs.items():
-        path_of_results_of_fitting_LMMs = tuple_of_paths_of_results_of_fitting_LMMs[0]
-        path_of_significant_results_of_fitting_LMMs = tuple_of_paths_of_results_of_fitting_LMMs[1]
+    for path_of_enrichment_data_frame, tuple_of_paths_of_results_of_fitting_LMs in dictionary_of_paths_of_enrichment_data_frames_and_tuples_of_paths_of_results_of_fitting_LMs.items():
+        path_of_results_of_fitting_LMs = tuple_of_paths_of_results_of_fitting_LMs[0]
+        path_of_significant_results_of_fitting_LMs = tuple_of_paths_of_results_of_fitting_LMs[1]
         data_frame_of_enrichment_scores_and_clinical_and_QC_data, list_of_cell_types = create_data_frame_of_enrichment_scores_and_clinical_and_QC_data(path_of_enrichment_data_frame)
-        data_frame_of_results_of_fitting_LMMs = fit_linear_models(data_frame_of_enrichment_scores_and_clinical_and_QC_data, list_of_cell_types)
-        data_frame_of_results_of_fitting_LMMs = adjust_p_values_for_Sex(data_frame_of_results_of_fitting_LMMs)
-        data_frame_of_results_of_fitting_LMMs.sort_values("q value for Sex").to_csv(path_of_results_of_fitting_LMMs, index = False)
-        data_frame_of_results_of_fitting_LMMs.query("significant").sort_values("q value for Sex").to_csv(path_of_significant_results_of_fitting_LMMs, index = False)
+        data_frame_of_results_of_fitting_LMs = fit_linear_models(data_frame_of_enrichment_scores_and_clinical_and_QC_data, list_of_cell_types)
+        data_frame_of_results_of_fitting_LMs = adjust_p_values_for_Sex(data_frame_of_results_of_fitting_LMs)
+        data_frame_of_results_of_fitting_LMs.sort_values("q value for Sex").to_csv(path_of_results_of_fitting_LMs, index = False)
+        data_frame_of_results_of_fitting_LMs.query("significant").sort_values("q value for Sex").to_csv(path_of_significant_results_of_fitting_LMs, index = False)
 
 
 if __name__ == "__main__":
