@@ -153,13 +153,24 @@ def load_custom_tcell_inflamed_geneset() -> Dict[str, List[str]]:
     """
     default_name = "Tcell_inflamed_GEP_custom"
     try:
-        obj = json.loads(Path(paths.tcell_inflamed_geneset_json).read_text(encoding="utf-8"))
+        '''
+        See Table 2 on fifth sheet / page 4 / page 2933 of https://dm5migu4zj3pb.cloudfront.net/manuscripts/91000/91190/cache/91190.2-20201218131630-covered-e0fd13ba177f913fd3156f593ead4cfd.pdf .
+        There are 18 genes in the "Expanded immune gene signature".
+        The right column on this page describes "18 genes in the T cell-inflamed GEP."
+        '''
+        obj = [
+            "CD3D", "IDO1", "CIITA", "CD3E", "CCL5",
+            "GZMK", "CD2", "HLA-DRA", "CXCL13", "IL2RG",
+            "NKG7", "HLA-E", "CXCR6", "LAG3", "TAGAP",
+            "CXCL10", "STAT1", "GZMB"
+        ]
         if isinstance(obj, dict):
             return {k: [g.upper() for g in v] for k, v in obj.items()}
         elif isinstance(obj, list):
             return {default_name: [str(g).upper() for g in obj]}
-    except Exception:
-        pass
+    except Exception as e:
+        #pass
+        raise e
     # --- Placeholder (replace with validated GEP) ---
     placeholder = [
         "CXCL9", "CXCL10", "IDO1", "HLA-DRA", "STAT1", "IFNG",
@@ -515,6 +526,10 @@ def main():
 
     # 3) Gene sets: Hallmark + BioCarta + custom T cell–inflamed
     msigdb_sets = get_msigdb_hallmark_and_biocarta()
+    hallmark_terms = [k for k in msigdb_sets if k.upper().startswith("HALLMARK_")]
+    n_h = len(hallmark_terms)
+    print(f"[CHECK] Hallmark terms found: {n_h}")
+    assert n_h == 50, f"Expected 50 Hallmark sets, got {n_h}"
     custom_sets = load_custom_tcell_inflamed_geneset()
     # keep some immune-focused labels for plotting later
     immune_keywords = ["INTERFERON", "INFLAMMATORY", "IL", "TNF", "TCR", "CYTOKINE", "ANTIGEN", "COMPLEMENT", "ALLOGRAFT", "APOPTOSIS"]
