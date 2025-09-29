@@ -105,6 +105,13 @@ class Paths():
         # <no files>
 
 
+        # ORIEN_analysis/ORIEN_analysis/complete_Aim_2_1.py
+        # dependencies
+        self.outputs_of_completing_Aim_2_1 = self.output / "completing_Aim_2_1"
+        # -----
+        
+
+
     def ensure_dependencies_for_pairing_clinical_data_and_stages_of_tumors_exist(self):
         for path in [
             self.outputs_of_pairing_clinical_data_and_stages_of_tumors

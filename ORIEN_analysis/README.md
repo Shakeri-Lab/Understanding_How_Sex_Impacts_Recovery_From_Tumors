@@ -4,8 +4,10 @@ To run
 - `pair_clinical_data_and_stages_of_tumors.py`,
 - `create_expression_matrices.py`,
 - `run_xCell_analysis.py`,
-- `fit_linear_mixed_models.py`, and
+- `fit_linear_mixed_models.py`,
 - `compare_enrichment_scores.py`,
+- `complete_Aim_1_2.py`, and
+- `complete_Aim_2_1.py`
 from `Understanding_How_Sex_Impacts_Recovery_From_Tumors`, run
 - `ijob -A shakeri-lab -p standard -t 24:00:00 --mem=16G -c 1 -v -J <name of job>`
 - `module list`
@@ -21,8 +23,9 @@ from `Understanding_How_Sex_Impacts_Recovery_From_Tumors`, run
 - `conda install numpy==2.3.3` (`conda uninstall libblas libcblas libgfortran libgfortran5 liblapack libopenblas libstdcxx numpy`)
 - `conda install pandas==2.3.2` (`conda uninstall pandas python-dateutil python-tzdata pytz six`)
 - `conda install rpy2==3.6.2` (`conda uninstall rpy2`)
+- `conda install seaborn` (`conda uninstall brotli brotli-bin contourpy cycler fonttools kiwisolver lcms2 libbrotlicommon libbrotlidec libbrotlienc matplotlib-base munkres pillow pyparsing qhull seaborn seaborn-base openssl`)
 - `conda install statsmodels` (`conda uninstall patsy scipy statsmodels`)
-- `conda run --name conda_environment R -e 'options(repos = c(CRAN = "https://cloud.r-project.org")); install.packages("remotes"); remotes::install_github("dviraran/xCell"); remotes::install_github("AlmogAngel/xCell2")'`
+- `conda run --name conda_environment R -e 'options(repos = c(CRAN = "https://cloud.r-project.org")); install.packages("remotes"); remotes::install_github("dviraran/xCell"); remotes::install_github("AlmogAngel/xCell2"); remotes::install_github("alserglab/fgsea"); remotes::install_github("igordot/msigdbr")'`
 - `python -m ORIEN_analysis.create_expression_matrices`  
 - `python -m ORIEN_analysis.run_xCell_analysis`
 - `python -m ORIEN_analysis.fit_linear_mixed_models --diagnose`
