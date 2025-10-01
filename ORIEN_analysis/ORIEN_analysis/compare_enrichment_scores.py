@@ -94,6 +94,14 @@ def determine_FDRs(series_of_p_values: pd.Series) -> pd.Series:
     return pd.Series(q, index = series_of_p_values.index)
 
 
+def determine_direction(value_of_cliffs_delta: float, label_0: str, label_1: str) -> str:
+    if value_of_cliffs_delta > 0:
+        return f"P(ES of {label_1} > ES of {label_0}) > P(ES of {label_1} < ES of {label_0})"
+    if value_of_cliffs_delta < 0:
+        return f"P(ES of {label_1} < ES of {label_0}) > P(ES of {label_1} > ES of {label_0})"
+    return f"P(ES of {label_1} > ES of {label_0}) = P(ES of {label_1} < ES of {label_0})"
+
+
 def save_data_frame_of_cell_types_and_statistics(
     data_frame_of_cell_types_and_statistics: pd.DataFrame, category: str, path: Path
 ) -> None:
@@ -106,7 +114,7 @@ def save_data_frame_of_cell_types_and_statistics(
     data_frame_of_cell_types_and_statistics["suggestive"] = (
         (data_frame_of_cell_types_and_statistics["FDR"] > 0.05) & (data_frame_of_cell_types_and_statistics["FDR"] <= 0.20)
     )
-    data_frame_of_cell_types_and_statistics.sort_values("FDR").to_csv(path, index = False)
+    data_frame_of_cell_types_and_statistics.sort_values(["FDR", "p_value"]).to_csv(path, index = False)
 
 
 def create_series_of_enrichment_scores_or_residuals(
@@ -145,6 +153,9 @@ def create_series_of_enrichment_scores_or_residuals(
     return series_of_values_for_indicator_0, series_of_values_for_indicator_1
 
 
+from cliffs_delta import cliffs_delta
+
+
 def create_data_frame_of_cell_types_and_statistics(
     data_frame_of_enrichment_scores_and_clinical_and_QC_data: pd.DataFrame,
     list_cell_types: list[str],
@@ -163,8 +174,11 @@ def create_data_frame_of_cell_types_and_statistics(
     - cell types,
     - numbers of samples corresponding to female and male patients or
     - numbers of ICB-naive and ICB-experienced samples,
-    - U statistics, and
-    - p values
+    - U statistics,
+    - p values,
+    - differences between medians,
+    - values of Cliff's delta, and
+    - directions.
 
     For each cell type,
     Choose either the raw enrichment scores for that cell type or the residuals of a linear model of
@@ -175,8 +189,11 @@ def create_data_frame_of_cell_types_and_statistics(
     Record in a row corresponding to a cell type of a data frame
     - numbers of samples corresponding to female and male patients or
     - numbers of ICB-naive and ICB-experienced samples,
-    - U statistic, and
-    - p value.
+    - U statistic,
+    - p value,
+    - difference between medians,
+    - value of Cliff's delta, and
+    - direction.
     '''
     list_of_dictionaries_of_cell_types_and_statistics = []
     for cell_type in list_cell_types:
@@ -191,15 +208,29 @@ def create_data_frame_of_cell_types_and_statistics(
             series_of_values_for_indicator_1,
             alternative = "two-sided"
         )
-        list_of_dictionaries_of_cell_types_and_statistics.append(
-            dict(
-                cell_type = cell_type,
-                number_of_samples_for_indicator_0 = len(series_of_values_for_indicator_0),
-                number_of_samples_for_indicator_1 = len(series_of_values_for_indicator_1),
-                U_statistic = U_statistic,
-                p_value = p_value
-            )
+        dictionary_of_cell_types_and_statistics = dict(
+            cell_type = cell_type,
+            number_of_samples_for_indicator_0 = len(series_of_values_for_indicator_0),
+            number_of_samples_for_indicator_1 = len(series_of_values_for_indicator_1),
+            U_statistic = U_statistic,
+            p_value = p_value
         )
+        difference_between_medians = (
+            np.median(series_of_values_for_indicator_1) - np.median(series_of_values_for_indicator_0)
+        )
+        value_of_cliffs_delta = cliffs_delta(series_of_values_for_indicator_1, series_of_values_for_indicator_0)[0]
+        dictionary_of_cell_types_and_statistics["difference_between_medians"] = difference_between_medians
+        dictionary_of_cell_types_and_statistics["cliffs_delta"] = value_of_cliffs_delta
+        dictionary_of_categories_and_lists_of_labels = {
+            "indicator_of_sex": ["Females", "Males"],
+            "integer_indicating_that_patient_received_ICB_therapy_at_or_before_age_of_specimen_collection": ["ICB naive", "ICB experienced"]
+        }
+        dictionary_of_cell_types_and_statistics["direction"] = determine_direction(
+            value_of_cliffs_delta,
+            dictionary_of_categories_and_lists_of_labels[category][0],
+            dictionary_of_categories_and_lists_of_labels[category][1]
+        )
+        list_of_dictionaries_of_cell_types_and_statistics.append(dictionary_of_cell_types_and_statistics)
     data_frame_of_cell_types_and_statistics = pd.DataFrame(list_of_dictionaries_of_cell_types_and_statistics)
     return data_frame_of_cell_types_and_statistics
 
@@ -211,10 +242,10 @@ def create_plot(
     title: str,
     subtitle: str,
     path_to_which_to_save_plot: Path,
-    response: str
+    response: str,
+    list_of_labels: tuple[str, str]
 ) -> None:
     list_of_arrays = [series_of_values_for_indicator_0.to_numpy(), series_of_values_for_indicator_1.to_numpy()]
-    list_of_labels = ["ICB naive", "ICB experienced"]
     figure = plt.figure()
     ax_1 = figure.add_subplot(1, 2, 1)
     ax_1.violinplot(list_of_arrays, showmeans = True, showmedians = True)
@@ -223,7 +254,7 @@ def create_plot(
     ax_2 = figure.add_subplot(1, 2, 2)
     ax_2.boxplot(list_of_arrays, tick_labels = list_of_labels, showmeans = True, notch = True)
     figure.suptitle(title)
-    figure.text(0.5, 0.76, subtitle, ha = "center")
+    figure.text(0.5, 0.7, subtitle, ha = "center")
     figure.tight_layout(rect = [0, 0.04, 1, 0.93])
     path_to_which_to_save_plot.parent.mkdir(parents = True, exist_ok = True)
     figure.savefig(path_to_which_to_save_plot)
@@ -256,14 +287,14 @@ def create_plots_for_significant_cell_types_within_sex(
         )
         response = "Residuals" if covariates_will_be_adjusted else "Enrichment Scores"
         sex = "Females" if indicator_of_sex == 0 else "Males"
-        title = (
-            f"Violin and Box Plots of {response} of {cell_type}\nof ICB Naive and Experienced Samples of {sex}"
-        )
+        title = f"Violin and Box Plots of {response} of {cell_type}\nof ICB Naive and Experienced Samples of {sex}"
         subtitle = (
             f"Numbers of naive and experienced samples are {len(series_of_values_for_indicator_0)} and {len(series_of_values_for_indicator_1)}.\n" +
             f"U statistic is {row_of_significant_comparisons.get('U_statistic')}.\n" +
             f"p value is {row_of_significant_comparisons.get('p_value')}.\n" +
-            f"FDR is {row_of_significant_comparisons.get('FDR')}."
+            f"FDR is {row_of_significant_comparisons.get('FDR')}.\n" +
+            f"Difference between medians is {row_of_significant_comparisons.get('difference_between_medians')}.\n" +
+            f"Cliff's delta is {row_of_significant_comparisons.get('cliffs_delta')}."
         )
         response = "residuals" if covariates_will_be_adjusted else "enrichment_scores"
         sex = "females" if indicator_of_sex == 0 else "males"
@@ -280,9 +311,60 @@ def create_plots_for_significant_cell_types_within_sex(
             title = title,
             subtitle = subtitle,
             path_to_which_to_save_plot = filename,
-            response = response
+            response = response,
+            list_of_labels = ("ICB naive", "ICB experienced")
         )
 
+
+def create_plots_for_significant_cell_types_by_sex_within_subset(
+    data_frame: pd.DataFrame,
+    path_to_comparisons: Path,
+    covariates_will_be_adjusted: bool,
+    subset: str
+) -> None:
+    data_frame_of_comparisons_for_female_and_male_samples = pd.read_csv(path_to_comparisons)
+    data_frame_of_significant_comparisons_for_female_and_male_samples = (
+        data_frame_of_comparisons_for_female_and_male_samples.loc[
+            data_frame_of_comparisons_for_female_and_male_samples["FDR"] <= 0.05
+        ]
+    )
+    for _, row_of_significant_comparisons in data_frame_of_significant_comparisons_for_female_and_male_samples.iterrows():
+        cell_type = row_of_significant_comparisons["cell_type"]
+        series_of_values_for_indicator_0, series_of_values_for_indicator_1 = create_series_of_enrichment_scores_or_residuals(
+            data_frame_of_enrichment_scores_and_clinical_and_QC_data = data_frame,
+            cell_type = cell_type,
+            category = "indicator_of_sex",
+            covariates_will_be_adjusted = covariates_will_be_adjusted
+        )
+        response = "Residuals" if covariates_will_be_adjusted else "Enrichment Scores"
+        description_of_samples = "Naive" if subset == "naive_samples" else "Experienced"
+        title = f"Violin and Box Plots of {response} of {cell_type}\nof Female and Male ICB {description_of_samples} Samples"
+        subtitle = (
+            f"Numbers of female and male samples are {len(series_of_values_for_indicator_0)} and {len(series_of_values_for_indicator_1)}.\n" +
+            f"U statistic is {row_of_significant_comparisons.get('U_statistic')}.\n" +
+            f"p value is {row_of_significant_comparisons.get('p_value')}.\n" +
+            f"FDR is {row_of_significant_comparisons.get('FDR')}.\n" +
+            f"Difference between medians is {row_of_significant_comparisons.get('difference_between_medians')}.\n" +
+            f"Cliff's delta is {row_of_significant_comparisons.get('cliffs_delta')}."
+        )
+        response = "residuals" if covariates_will_be_adjusted else "enrichment_scores"
+        description_of_samples = "naive" if subset == "naive_samples" else "Experienced"
+        filename = (
+            paths.plots_for_comparing_enrichment_scores /
+            ("covariates_were_adjusted" if covariates_will_be_adjusted else "covariates_were_not_adjusted") /
+            subset /
+            f"violin_and_box_plots_of_{response}_of_{cell_type}_of_female_and_male_ICB_{description_of_samples}_samples.png"
+        )
+        create_plot(
+            series_of_values_for_indicator_0 = series_of_values_for_indicator_0,
+            series_of_values_for_indicator_1 = series_of_values_for_indicator_1,
+            cell_type = cell_type,
+            title = title,
+            subtitle = subtitle,
+            path_to_which_to_save_plot = filename,
+            response = response,
+            list_of_labels = ("Females", "Males")
+        )
 
 
 def main():
@@ -295,11 +377,15 @@ def main():
     dictionary_of_paths = {
         paths.enrichment_data_frame_per_xCell: (
             paths.comparisons_for_females_and_males_and_xCell,
+            paths.comparisons_for_female_and_male_naive_samples_and_xCell,
+            paths.comparisons_for_female_and_male_experienced_samples_and_xCell,
             paths.comparisons_for_ICB_naive_and_experienced_samples_of_females_and_xCell,
             paths.comparisons_for_ICB_naive_and_experienced_samples_of_males_and_xCell
         ),
         paths.enrichment_data_frame_per_xCell2_and_Pan_Cancer: (
             paths.comparisons_for_females_and_males_and_xCell2_and_Pan_Cancer,
+            paths.comparisons_for_female_and_male_naive_samples_and_xCell2_and_Pan_Cancer,
+            paths.comparisons_for_female_and_male_experienced_samples_and_xCell2_and_Pan_Cancer,
             paths.comparisons_for_ICB_naive_and_experienced_samples_of_females_and_xCell2_and_Pan_Cancer,
             paths.comparisons_for_ICB_naive_and_experienced_samples_of_males_and_xCell2_and_Pan_Cancer
         )
@@ -307,8 +393,10 @@ def main():
     
     for path_to_enrichment_data, tuple_of_paths_to_comparisons in dictionary_of_paths.items():
         path_to_comparisons_for_females_and_males = tuple_of_paths_to_comparisons[0]
-        path_to_comparisons_for_ICB_naive_and_experienced_samples_of_females = tuple_of_paths_to_comparisons[1]
-        path_to_comparisons_for_ICB_naive_and_experienced_samples_of_males = tuple_of_paths_to_comparisons[2]
+        path_to_comparisons_for_female_and_male_naive_samples = tuple_of_paths_to_comparisons[1]
+        path_to_comparisons_for_female_and_male_experienced_samples = tuple_of_paths_to_comparisons[2]
+        path_to_comparisons_for_ICB_naive_and_experienced_samples_of_females = tuple_of_paths_to_comparisons[3]
+        path_to_comparisons_for_ICB_naive_and_experienced_samples_of_males = tuple_of_paths_to_comparisons[4]
     
         data_frame, list_of_cell_types = create_data_frame_of_enrichment_scores_and_clinical_and_QC_data(
             path_to_enrichment_data
@@ -372,6 +460,57 @@ def main():
                 path_to_comparisons_for_ICB_naive_and_experienced_samples = path,
                 covariates_will_be_adjusted = args.adjust_covariates
             )
+
+        data_frame_for_naive_samples = data_frame[
+            data_frame["integer_indicating_that_patient_received_ICB_therapy_at_or_before_age_of_specimen_collection"] == 0
+        ]
+        data_frame_of_cell_types_and_statistics_for_naive_samples = create_data_frame_of_cell_types_and_statistics(
+            data_frame_for_naive_samples,
+            list_of_cell_types,
+            category = "indicator_of_sex",
+            covariates_will_be_adjusted = args.adjust_covariates
+        ).rename(
+            columns = {
+                "number_of_samples_for_indicator_0": "number_of_samples_for_female_naive_samples",
+                "number_of_samples_for_indicator_1": "number_of_samples_for_male_naive_samples"
+            }
+        )
+        save_data_frame_of_cell_types_and_statistics(
+            data_frame_of_cell_types_and_statistics_for_naive_samples,
+            "female / male",
+            path_to_comparisons_for_female_and_male_naive_samples
+        )
+        create_plots_for_significant_cell_types_by_sex_within_subset(
+            data_frame = data_frame_for_naive_samples,
+            path_to_comparisons = path_to_comparisons_for_female_and_male_naive_samples,
+            covariates_will_be_adjusted = args.adjust_covariates,
+            subset = "naive_samples"
+        )
+        data_frame_for_experienced_samples = data_frame[
+            data_frame["integer_indicating_that_patient_received_ICB_therapy_at_or_before_age_of_specimen_collection"] == 1
+        ]
+        data_frame_of_cell_types_and_statistics_for_experienced_samples = create_data_frame_of_cell_types_and_statistics(
+            data_frame_for_experienced_samples,
+            list_of_cell_types,
+            category = "indicator_of_sex",
+            covariates_will_be_adjusted = args.adjust_covariates
+        ).rename(
+            columns = {
+                "number_of_samples_for_indicator_0": "number_of_samples_for_female_experienced_samples",
+                "number_of_samples_for_indicator_1": "number_of_samples_for_male_experienced_samples"
+            }
+        )
+        save_data_frame_of_cell_types_and_statistics(
+            data_frame_of_cell_types_and_statistics_for_experienced_samples,
+            "female / male",
+            path_to_comparisons_for_female_and_male_experienced_samples
+        )
+        create_plots_for_significant_cell_types_by_sex_within_subset(
+            data_frame = data_frame_for_experienced_samples,
+            path_to_comparisons = path_to_comparisons_for_female_and_male_experienced_samples,
+            covariates_will_be_adjusted = args.adjust_covariates,
+            subset = "experienced_samples"
+        )
 
 
 if __name__ == "__main__":

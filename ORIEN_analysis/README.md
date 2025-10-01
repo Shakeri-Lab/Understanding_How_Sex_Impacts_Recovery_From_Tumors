@@ -19,6 +19,7 @@ from `Understanding_How_Sex_Impacts_Recovery_From_Tumors`, run
 - `pip install setuptools==80.9.0` (`pip uninstall setuptools`)
 - `pip install --no-build-isolation --no-deps --editable ORIEN_analysis` (https://github.com/conda/conda-build/issues/4251) (`pip uninstall ORIEN_analysis`)
 - `conda install bioconductor-gsva==2.0.0` (`conda uninstall <dependencies of bioconductor-gsva>`)
+- `pip install cliffs_delta` (`pip uninstall cliffs_delta`)
 - `pip install matplotlib==3.10.6` (`conda uninstall contourpy cycler fonttools kiwisolver matplotlib pillow pyparsing`)
 - `conda install numpy==2.3.3` (`conda uninstall libblas libcblas libgfortran libgfortran5 liblapack libopenblas libstdcxx numpy`)
 - `conda install pandas==2.3.2` (`conda uninstall pandas python-dateutil python-tzdata pytz six`)
