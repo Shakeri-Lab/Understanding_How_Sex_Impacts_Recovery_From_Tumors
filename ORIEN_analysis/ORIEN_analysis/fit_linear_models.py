@@ -221,7 +221,7 @@ def get_statistics(regression_results_wrapper, variable):
     return parameter, standard_error, p_value
 
 
-def plot_residuals_by_batch(data_frame: pd.DataFrame, formula: str, cell_type: str) -> None:
+def plot_residuals_by_batch(data_frame: pd.DataFrame, formula: str, cell_type: str, subset: str) -> None:
     '''
     After adjusting for sex, age, stage, ICB status, and sequencing depth,
     there is still an unmodeled batch effect.
@@ -268,16 +268,18 @@ def plot_residuals_by_batch(data_frame: pd.DataFrame, formula: str, cell_type: s
     ax.set_xticklabels(index_of_batch_IDs_in_order_by_mean_residual, rotation = 90)
     ax.set_xlabel("batch ID")
     ax.set_ylabel("box plot of residuals")
-    ax.set_title("Box Plots of Residuals vs. Batch ID")
+    ax.set_title(f"Box Plots of Residuals vs. Batch ID for {cell_type} and {subset} Samples")
     fig.tight_layout()
-    fig.savefig(paths.figures_of_box_plots_of_residuals_by_batch / f"{cell_type}.png")
+    fig.savefig(paths.figures_of_box_plots_of_residuals_by_batch / f"{cell_type}_and_{subset}_samples.png")
     plt.close(fig)
 
 
-def fit_linear_models(
+def fit_linear_models_for_subset(
     data_frame_of_enrichment_scores_clinical_data_and_QC_data: pd.DataFrame,
-    list_of_cell_types: list[str]
-) -> pd.DataFrame:    
+    ICB_status_should_be_included: bool,
+    list_of_cell_types: list[str],
+    subset: str
+) -> list[tuple]:
     list_of_results = []
     for cell_type in list_of_cell_types:
         data_frame = data_frame_of_enrichment_scores_clinical_data_and_QC_data[
@@ -295,18 +297,25 @@ def fit_linear_models(
             columns = {cell_type: "Score"}
         )
         data_frame["indicator_of_sex"] = (data_frame["Sex"] == "Male").astype(int)
-        data_frame["patient_received_ICB_therapy_at_or_before_age_of_specimen_collection"] = data_frame[
-            "patient_received_ICB_therapy_at_or_before_age_of_specimen_collection"
-        ].astype(int)
-        formula = (
-            f"Score ~ " +
-            "indicator_of_sex + " +
-            "Age_At_Specimen_Collection + " +
-            "C(EKN_Assigned_Stage, Treatment(reference='II')) + " +
-            "patient_received_ICB_therapy_at_or_before_age_of_specimen_collection + " +
+        if ICB_status_should_be_included:
+            data_frame["patient_received_ICB_therapy_at_or_before_age_of_specimen_collection"] = data_frame[
+                "patient_received_ICB_therapy_at_or_before_age_of_specimen_collection"
+            ].astype(int)
+        list_of_predictors = [
+            "indicator_of_sex",
+            "Age_At_Specimen_Collection",
             "SequencingDepth"
-        ) # C means "make categorical".
-        plot_residuals_by_batch(data_frame, formula, cell_type)
+        ]
+        if subset == "experienced":
+            list_of_predictors.append("C(EKN_Assigned_Stage, Treatment(reference='III'))") # C means "make categorical".
+        elif subset == "all" or subset == "naive":
+            list_of_predictors.append("C(EKN_Assigned_Stage, Treatment(reference='II'))")
+        else:
+            raise Exception(f"Subset is {subset} and is not all, experienced, or naive.")
+        if ICB_status_should_be_included:
+            list_of_predictors.append("patient_received_ICB_therapy_at_or_before_age_of_specimen_collection")
+        formula = "Score ~ " + " + ".join(list_of_predictors)
+        plot_residuals_by_batch(data_frame, formula, cell_type, subset = subset)
         regression_results_wrapper, type_of_model = try_to_fit_different_models(formula, data_frame)
         parameter_for_Sex, standard_error_of_parameter_for_Sex, p_value_for_Sex = get_statistics(
             regression_results_wrapper,
@@ -358,10 +367,16 @@ def fit_linear_models(
             expected_enrichment_score_given_patient_is_female_and_other_objects_have_certain_values *
             100.0
         )
-        log_fold_change = np.log2(
-            expected_enrichment_score_given_patient_is_male_and_other_objects_have_certain_values /
-            expected_enrichment_score_given_patient_is_female_and_other_objects_have_certain_values
-        )
+        if (
+            expected_enrichment_score_given_patient_is_female_and_other_objects_have_certain_values > 0 and
+            expected_enrichment_score_given_patient_is_male_and_other_objects_have_certain_values > 0
+        ):
+            log_fold_change = np.log2(
+                expected_enrichment_score_given_patient_is_male_and_other_objects_have_certain_values /
+                expected_enrichment_score_given_patient_is_female_and_other_objects_have_certain_values
+            )
+        else:
+            log_fold_change = np.nan
         standard_deviation_of_enrichment_score = data_frame["Score"].std()
         parameter_for_Sex_standardized_by_standard_deviation_of_enrichment_score = (
             parameter_for_Sex / standard_deviation_of_enrichment_score
@@ -381,6 +396,7 @@ def fit_linear_models(
         )
         list_of_results.append(
             (
+                subset,
                 cell_type,
                 type_of_model,
                 parameter_for_Sex,
@@ -399,9 +415,28 @@ def fit_linear_models(
                 parameter_for_Sex_standardized_by_standard_deviation_of_residuals
             )
         )
+    return list_of_results
+
+
+def fit_linear_models(
+    data_frame_of_enrichment_scores_clinical_data_and_QC_data: pd.DataFrame,
+    list_of_cell_types: list[str]
+) -> pd.DataFrame:
+
+    data_frame_of_enrichment_scores_clinical_data_and_QC_data_for_naive_samples = data_frame_of_enrichment_scores_clinical_data_and_QC_data[
+        data_frame_of_enrichment_scores_clinical_data_and_QC_data["patient_received_ICB_therapy_at_or_before_age_of_specimen_collection"] == False
+    ]
+    data_frame_of_enrichment_scores_clinical_data_and_QC_data_for_experienced_samples = data_frame_of_enrichment_scores_clinical_data_and_QC_data[
+        data_frame_of_enrichment_scores_clinical_data_and_QC_data["patient_received_ICB_therapy_at_or_before_age_of_specimen_collection"] == True
+    ]
+    list_of_results = []
+    list_of_results += fit_linear_models_for_subset(data_frame_of_enrichment_scores_clinical_data_and_QC_data, True, list_of_cell_types, "all")
+    list_of_results += fit_linear_models_for_subset(data_frame_of_enrichment_scores_clinical_data_and_QC_data_for_naive_samples, False, list_of_cell_types, "naive")
+    list_of_results += fit_linear_models_for_subset(data_frame_of_enrichment_scores_clinical_data_and_QC_data_for_experienced_samples, False, list_of_cell_types, "experienced")
     data_frame_of_results = pd.DataFrame(
         list_of_results,
         columns = [
+            "subset",
             "cell type",
             "type of model",
             "parameter for Sex",
@@ -425,16 +460,17 @@ def fit_linear_models(
 
 def adjust_p_values_for_Sex(data_frame_of_results_of_fitting_LMs: pd.DataFrame) -> pd.DataFrame:
     '''
-    p values for the Sex coefficient are adjusted across all cell types
+    p values for the Sex coefficient are adjusted across cell types within each subset (i.e., all, naive, or experienced samples)
     with the Benjamini-Hochberg procedure and a False Discovery Rate of 10 percent.
     '''
-    indicator_of_whether_to_reject_null_hypothesis, array_of_q_values, _, _ = multipletests(
-        data_frame_of_results_of_fitting_LMs["p value for Sex"],
-        method = "fdr_bh",
-        alpha = 0.10
-    )
-    data_frame_of_results_of_fitting_LMs["q value for Sex"] = array_of_q_values
-    data_frame_of_results_of_fitting_LMs["significant"] = indicator_of_whether_to_reject_null_hypothesis
+    for subset, group in data_frame_of_results_of_fitting_LMs.groupby("subset"):
+        indicator_of_whether_to_reject_null_hypothesis, array_of_q_values, _, _ = multipletests(
+            group["p value for Sex"],
+            method = "fdr_bh",
+            alpha = 0.10
+        )
+        data_frame_of_results_of_fitting_LMs.loc[group.index, "q value for Sex"] = array_of_q_values
+        data_frame_of_results_of_fitting_LMs.loc[group.index, "significant"] = indicator_of_whether_to_reject_null_hypothesis
     return data_frame_of_results_of_fitting_LMs
 
 
@@ -458,8 +494,8 @@ def main():
         data_frame_of_enrichment_scores_and_clinical_and_QC_data, list_of_cell_types = create_data_frame_of_enrichment_scores_and_clinical_and_QC_data(path_of_enrichment_data_frame)
         data_frame_of_results_of_fitting_LMs = fit_linear_models(data_frame_of_enrichment_scores_and_clinical_and_QC_data, list_of_cell_types)
         data_frame_of_results_of_fitting_LMs = adjust_p_values_for_Sex(data_frame_of_results_of_fitting_LMs)
-        data_frame_of_results_of_fitting_LMs.sort_values("q value for Sex").to_csv(path_of_results_of_fitting_LMs, index = False)
-        data_frame_of_results_of_fitting_LMs.query("significant").sort_values("q value for Sex").to_csv(path_of_significant_results_of_fitting_LMs, index = False)
+        data_frame_of_results_of_fitting_LMs.sort_values(["subset", "q value for Sex"]).to_csv(path_of_results_of_fitting_LMs, index = False)
+        data_frame_of_results_of_fitting_LMs.query("significant").sort_values(["subset", "q value for Sex"]).to_csv(path_of_significant_results_of_fitting_LMs, index = False)
 
 
 if __name__ == "__main__":
