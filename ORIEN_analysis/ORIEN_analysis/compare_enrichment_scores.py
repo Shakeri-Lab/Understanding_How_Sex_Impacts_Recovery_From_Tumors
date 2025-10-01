@@ -272,7 +272,7 @@ def create_plots_for_significant_cell_types_within_sex(
         path_to_comparisons_for_ICB_naive_and_experienced_samples
     )
     data_frame_of_significant_comparisons = data_frame_of_comparisons_for_ICB_naive_and_experienced_samples.loc[
-        data_frame_of_comparisons_for_ICB_naive_and_experienced_samples["FDR"] <= 0.05
+        data_frame_of_comparisons_for_ICB_naive_and_experienced_samples["FDR"] <= 1
     ]
     data_frame_of_enrichment_scores_and_clinical_and_QC_data_for_sex = data_frame_of_enrichment_scores_and_clinical_and_QC_data.loc[
         data_frame_of_enrichment_scores_and_clinical_and_QC_data["indicator_of_sex"] == indicator_of_sex
@@ -296,13 +296,13 @@ def create_plots_for_significant_cell_types_within_sex(
             f"Difference between medians is {row_of_significant_comparisons.get('difference_between_medians')}.\n" +
             f"Cliff's delta is {row_of_significant_comparisons.get('cliffs_delta')}."
         )
-        response = "residuals" if covariates_will_be_adjusted else "enrichment_scores"
+        response = "residuals" if covariates_will_be_adjusted else "ESs"
         sex = "females" if indicator_of_sex == 0 else "males"
         filename = (
             paths.plots_for_comparing_enrichment_scores /
             ("covariates_were_adjusted" if covariates_will_be_adjusted else "covariates_were_not_adjusted") /
             sex /
-            f"violin_and_box_plots_of_{response}_of_{cell_type}_of_ICB_naive_and_experienced_samples_of_{sex}.png"
+            f"plots_of_{response}_of_{cell_type}_of_naive_and_experienced_samples_of_{sex}.png"
         )
         create_plot(
             series_of_values_for_indicator_0 = series_of_values_for_indicator_0,
@@ -325,7 +325,7 @@ def create_plots_for_significant_cell_types_by_sex_within_subset(
     data_frame_of_comparisons_for_female_and_male_samples = pd.read_csv(path_to_comparisons)
     data_frame_of_significant_comparisons_for_female_and_male_samples = (
         data_frame_of_comparisons_for_female_and_male_samples.loc[
-            data_frame_of_comparisons_for_female_and_male_samples["FDR"] <= 0.05
+            data_frame_of_comparisons_for_female_and_male_samples["FDR"] <= 1
         ]
     )
     for _, row_of_significant_comparisons in data_frame_of_significant_comparisons_for_female_and_male_samples.iterrows():
@@ -347,13 +347,13 @@ def create_plots_for_significant_cell_types_by_sex_within_subset(
             f"Difference between medians is {row_of_significant_comparisons.get('difference_between_medians')}.\n" +
             f"Cliff's delta is {row_of_significant_comparisons.get('cliffs_delta')}."
         )
-        response = "residuals" if covariates_will_be_adjusted else "enrichment_scores"
-        description_of_samples = "naive" if subset == "naive_samples" else "Experienced"
+        response = "residuals" if covariates_will_be_adjusted else "ESs"
+        description_of_samples = "naive" if subset == "naive_samples" else "experienced"
         filename = (
             paths.plots_for_comparing_enrichment_scores /
             ("covariates_were_adjusted" if covariates_will_be_adjusted else "covariates_were_not_adjusted") /
             subset /
-            f"violin_and_box_plots_of_{response}_of_{cell_type}_of_female_and_male_ICB_{description_of_samples}_samples.png"
+            f"plots_of_{response}_of_{cell_type}_of_F_and_M_{description_of_samples}_samples.png"
         )
         create_plot(
             series_of_values_for_indicator_0 = series_of_values_for_indicator_0,
