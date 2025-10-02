@@ -399,7 +399,7 @@ def create_plots_for_significant_cell_types_by_ICB_status(
         filename = (
             paths.plots_for_comparing_enrichment_scores /
             ("covariates_were_adjusted" if covariates_will_be_adjusted else "covariates_were_not_adjusted") /
-            "all" /
+            "two_genders" /
             f"plots_of_{response}_of_{cell_type}_of_naive_and_experienced_samples.png"
         )
         create_plot(
@@ -411,6 +411,52 @@ def create_plots_for_significant_cell_types_by_ICB_status(
             path_to_which_to_save_plot = filename,
             response = response,
             list_of_labels = ("ICB naive", "ICB experienced")
+        )
+
+
+def create_plots_for_significant_cell_types_by_sex_all_samples(
+    data_frame_of_enrichment_scores_and_clinical_and_QC_data: pd.DataFrame,
+    path_to_comparisons_for_females_and_males: Path,
+    covariates_will_be_adjusted: bool
+) -> None:
+    data_frame_of_comparisons_for_females_and_males = pd.read_csv(path_to_comparisons_for_females_and_males)
+    data_frame_of_significant_comparisons_for_females_and_males = data_frame_of_comparisons_for_females_and_males.loc[
+        data_frame_of_comparisons_for_females_and_males["FDR"] <= 1
+    ]
+    for _, row_of_significant_comparisons in data_frame_of_significant_comparisons_for_females_and_males.iterrows():
+        cell_type = row_of_significant_comparisons["cell_type"]
+        series_of_values_for_indicator_0, series_of_values_for_indicator_1 = create_series_of_enrichment_scores_or_residuals(
+            data_frame_of_enrichment_scores_and_clinical_and_QC_data = data_frame_of_enrichment_scores_and_clinical_and_QC_data,
+            cell_type = cell_type,
+            category = "indicator_of_sex",
+            covariates_will_be_adjusted = covariates_will_be_adjusted
+        )
+        response = "Residuals" if covariates_will_be_adjusted else "Enrichment Scores"
+        title = f"Violin and Box Plots of {response} of {cell_type}\nfor Female and Male Samples"
+        subtitle = (
+            f"Numbers of female and male samples are {len(series_of_values_for_indicator_0)} and {len(series_of_values_for_indicator_1)}.\n"
+            f"U statistic is {row_of_significant_comparisons.get('U_statistic')}.\n"
+            f"p value is {row_of_significant_comparisons.get('p_value')}.\n"
+            f"FDR is {row_of_significant_comparisons.get('FDR')}.\n"
+            f"Difference between medians is {row_of_significant_comparisons.get('difference_between_medians')}.\n"
+            f"Cliff's delta is {row_of_significant_comparisons.get('cliffs_delta')}."
+        )
+        response = "residuals" if covariates_will_be_adjusted else "ESs"
+        filename = (
+            paths.plots_for_comparing_enrichment_scores /
+            ("covariates_were_adjusted" if covariates_will_be_adjusted else "covariates_were_not_adjusted") /
+            "both_ICB_statuses" /
+            f"plots_of_{response}_of_{cell_type}_of_F_and_M_samples.png"
+        )
+        create_plot(
+            series_of_values_for_indicator_0 = series_of_values_for_indicator_0,
+            series_of_values_for_indicator_1 = series_of_values_for_indicator_1,
+            cell_type = cell_type,
+            title = title,
+            subtitle = subtitle,
+            path_to_which_to_save_plot = filename,
+            response = response,
+            list_of_labels = ("Females", "Males")
         )
 
 
@@ -483,6 +529,11 @@ def main():
             data_frame_of_cell_types_and_statistics,
             "female / male",
             path_to_comparisons_for_females_and_males
+        )
+        create_plots_for_significant_cell_types_by_sex_all_samples(
+            data_frame_of_enrichment_scores_and_clinical_and_QC_data=data_frame,
+            path_to_comparisons_for_females_and_males=path_to_comparisons_for_females_and_males,
+            covariates_will_be_adjusted=args.adjust_covariates
         )
 
         dictionary_of_indicators_of_sex_and_paths_to_comparisons_for_ICB_naive_and_experienced_samples = {
