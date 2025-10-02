@@ -276,9 +276,12 @@ def plot_residuals_by_batch(data_frame: pd.DataFrame, formula: str, cell_type: s
 def fit_linear_models_for_subset(
     data_frame_of_enrichment_scores_clinical_data_and_QC_data: pd.DataFrame,
     ICB_status_should_be_included: bool,
+    interaction_term_should_be_included: bool,
     list_of_cell_types: list[str],
     subset: str
 ) -> list[tuple]:
+    if interaction_term_should_be_included and not ICB_status_should_be_included:
+        raise Exception("Iteraction term should be included but ICB status should not be included.")
     list_of_results = []
     for cell_type in list_of_cell_types:
         data_frame = data_frame_of_enrichment_scores_clinical_data_and_QC_data[
@@ -307,12 +310,15 @@ def fit_linear_models_for_subset(
         ]
         if subset == "experienced":
             list_of_predictors.append("C(EKN_Assigned_Stage, Treatment(reference='III'))") # C means "make categorical".
-        elif subset == "all" or subset == "naive":
+        elif subset in ("all", "naive"):
             list_of_predictors.append("C(EKN_Assigned_Stage, Treatment(reference='II'))")
         else:
             raise Exception(f"Subset is {subset} and is not all, experienced, or naive.")
         if ICB_status_should_be_included:
             list_of_predictors.append("patient_received_ICB_therapy_at_or_before_age_of_specimen_collection")
+        if interaction_term_should_be_included:
+            interaction_term = "indicator_of_sex:patient_received_ICB_therapy_at_or_before_age_of_specimen_collection"
+            list_of_predictors.append(interaction_term)
         formula = "Score ~ " + " + ".join(list_of_predictors)
         plot_residuals_by_batch(data_frame, formula, cell_type, subset = subset)
         regression_results_wrapper, type_of_model = try_to_fit_different_models(formula, data_frame)
@@ -320,39 +326,22 @@ def fit_linear_models_for_subset(
             regression_results_wrapper,
             "indicator_of_sex"
         )
+        parameter_for_interaction_term, standard_error_of_parameter_for_interaction_term, p_value_for_interaction_term = (np.nan, np.nan, np.nan)
+        if interaction_term_should_be_included:
+            parameter_for_interaction_term, standard_error_of_parameter_for_interaction_term, p_value_for_interaction_term = get_statistics(
+                regression_results_wrapper,
+                interaction_term
+            )
         number_of_patients = data_frame["AvatarKey"].nunique()
 
-        '''
-        We create a matrix of fixed effects rows corresponding to samples and columns corresponding to fixed effects.
-        This matrix has columns corresponding to
-        - intercept,
-        - indicator of sex,
-        - age at clinical record creation,
-        - each non-reference level of stage at start of ICB therapy,
-        - each non-reference level of indicator that patient has received ICB therapy (i.e., level True), and
-        - sequencing depth.
-        '''
-        matrix_of_fixed_effects = pd.DataFrame(
-            regression_results_wrapper.model.exog,
-            columns = regression_results_wrapper.model.exog_names
-        )
-        series_of_values_of_parameters = getattr(
-            regression_results_wrapper,
-            "fe_params",
-            regression_results_wrapper.params
-        )
-        matrix_of_fixed_effects_with_indicator_of_sex_0 = matrix_of_fixed_effects.copy()
-        matrix_of_fixed_effects_with_indicator_of_sex_0["indicator_of_sex"] = 0
-        series_of_predicted_enrichment_scores_for_females = (
-            matrix_of_fixed_effects_with_indicator_of_sex_0 @ series_of_values_of_parameters
-        )
+        data_frame_for_females = data_frame.copy()
+        data_frame_for_females["indicator_of_sex"] = 0
+        data_frame_for_males = data_frame.copy()
+        data_frame_for_males["indicator_of_sex"] = 1
+        series_of_predicted_enrichment_scores_for_females = regression_results_wrapper.predict(data_frame_for_females)
+        series_of_predicted_enrichment_scores_for_males = regression_results_wrapper.predict(data_frame_for_males)
         expected_enrichment_score_given_patient_is_female_and_other_objects_have_certain_values = (
             series_of_predicted_enrichment_scores_for_females.mean()
-        )
-        matrix_of_fixed_effects_with_indicator_of_sex_1 = matrix_of_fixed_effects.copy()
-        matrix_of_fixed_effects_with_indicator_of_sex_1["indicator_of_sex"] = 1
-        series_of_predicted_enrichment_scores_for_males = (
-            matrix_of_fixed_effects_with_indicator_of_sex_1 @ series_of_values_of_parameters
         )
         expected_enrichment_score_given_patient_is_male_and_other_objects_have_certain_values = (
             series_of_predicted_enrichment_scores_for_males.mean()
@@ -396,6 +385,7 @@ def fit_linear_models_for_subset(
         list_of_results.append(
             (
                 subset,
+                interaction_term_should_be_included,
                 cell_type,
                 type_of_model,
                 parameter_for_Sex,
@@ -411,7 +401,10 @@ def fit_linear_models_for_subset(
                 lower_bound_of_confidence_interval_for_parameter_for_Sex,
                 upper_bound_of_confidence_interval_for_parameter_for_Sex,
                 standard_deviation_of_residuals,
-                parameter_for_Sex_standardized_by_standard_deviation_of_residuals
+                parameter_for_Sex_standardized_by_standard_deviation_of_residuals,
+                parameter_for_interaction_term,
+                standard_error_of_parameter_for_interaction_term,
+                p_value_for_interaction_term
             )
         )
     return list_of_results
@@ -429,13 +422,15 @@ def fit_linear_models(
         data_frame_of_enrichment_scores_clinical_data_and_QC_data["patient_received_ICB_therapy_at_or_before_age_of_specimen_collection"] == True
     ]
     list_of_results = []
-    list_of_results += fit_linear_models_for_subset(data_frame_of_enrichment_scores_clinical_data_and_QC_data, True, list_of_cell_types, "all")
-    list_of_results += fit_linear_models_for_subset(data_frame_of_enrichment_scores_clinical_data_and_QC_data_for_naive_samples, False, list_of_cell_types, "naive")
-    list_of_results += fit_linear_models_for_subset(data_frame_of_enrichment_scores_clinical_data_and_QC_data_for_experienced_samples, False, list_of_cell_types, "experienced")
+    list_of_results += fit_linear_models_for_subset(data_frame_of_enrichment_scores_clinical_data_and_QC_data, True, False, list_of_cell_types, "all")
+    list_of_results += fit_linear_models_for_subset(data_frame_of_enrichment_scores_clinical_data_and_QC_data, True, True, list_of_cell_types, "all")
+    list_of_results += fit_linear_models_for_subset(data_frame_of_enrichment_scores_clinical_data_and_QC_data_for_naive_samples, False, False, list_of_cell_types, "naive")
+    list_of_results += fit_linear_models_for_subset(data_frame_of_enrichment_scores_clinical_data_and_QC_data_for_experienced_samples, False, False, list_of_cell_types, "experienced")
     data_frame_of_results = pd.DataFrame(
         list_of_results,
         columns = [
             "subset",
+            "interaction term should be included",
             "cell type",
             "type of model",
             "parameter for Sex",
@@ -451,7 +446,10 @@ def fit_linear_models(
             "lower bound of confidence interval for parameter for Sex",
             "upper bound of confidence interval for parameter for Sex",
             "standard deviation of residuals",
-            "parameter for Sex standardized by standard deviation of residuals"
+            "parameter for Sex standardized by standard deviation of residuals",
+            "parameter for interaction term",
+            "standard error of parameter for interaction term",
+            "p value for interaction term"
         ]
     )
     return data_frame_of_results
@@ -493,7 +491,7 @@ def main():
         data_frame_of_enrichment_scores_and_clinical_and_QC_data, list_of_cell_types = create_data_frame_of_enrichment_scores_and_clinical_and_QC_data(path_of_enrichment_data_frame)
         data_frame_of_results_of_fitting_LMs = fit_linear_models(data_frame_of_enrichment_scores_and_clinical_and_QC_data, list_of_cell_types)
         data_frame_of_results_of_fitting_LMs = adjust_p_values_for_Sex(data_frame_of_results_of_fitting_LMs)
-        data_frame_of_results_of_fitting_LMs.sort_values(["subset", "q value for Sex"]).to_csv(path_of_results_of_fitting_LMs, index = False)
+        data_frame_of_results_of_fitting_LMs.sort_values(["subset", "interaction term should be included", "q value for Sex"]).to_csv(path_of_results_of_fitting_LMs, index = False)
         data_frame_of_results_of_fitting_LMs.query("significant").sort_values(["subset", "q value for Sex"]).to_csv(path_of_significant_results_of_fitting_LMs, index = False)
 
 
