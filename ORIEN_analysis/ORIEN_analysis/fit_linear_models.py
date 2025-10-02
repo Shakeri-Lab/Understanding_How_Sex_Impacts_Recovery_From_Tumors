@@ -202,7 +202,7 @@ def try_to_fit_different_models(formula: str, data_frame: pd.DataFrame):
     return regression_results_wrapper, "ols_hc3"
 
 
-def get_statistics(regression_results_wrapper, variable):
+def get_statistics(regression_results_wrapper, variable: str):
     list_of_names_of_fixed_effects = regression_results_wrapper.model.exog_names
     series_of_parameters_of_fixed_effects = regression_results_wrapper.params.loc[list_of_names_of_fixed_effects]
     parameter = series_of_parameters_of_fixed_effects[variable]
@@ -222,6 +222,9 @@ def get_statistics(regression_results_wrapper, variable):
 
 def plot_residuals_by_batch(data_frame: pd.DataFrame, formula: str, cell_type: str, subset: str) -> None:
     '''
+    Residuals are from a plain OLS linear model for potentially diagnosing an unmodeled batch effect.
+    Residuals are not from a mixed linear model or an adjusted linear model actually used for inference.
+
     After adjusting for sex, age, stage, ICB status, and sequencing depth,
     there is still an unmodeled batch effect.
     Samples within the same batch share a negative or positive offset in residuals from the residual across batches of 0.
@@ -281,7 +284,7 @@ def fit_linear_models_for_subset(
     subset: str
 ) -> list[tuple]:
     if interaction_term_should_be_included and not ICB_status_should_be_included:
-        raise Exception("Iteraction term should be included but ICB status should not be included.")
+        raise Exception("Interaction term should be included but ICB status should not be included.")
     list_of_results = []
     for cell_type in list_of_cell_types:
         data_frame = data_frame_of_enrichment_scores_clinical_data_and_QC_data[
@@ -460,7 +463,9 @@ def adjust_p_values_for_Sex(data_frame_of_results_of_fitting_LMs: pd.DataFrame) 
     p values for the Sex coefficient are adjusted across cell types within each subset (i.e., all, naive, or experienced samples)
     with the Benjamini-Hochberg procedure and a False Discovery Rate of 10 percent.
     '''
-    for subset, group in data_frame_of_results_of_fitting_LMs.groupby("subset"):
+    for (subset, interaction_term_should_be_included), group in data_frame_of_results_of_fitting_LMs.groupby(
+        ["subset", "interaction term should be included"]
+    ):
         indicator_of_whether_to_reject_null_hypothesis, array_of_q_values, _, _ = multipletests(
             group["p value for Sex"],
             method = "fdr_bh",
