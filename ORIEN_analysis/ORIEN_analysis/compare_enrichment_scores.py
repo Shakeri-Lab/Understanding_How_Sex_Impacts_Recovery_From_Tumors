@@ -6,9 +6,9 @@ This script compares enrichment scores produced by xCell or xCell2 for
 - ICB-naive tumors and ICB-experienced tumors of males
 across various cell types.
 This script for each cell type and category of tumors
-performs a 2 sided Mann-Whitney U Test / Wilcoxon Ranak Sum Test.
+performs a 2 sided Mann-Whitney U Test / Wilcoxon Rank Sum Test.
 
-This script optionally removes variability due to age at clinical record creation and stage at start of ICB therapy before comparing.
+This script optionally removes variability due to age at clinical record creation and EKN assigned stage before comparing.
 
 Enrichment scores from group A (e.g., samples of females) and group B (e.g., samples of males)
 may be combined in a list.
@@ -50,7 +50,7 @@ Usage
 conda activate ici_sex
 ./miniconda3/envs/ici_sex/bin/python -m src.immune_analysis.compare_enrichment_scores --adjust_covariates
 
-Pass flag `--adjust_covariates` to remove variability due to age at clinical record creation and stage at start of ICB therapy before comparing.
+Pass flag `--adjust_covariates` to remove variability due to age at clinical record creation and EKN assigned stage before comparing.
 Otherwise raw enrichment scores are used.
 
 Outputs
@@ -161,7 +161,7 @@ def create_data_frame_of_cell_types_and_statistics(
     '''
     Perform Mann-Whitney U Tests / Wilcoxon Rank Sum Tests for every cell type.
     If covariates will be adjusted, residuals of a linear model of enrichment scores
-    vs. age at clinical record creation and stage at start of ICB therapy will be compared
+    vs. age at clinical record creation and EKN assigned stage will be compared
     instead of raw enrichment scores.
     
     Returns
@@ -178,7 +178,7 @@ def create_data_frame_of_cell_types_and_statistics(
 
     For each cell type,
     Choose either the raw enrichment scores for that cell type or the residuals of a linear model of
-    enrichment score vs. age at clinical record creation and stage at start of ICB therapy.
+    enrichment score vs. age at clinical record creation and EKN assigned stage.
     In the first case, split enrichment scores by sex or experience of ICB therapy.
     In the second case, split residuals by sex or experience of ICB therapy.
     Find a U statistic and a p value using the Mann-Whitney U Test / Wilcoxon Rank Sum Test.
