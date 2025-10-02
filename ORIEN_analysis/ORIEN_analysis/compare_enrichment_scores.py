@@ -48,9 +48,9 @@ enrichment scores for group B and that cell type.
 Usage
 -----
 conda activate ici_sex
-./miniconda3/envs/ici_sex/bin/python -m src.immune_analysis.compare_enrichment_scores --adjust-covariates
+./miniconda3/envs/ici_sex/bin/python -m src.immune_analysis.compare_enrichment_scores --adjust_covariates
 
-Pass flag `--adjust-covariates` to remove variability due to age at clinical record creation and stage at start of ICB therapy before comparing.
+Pass flag `--adjust_covariates` to remove variability due to age at clinical record creation and stage at start of ICB therapy before comparing.
 Otherwise raw enrichment scores are used.
 
 Outputs
@@ -63,8 +63,8 @@ Each file contains one row per cell type with columns
     - n_F and n_M or n_Naive and n_Exp containing
       numbers of samples corresponding to female and male patients or
       numbers of ICB-naive and ICB-experienced samples,
-    - U-stat containing U statistics,
-    - p value containing p values,
+    - U_statistic containing U statistics,
+    - p_value containing p values,
     - FDR containing False Discovery Rates,
     - significant containing indicators of significance, and
     - suggestive containing indicators of suggestiveness.
@@ -75,13 +75,11 @@ import argparse
 from ORIEN_analysis.fit_linear_models import (
     create_data_frame_of_enrichment_scores_and_clinical_and_QC_data
 )
-import logging
 from statsmodels.stats.multitest import multipletests
 import numpy as np
 from ORIEN_analysis.config import paths
 import pandas as pd
 import matplotlib.pyplot as plt
-import re
 import statsmodels.formula.api as smf
 import scipy.stats as ss
 
@@ -107,7 +105,6 @@ def save_data_frame_of_cell_types_and_statistics(
 ) -> None:
     '''
     Save a data frame of cell types and statistics with added columns FDR, significant, and suggestive.
-    Log numbers of cell types that are significant / suggestive for each category of tests.
     '''
     data_frame_of_cell_types_and_statistics["FDR"] = determine_FDRs(data_frame_of_cell_types_and_statistics["p_value"])
     data_frame_of_cell_types_and_statistics["significant"] = data_frame_of_cell_types_and_statistics["FDR"] <= 0.05
@@ -136,9 +133,8 @@ def create_series_of_enrichment_scores_or_residuals(
         )
         regression_results_wrapper = OLS_linear_regression_model.fit()
         series_of_residuals = regression_results_wrapper.resid
-        data_frame_of_enrichment_scores_and_indicators["residual"] = series_of_residuals.loc[
-            data_frame_of_enrichment_scores_and_indicators.index
-        ]
+        data_frame_of_enrichment_scores_and_indicators["residual"] = np.nan
+        data_frame_of_enrichment_scores_and_indicators.loc[data_frame_of_enrichment_scores_ages_and_stages.index, "residual"] = series_of_residuals
         name_of_column_of_enrichment_scores_or_residuals = "residual"
     else:
         name_of_column_of_enrichment_scores_or_residuals = cell_type
@@ -205,30 +201,33 @@ def create_data_frame_of_cell_types_and_statistics(
         )
         U_statistic, p_value = ss.mannwhitneyu(
             series_of_values_for_indicator_0,
+            series_of_values_for_indicator_1
+        )
+        difference_between_medians = (
+            np.median(series_of_values_for_indicator_1) - np.median(series_of_values_for_indicator_0)
+        )
+        value_of_cliffs_delta, _ = cliffs_delta(
             series_of_values_for_indicator_1,
-            alternative = "two-sided"
+            series_of_values_for_indicator_0
+        )
+        dictionary_of_categories_and_lists_of_labels = {
+            "indicator_of_sex": ["Females", "Males"],
+            "integer_indicating_that_patient_received_ICB_therapy_at_or_before_age_of_specimen_collection": ["ICB naive", "ICB experienced"]
+        }
+        direction = determine_direction(
+            value_of_cliffs_delta,
+            dictionary_of_categories_and_lists_of_labels[category][0],
+            dictionary_of_categories_and_lists_of_labels[category][1]
         )
         dictionary_of_cell_types_and_statistics = dict(
             cell_type = cell_type,
             number_of_samples_for_indicator_0 = len(series_of_values_for_indicator_0),
             number_of_samples_for_indicator_1 = len(series_of_values_for_indicator_1),
             U_statistic = U_statistic,
-            p_value = p_value
-        )
-        difference_between_medians = (
-            np.median(series_of_values_for_indicator_1) - np.median(series_of_values_for_indicator_0)
-        )
-        value_of_cliffs_delta = cliffs_delta(series_of_values_for_indicator_1, series_of_values_for_indicator_0)[0]
-        dictionary_of_cell_types_and_statistics["difference_between_medians"] = difference_between_medians
-        dictionary_of_cell_types_and_statistics["cliffs_delta"] = value_of_cliffs_delta
-        dictionary_of_categories_and_lists_of_labels = {
-            "indicator_of_sex": ["Females", "Males"],
-            "integer_indicating_that_patient_received_ICB_therapy_at_or_before_age_of_specimen_collection": ["ICB naive", "ICB experienced"]
-        }
-        dictionary_of_cell_types_and_statistics["direction"] = determine_direction(
-            value_of_cliffs_delta,
-            dictionary_of_categories_and_lists_of_labels[category][0],
-            dictionary_of_categories_and_lists_of_labels[category][1]
+            p_value = p_value,
+            difference_between_medians = difference_between_medians,
+            cliffs_delta = value_of_cliffs_delta,
+            direction = direction
         )
         list_of_dictionaries_of_cell_types_and_statistics.append(dictionary_of_cell_types_and_statistics)
     data_frame_of_cell_types_and_statistics = pd.DataFrame(list_of_dictionaries_of_cell_types_and_statistics)
@@ -252,6 +251,7 @@ def create_plot(
     ax_1.set_xticks([1, 2], list_of_labels)
     ax_1.set_ylabel(response)
     ax_2 = figure.add_subplot(1, 2, 2)
+    # The 'labels' parameter of boxplot() has been renamed 'tick_labels' since Matplotlib 3.9; support for the old name will be dropped in 3.11.
     ax_2.boxplot(list_of_arrays, tick_labels = list_of_labels, showmeans = True, notch = True)
     figure.suptitle(title)
     figure.text(0.5, 0.7, subtitle, ha = "center")
@@ -367,6 +367,53 @@ def create_plots_for_significant_cell_types_by_sex_within_subset(
         )
 
 
+def create_plots_for_significant_cell_types_by_ICB_status(
+    data_frame_of_enrichment_scores_and_clinical_and_QC_data: pd.DataFrame,
+    path_to_comparisons: Path,
+    covariates_will_be_adjusted: bool
+) -> None:
+    data_frame_of_comparisons_for_naive_and_experienced_samples = pd.read_csv(path_to_comparisons)
+    data_frame_of_significant_comparisons_for_naive_and_experienced_samples = data_frame_of_comparisons_for_naive_and_experienced_samples.loc[
+        data_frame_of_comparisons_for_naive_and_experienced_samples["FDR"] <= 1
+    ]
+    for _, row_of_significant_comparisons in data_frame_of_significant_comparisons_for_naive_and_experienced_samples.iterrows():
+        cell_type = row_of_significant_comparisons["cell_type"]
+        series_of_values_for_indicator_0, series_of_values_for_indicator_1 = create_series_of_enrichment_scores_or_residuals(
+            data_frame_of_enrichment_scores_and_clinical_and_QC_data = data_frame_of_enrichment_scores_and_clinical_and_QC_data,
+            cell_type = cell_type,
+            category = "integer_indicating_that_patient_received_ICB_therapy_at_or_before_age_of_specimen_collection",
+            covariates_will_be_adjusted = covariates_will_be_adjusted
+        )
+        response = "Residuals" if covariates_will_be_adjusted else "Enrichment Scores"
+        title = f"Violin and Box Plots of {response} of {cell_type}\nfor ICB Naive and Experienced Samples"
+        subtitle = (
+            f"Numbers of naive and experienced samples are "
+            f"{len(series_of_values_for_indicator_0)} and {len(series_of_values_for_indicator_1)}.\n"
+            f"U statistic is {row_of_significant_comparisons.get('U_statistic')}.\n"
+            f"p value is {row_of_significant_comparisons.get('p_value')}.\n"
+            f"FDR is {row_of_significant_comparisons.get('FDR')}.\n"
+            f"Difference between medians is {row_of_significant_comparisons.get('difference_between_medians')}.\n"
+            f"Cliff's delta is {row_of_significant_comparisons.get('cliffs_delta')}."
+        )
+        response = "residuals" if covariates_will_be_adjusted else "ESs"
+        filename = (
+            paths.plots_for_comparing_enrichment_scores /
+            ("covariates_were_adjusted" if covariates_will_be_adjusted else "covariates_were_not_adjusted") /
+            "all" /
+            f"plots_of_{response}_of_{cell_type}_of_naive_and_experienced_samples.png"
+        )
+        create_plot(
+            series_of_values_for_indicator_0 = series_of_values_for_indicator_0,
+            series_of_values_for_indicator_1 = series_of_values_for_indicator_1,
+            cell_type = cell_type,
+            title = title,
+            subtitle = subtitle,
+            path_to_which_to_save_plot = filename,
+            response = response,
+            list_of_labels = ("ICB naive", "ICB experienced")
+        )
+
+
 def main():
     paths.ensure_dependencies_for_comparing_enrichment_scores_exist()
     
@@ -380,14 +427,16 @@ def main():
             paths.comparisons_for_female_and_male_naive_samples_and_xCell,
             paths.comparisons_for_female_and_male_experienced_samples_and_xCell,
             paths.comparisons_for_ICB_naive_and_experienced_samples_of_females_and_xCell,
-            paths.comparisons_for_ICB_naive_and_experienced_samples_of_males_and_xCell
+            paths.comparisons_for_ICB_naive_and_experienced_samples_of_males_and_xCell,
+            paths.comparisons_for_ICB_naive_and_experienced_samples_and_xCell
         ),
         paths.enrichment_data_frame_per_xCell2_and_Pan_Cancer: (
             paths.comparisons_for_females_and_males_and_xCell2_and_Pan_Cancer,
             paths.comparisons_for_female_and_male_naive_samples_and_xCell2_and_Pan_Cancer,
             paths.comparisons_for_female_and_male_experienced_samples_and_xCell2_and_Pan_Cancer,
             paths.comparisons_for_ICB_naive_and_experienced_samples_of_females_and_xCell2_and_Pan_Cancer,
-            paths.comparisons_for_ICB_naive_and_experienced_samples_of_males_and_xCell2_and_Pan_Cancer
+            paths.comparisons_for_ICB_naive_and_experienced_samples_of_males_and_xCell2_and_Pan_Cancer,
+            paths.comparisons_for_ICB_naive_and_experienced_samples_and_xCell2_and_Pan_Cancer
         )
     }
     
@@ -397,6 +446,7 @@ def main():
         path_to_comparisons_for_female_and_male_experienced_samples = tuple_of_paths_to_comparisons[2]
         path_to_comparisons_for_ICB_naive_and_experienced_samples_of_females = tuple_of_paths_to_comparisons[3]
         path_to_comparisons_for_ICB_naive_and_experienced_samples_of_males = tuple_of_paths_to_comparisons[4]
+        path_to_comparisons_for_ICB_naive_and_experienced_samples = tuple_of_paths_to_comparisons[5]
     
         data_frame, list_of_cell_types = create_data_frame_of_enrichment_scores_and_clinical_and_QC_data(
             path_to_enrichment_data
@@ -405,13 +455,18 @@ def main():
         data_frame["integer_indicating_that_patient_received_ICB_therapy_at_or_before_age_of_specimen_collection"] = (
             data_frame["patient_received_ICB_therapy_at_or_before_age_of_specimen_collection"].astype(int)
         )
-        data_frame = data_frame.rename(
-            columns = lambda cell_type: cell_type.replace(' ', '_').replace('-', '_').replace('+', "plus").replace(',', '')
-        )
-        list_of_cell_types = [
-            cell_type.replace(' ', '_').replace('-', '_').replace('+', "plus").replace(',', '')
+        list_of_cleaned_cell_types = [
+            cell_type
+            .replace(' ', '_')
+            .replace('-', '_')
+            .replace('+', "plus")
+            .replace(',', '')
             for cell_type in list_of_cell_types
         ]
+        data_frame = data_frame.rename(
+            columns = dict(zip(list_of_cell_types, list_of_cleaned_cell_types))
+        )
+        list_of_cell_types = list_of_cleaned_cell_types
 
         data_frame_of_cell_types_and_statistics = create_data_frame_of_cell_types_and_statistics(
             data_frame,
@@ -510,6 +565,27 @@ def main():
             path_to_comparisons = path_to_comparisons_for_female_and_male_experienced_samples,
             covariates_will_be_adjusted = args.adjust_covariates,
             subset = "experienced_samples"
+        )
+        data_frame_of_cell_types_and_statistics = create_data_frame_of_cell_types_and_statistics(
+            data_frame,
+            list_of_cell_types,
+            category = "integer_indicating_that_patient_received_ICB_therapy_at_or_before_age_of_specimen_collection",
+            covariates_will_be_adjusted = args.adjust_covariates
+        ).rename(
+            columns = {
+                "number_of_samples_for_indicator_0": "number_of_naive_samples",
+                "number_of_samples_for_indicator_1": "number_of_experienced_samples"
+            }
+        )
+        save_data_frame_of_cell_types_and_statistics(
+            data_frame_of_cell_types_and_statistics,
+            "naive / experienced",
+            path_to_comparisons_for_ICB_naive_and_experienced_samples
+        )
+        create_plots_for_significant_cell_types_by_ICB_status(
+            data_frame_of_enrichment_scores_and_clinical_and_QC_data = data_frame,
+            path_to_comparisons = path_to_comparisons_for_ICB_naive_and_experienced_samples,
+            covariates_will_be_adjusted = args.adjust_covariates
         )
 
 
