@@ -85,11 +85,10 @@ def create_data_frame_of_enrichment_scores_and_clinical_and_QC_data(
         data_frame_of_output_and_clinical_molecular_linkage_data
         .merge(
             enrichment_matrix,
-            how = "left",
+            how = "inner",
             left_on = "RNASeq",
             right_on = "SampleID"
         )
-        .dropna(subset = "SampleID")
         .drop(columns = "SampleID")
         .merge(
             patient_data[["AvatarKey", "Sex"]],
