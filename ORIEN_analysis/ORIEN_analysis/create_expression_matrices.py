@@ -651,6 +651,16 @@ Expression matrix with SLIDs approved by manifest has shape {expression_matrix_w
     series_of_Ensembl_IDs_and_HGNC_symbols.to_csv(paths.data_frame_of_Ensembl_IDs_and_HGNC_symbols)
     print("Data frame of Ensembl IDs and HGNC symbols was saved.")
 
+    full_expression_matrix_with_HGNC_symbols = create_expression_matrix_with_HGNC_symbols(
+        full_expression_matrix,
+        series_of_Ensembl_IDs_and_HGNC_symbols
+    )
+    full_expression_matrix_with_HGNC_symbols.to_csv(paths.full_expression_matrix_with_HGNC_symbols)
+    print(
+        f'''Full expression matrix with HGNC symbols was saved.
+Full expression matrix with HGNC symbols has shape {full_expression_matrix_with_HGNC_symbols.shape}.'''
+    )
+
     expression_matrix_with_HGNC_symbols_and_SLIDs_approved_by_manifest = create_expression_matrix_with_HGNC_symbols(
         expression_matrix_with_SLIDs_approved_by_manifest,
         series_of_Ensembl_IDs_and_HGNC_symbols

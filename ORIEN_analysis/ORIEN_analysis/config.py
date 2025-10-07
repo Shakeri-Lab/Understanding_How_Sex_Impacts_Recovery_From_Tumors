@@ -38,6 +38,7 @@ class Paths():
         # self.output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors, which is defined above
         # outputs
         self.full_expression_matrix = self.outputs_of_creating_expression_matrices / "full_expression_matrix.csv" # EM1
+        self.full_expression_matrix_with_HGNC_symbols = self.outputs_of_creating_expression_matrices / "full_expression_matrix_with_HGNC_symbols.csv"
         self.manifest = self.outputs_of_creating_expression_matrices / "manifest.csv"
         self.QC_summary_in_Markdown = self.outputs_of_creating_expression_matrices / "QC_summary.md"
         self.QC_summary_of_CSVs = self.outputs_of_creating_expression_matrices / "QC_summary.csv"
