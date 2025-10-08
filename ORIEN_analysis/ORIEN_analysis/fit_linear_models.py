@@ -20,6 +20,26 @@ def numericize_age(age) -> float:
         return float(age)
 
 
+def _norm_str(s: pd.Series) -> pd.Series:
+    s = s.copy()
+    mask = s.notna()
+    s.loc[mask] = s.loc[mask].astype(str).str.strip()
+    s.replace("", np.nan, inplace = True)
+    return s
+
+
+def _dedupe(df: pd.DataFrame, key: str, name: str, keep="first") -> pd.DataFrame:
+    if key not in df.columns:
+        return df
+    nonnull = df[key].notna()
+    dup_mask = df.loc[nonnull, key].duplicated(keep = False)
+    if dup_mask.any():
+        ex = df.loc[nonnull, key][dup_mask].drop_duplicates().head(10).tolist()
+        print(f"[WARN] {name}: {dup_mask.sum()} rows have duplicate {key}. Examples: {ex}")
+        df = df.drop_duplicates(subset=[key], keep=keep)
+    return df
+
+
 def create_data_frame_of_enrichment_scores_and_clinical_and_QC_data(
     path_of_enrichment_matrix
 ) -> tuple[pd.DataFrame, list[str]]:
@@ -32,6 +52,23 @@ def create_data_frame_of_enrichment_scores_and_clinical_and_QC_data(
         paths.output_of_pairing_clinical_data_and_stages_of_tumors
     )
     patient_data = pd.read_csv(paths.patient_data)
+
+    for df, cols in [
+        (QC_data, ["SLID", "NexusBatch"]),
+        (clinical_molecular_linkage_data, ["DeidSpecimenID", "RNASeq"]),
+        (output_of_pairing_clinical_data_and_stages_of_tumors, ["ORIENSpecimenID", "AvatarKey"]),
+        (patient_data, ["AvatarKey"]),
+        (enrichment_matrix, ["SampleID"])
+    ]:
+        for c in cols:
+            if c in df.columns:
+                df[c] = df[c].astype("string")
+                df[c] = _norm_str(df[c])
+    QC_data = _dedupe(QC_data, "SLID", "QC_data")
+    clinical_molecular_linkage_data = _dedupe(clinical_molecular_linkage_data, "DeidSpecimenID", "CML by DeidSpecimenID")
+    clinical_molecular_linkage_data = _dedupe(clinical_molecular_linkage_data, "RNASeq", "CML by RNASeq")
+    output_of_pairing_clinical_data_and_stages_of_tumors = _dedupe(output_of_pairing_clinical_data_and_stages_of_tumors, "ORIENSpecimenID", "Output by ORIENSpecimenID")
+    enrichment_matrix = _dedupe(enrichment_matrix, "SampleID", "Enrichment by SampleID")
 
     set_of_medications_for_ICB_therapy = {
         "Pembrolizumab", "Nivolumab", # PD‑1
@@ -50,7 +87,8 @@ def create_data_frame_of_enrichment_scores_and_clinical_and_QC_data(
             clinical_molecular_linkage_data[["DeidSpecimenID", "Age At Specimen Collection", "RNASeq"]],
             how = "left",
             left_on = "ORIENSpecimenID",
-            right_on = "DeidSpecimenID"
+            right_on = "DeidSpecimenID",
+            validate = "one_to_one"
         )
         .drop(columns = "DeidSpecimenID")
         .rename(
@@ -87,14 +125,16 @@ def create_data_frame_of_enrichment_scores_and_clinical_and_QC_data(
             enrichment_matrix,
             how = "inner",
             left_on = "RNASeq",
-            right_on = "SampleID"
+            right_on = "SampleID",
+            validate = "many_to_one"
         )
         .drop(columns = "SampleID")
         .merge(
             patient_data[["AvatarKey", "Sex"]],
             how = "left",
             left_on = "AvatarKey",
-            right_on = "AvatarKey"
+            right_on = "AvatarKey",
+            validate = "many_to_one"
         )
         .merge(
             data_frame_of_specimen_IDs_and_indicators_that_patient_received_ICB_therapy[
@@ -102,13 +142,15 @@ def create_data_frame_of_enrichment_scores_and_clinical_and_QC_data(
             ],
             how = "left",
             left_on = "ORIENSpecimenID",
-            right_on = "ORIENSpecimenID"
+            right_on = "ORIENSpecimenID",
+            validate = "one_to_one"
         )
         .merge(
             QC_data[["SLID", "NexusBatch", "SequencingDepth"]],
             how = "left",
             left_on = "RNASeq",
-            right_on = "SLID"
+            right_on = "SLID",
+            validate = "many_to_one"
         )
         .drop(columns = ["SLID"])
     )

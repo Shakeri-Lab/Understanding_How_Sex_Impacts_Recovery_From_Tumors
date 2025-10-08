@@ -126,12 +126,61 @@ def load_diagnosis_data():
     return diagnosis_data
 
 
+def _normalize_ids(df: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
+    """Strip whitespace on non-null keys; preserve NaNs."""
+    df = df.copy()
+    for c in cols:
+        if c in df.columns:
+            mask = df[c].notna()
+            df.loc[mask, c] = df.loc[mask, c].astype(str).str.strip()
+    return df
+
+
+def _dedupe_on_key(df: pd.DataFrame, key: str, keep: str = "first", name: str = "df") -> pd.DataFrame:
+    """Drop duplicate keys; warn with a short summary of collisions."""
+    df = df.copy()
+    if key not in df.columns:
+        return df
+    dup_mask = df.duplicated(key, keep=False)
+    if dup_mask.any():
+        n_dup_keys = df.loc[dup_mask, key].nunique()
+        n_rows = dup_mask.sum()
+        sample = (
+            df.loc[dup_mask, [key]]
+              .drop_duplicates()
+              .head(10)[key]
+              .tolist()
+        )
+        print(
+            f"[WARN] {_dedupe_on_key.__name__}: {name} has {n_dup_keys} duplicated key(s) "
+            f"across {n_rows} row(s) on '{key}'. Keeping '{keep}'. "
+            f"Examples: {sample}"
+        )
+        df = df.drop_duplicates(subset=[key], keep=keep)
+    return df
+
+
 def merge_data(
     QC_data,
     clinical_molecular_linkage_data,
     output_of_pipeline,
     diagnosis_data
 ):
+    QC_data = _normalize_ids(QC_data, ["ORIENAvatarKey", "SLID", "NexusBatch"])
+    clinical_molecular_linkage_data = _normalize_ids(
+        clinical_molecular_linkage_data,
+        ["DeidSpecimenID", "RNASeq", "SpecimenSiteOfCollection"]
+    )
+    output_of_pipeline = _normalize_ids(
+        output_of_pipeline,
+        ["ORIENSpecimenID", "AssignedPrimarySite", "AvatarKey", "index_of_row_of_diagnosis_data_paired_with_specimen"]
+    )
+    diagnosis_data = _normalize_ids(diagnosis_data, ["index", "HistologyCode"])
+    QC_data = _dedupe_on_key(QC_data, "SLID", keep = "first", name = "QC_data")
+    clinical_molecular_linkage_data = _dedupe_on_key(
+        clinical_molecular_linkage_data, "RNASeq", keep = "first", name = "clinical_molecular_linkage_data"
+    )
+    output_of_pipeline = _dedupe_on_key(output_of_pipeline, "ORIENSpecimenID", keep = "first", name = "output_of_pipeline")
     manifest = (
         QC_data[
             [
@@ -154,7 +203,8 @@ def merge_data(
             ],
             how = "left",
             left_on = "SLID",
-            right_on = "RNASeq"
+            right_on = "RNASeq",
+            validate = "one_to_one"
         )
         .drop(columns = "RNASeq")
         .rename(columns = {"SpecimenSiteOfCollection": "SpecimenSite"})
@@ -168,7 +218,8 @@ def merge_data(
             ],
             how = "left",
             left_on = "DeidSpecimenID",
-            right_on = "ORIENSpecimenID"
+            right_on = "ORIENSpecimenID",
+            validate = "one_to_one"
         )
         .merge(
             diagnosis_data[
@@ -179,7 +230,8 @@ def merge_data(
             ],
             how = "left",
             left_on = "index_of_row_of_diagnosis_data_paired_with_specimen",
-            right_on = "index"
+            right_on = "index",
+            validate = "many_to_one"
         )
         .drop(columns = "index_of_row_of_diagnosis_data_paired_with_specimen")
         .rename(columns = {"index": "DiagnosisID"})
@@ -316,43 +368,46 @@ def provide_reason_to_exclude_sample(row, dictionary_of_names_of_standard_column
 def create_relaxed_manifest(QC_data: pd.DataFrame) -> pd.DataFrame:
     clinical_molecular_linkage_data = load_clinical_molecular_linkage_data()
     output_of_pipeline = load_output_of_pipeline()
+    QC_data = _normalize_ids(QC_data, ["SLID"])
+    clinical_molecular_linkage_data = _normalize_ids(
+        clinical_molecular_linkage_data,
+        ["RNASeq", "DeidSpecimenID"]
+    )
+    output_of_pipeline = _normalize_ids(output_of_pipeline, ["ORIENSpecimenID", "AssignedPrimarySite"])
+    QC_data = _dedupe_on_key(QC_data, "SLID", keep = "first", name = "QC_data")
+    cml_map = clinical_molecular_linkage_data.loc[:, ["RNASeq", "DeidSpecimenID"]].dropna(subset = ["RNASeq"])
+    ambig_mask = cml_map.groupby("RNASeq")["DeidSpecimenID"].nunique()
+    bad = ambig_mask[ambig_mask > 1].index.tolist()
+    if bad:
+        print(
+            "[WARN] create_relaxed_manifest: Ambiguous mapping: some RNASeq values map to multiple DeidSpecimenIDs. "
+            f"Collapsing deterministically by keeping the first occurrence. Examples (up to 10): {bad[:10]}"
+        )
+        cml_map = (
+            cml_map
+            .sort_values(["RNASeq", "DeidSpecimenID"], kind = "mergesort")
+            .drop_duplicates(subset = ["RNASeq"], keep = "first")
+        )
+    else:
+        cml_map = cml_map.drop_duplicates(subset = ["RNASeq"], keep = "first")
+    op_map = output_of_pipeline.loc[:, ["ORIENSpecimenID", "AssignedPrimarySite"]].dropna(subset = ["ORIENSpecimenID"])
+    op_map = _dedupe_on_key(op_map, "ORIENSpecimenID", keep = "first", name = "output_of_pipeline")
     manifest = (
-        QC_data[
-            [
-                #"ORIENAvatarKey",
-                "SLID",
-                #"NexusBatch"
-            ]
-        ]
-        #.rename(
-        #    columns = {"ORIENAvatarKey": "PATIENT_ID"}
-        #)
+        QC_data[["SLID"]]
         .merge(
-            clinical_molecular_linkage_data[
-                [
-                    #"Age At Specimen Collection", # Column "Age At Specimen Collection" values in the spirit of collection dates.
-                    "DeidSpecimenID",
-                    "RNASeq",
-                    #"SpecimenSiteOfCollection"
-                ]
-            ],
+            cml_map,
             how = "left",
             left_on = "SLID",
-            right_on = "RNASeq"
+            right_on = "RNASeq",
+            validate = "one_to_one"
         )
         .drop(columns = "RNASeq")
-        #.rename(columns = {"SpecimenSiteOfCollection": "SpecimenSite"})
         .merge(
-            output_of_pipeline[
-                [
-                    "AssignedPrimarySite",
-                    "ORIENSpecimenID",
-                    #"index_of_row_of_diagnosis_data_paired_with_specimen"
-                ]
-            ],
+            op_map,
             how = "left",
             left_on = "DeidSpecimenID",
-            right_on = "ORIENSpecimenID"
+            right_on = "ORIENSpecimenID",
+            validate = "one_to_one"
         )
     )
     manifest["Included"] = manifest["AssignedPrimarySite"].eq("cutaneous")
