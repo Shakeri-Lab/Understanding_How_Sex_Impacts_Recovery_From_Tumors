@@ -152,7 +152,7 @@ def create_data_frame_of_enrichment_scores_and_clinical_and_QC_data(
             how = "left",
             left_on = "RNASeq",
             right_on = "SLID",
-            validate = "many_to_one"
+            validate = "one_to_one"
         )
         .drop(columns = ["SLID"])
     )
