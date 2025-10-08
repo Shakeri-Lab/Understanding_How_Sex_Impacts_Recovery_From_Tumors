@@ -120,13 +120,15 @@ def create_data_frame_of_enrichment_scores_and_clinical_and_QC_data(
     )
 
     data_frame_of_enrichment_scores_and_clinical_and_QC_data = (
-        data_frame_of_output_and_clinical_molecular_linkage_data
+        data_frame_of_output_and_clinical_molecular_linkage_data[
+            data_frame_of_output_and_clinical_molecular_linkage_data["RNASeq"].notna()
+        ]
         .merge(
             enrichment_matrix,
             how = "inner",
             left_on = "RNASeq",
             right_on = "SampleID",
-            validate = "many_to_one"
+            validate = "one_to_one"
         )
         .drop(columns = "SampleID")
         .merge(

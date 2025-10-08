@@ -35,7 +35,6 @@ We created an expression matrix with SLIDs approved by the manifest, Ensembl IDs
 
 TODO: Implement batch handling.
 TODO: Create a patient level manifest.
-TODO: Use EM5 to create an enrichment matrix.
 TODO: Use either EM6 or EM7 to conduct CD8 analysis and CD8 groups analysis.
 '''
 
@@ -424,7 +423,8 @@ def create_manifest(QC_data, dictionary_of_names_of_standard_columns_and_sources
         output_of_pipeline,
         diagnosis_data
     )
-    manifest["QC_Pass"] = QC_data["QCCheck"].eq("Pass")
+    series_of_indicators_that_samples_pass_QC = QC_data.set_index("SLID")["QCCheck"].eq("Pass")
+    manifest["QC_Pass"] = manifest["SLID"].map(series_of_indicators_that_samples_pass_QC)
     standardize_columns(QC_data, dictionary_of_names_of_standard_columns_and_sources, manifest)
     list_of_names_of_columns_of_indicators_that_comparisons_are_true = add_to_manifest_columns_of_indicators_that_comparisons_are_true(
         manifest,
