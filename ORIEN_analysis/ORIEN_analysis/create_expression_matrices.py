@@ -313,6 +313,52 @@ def provide_reason_to_exclude_sample(row, dictionary_of_names_of_standard_column
     return " ".join(list_of_reasons)
 
 
+def create_relaxed_manifest(QC_data: pd.DataFrame) -> pd.DataFrame:
+    clinical_molecular_linkage_data = load_clinical_molecular_linkage_data()
+    output_of_pipeline = load_output_of_pipeline()
+    manifest = (
+        QC_data[
+            [
+                #"ORIENAvatarKey",
+                "SLID",
+                #"NexusBatch"
+            ]
+        ]
+        #.rename(
+        #    columns = {"ORIENAvatarKey": "PATIENT_ID"}
+        #)
+        .merge(
+            clinical_molecular_linkage_data[
+                [
+                    #"Age At Specimen Collection", # Column "Age At Specimen Collection" values in the spirit of collection dates.
+                    "DeidSpecimenID",
+                    "RNASeq",
+                    #"SpecimenSiteOfCollection"
+                ]
+            ],
+            how = "left",
+            left_on = "SLID",
+            right_on = "RNASeq"
+        )
+        .drop(columns = "RNASeq")
+        #.rename(columns = {"SpecimenSiteOfCollection": "SpecimenSite"})
+        .merge(
+            output_of_pipeline[
+                [
+                    "AssignedPrimarySite",
+                    "ORIENSpecimenID",
+                    #"index_of_row_of_diagnosis_data_paired_with_specimen"
+                ]
+            ],
+            how = "left",
+            left_on = "DeidSpecimenID",
+            right_on = "ORIENSpecimenID"
+        )
+    )
+    manifest["Included"] = manifest["AssignedPrimarySite"].eq("cutaneous")
+    return manifest
+
+
 def create_manifest(QC_data, dictionary_of_names_of_standard_columns_and_sources) -> pd.DataFrame:
     clinical_molecular_linkage_data = load_clinical_molecular_linkage_data()
     output_of_pipeline = load_output_of_pipeline()
@@ -623,6 +669,7 @@ def main():
     QC_data = load_QC_data()
     dictionary_of_names_of_standard_columns_and_sources = create_dictionary_of_names_of_standard_columns_and_sources(QC_data)
     manifest = create_manifest(QC_data, dictionary_of_names_of_standard_columns_and_sources)
+    relaxed_manifest = create_relaxed_manifest(QC_data)
 
     list_of_dictionaries_of_information_for_second_table_of_QC_summary = create_QC_summary_of_CSVs(
         QC_data,
@@ -645,6 +692,17 @@ def main():
     print(
         f'''Expression matrix with SLIDs approved by manifest was saved.
 Expression matrix with SLIDs approved by manifest has shape {expression_matrix_with_SLIDs_approved_by_manifest.shape}.'''
+    )
+
+    list_of_included_SLIDs = relaxed_manifest.loc[relaxed_manifest["Included"], "SLID"].tolist()
+    expression_matrix_with_SLIDs_approved_by_relaxed_manifest = full_expression_matrix.loc[
+        :,
+        [name_of_column for name_of_column in full_expression_matrix.columns if name_of_column in list_of_included_SLIDs]
+    ]
+    expression_matrix_with_SLIDs_approved_by_relaxed_manifest.to_csv(paths.expression_matrix_with_SLIDs_approved_by_relaxed_manifest)
+    print(
+        f'''Expression matrix with SLIDs approved by relaxed manifest was saved.
+Expression matrix with SLIDs approved by relaxed manifest has shape {expression_matrix_with_SLIDs_approved_by_relaxed_manifest.shape}.'''
     )
 
     series_of_Ensembl_IDs_and_HGNC_symbols = create_series_of_Ensembl_IDs_and_HGNC_symbols(list_of_paths)
@@ -671,6 +729,18 @@ Full expression matrix with HGNC symbols has shape {full_expression_matrix_with_
     print(
         f'''Expression matrix with HGNC symbols and SLIDs approved by manifest was saved.
 Expression matrix with HGNC symbols and SLIDs approved by manifest has shape {expression_matrix_with_HGNC_symbols_and_SLIDs_approved_by_manifest.shape}.'''
+    )
+
+    expression_matrix_with_HGNC_symbols_and_SLIDs_approved_by_relaxed_manifest = create_expression_matrix_with_HGNC_symbols(
+        expression_matrix_with_SLIDs_approved_by_relaxed_manifest,
+        series_of_Ensembl_IDs_and_HGNC_symbols
+    )
+    expression_matrix_with_HGNC_symbols_and_SLIDs_approved_by_relaxed_manifest.to_csv(
+        paths.expression_matrix_with_HGNC_symbols_and_SLIDs_approved_by_relaxed_manifest
+    )
+    print(
+        f'''Expression matrix with HGNC symbols and SLIDs approved by relaxed manifest was saved.
+Expression matrix with HGNC symbols and SLIDs approved by relaxed manifest has shape {expression_matrix_with_HGNC_symbols_and_SLIDs_approved_by_relaxed_manifest.shape}.'''
     )
 
     filtered_expression_matrix_with_SLIDs_approved_by_manifest = apply_filter(expression_matrix_with_SLIDs_approved_by_manifest)

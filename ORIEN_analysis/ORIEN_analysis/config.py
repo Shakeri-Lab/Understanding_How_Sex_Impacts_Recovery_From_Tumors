@@ -43,8 +43,10 @@ class Paths():
         self.QC_summary_in_Markdown = self.outputs_of_creating_expression_matrices / "QC_summary.md"
         self.QC_summary_of_CSVs = self.outputs_of_creating_expression_matrices / "QC_summary.csv"
         self.expression_matrix_with_SLIDs_approved_by_manifest = self.outputs_of_creating_expression_matrices / "expression_matrix_with_SLIDs_approved_by_manifest.csv" # EM2
+        self.expression_matrix_with_SLIDs_approved_by_relaxed_manifest = self.outputs_of_creating_expression_matrices / "expression_matrix_with_SLIDs_approved_by_relaxed_manifest.csv"
         self.data_frame_of_Ensembl_IDs_and_HGNC_symbols = self.outputs_of_creating_expression_matrices / "data_frame_of_Ensembl_IDs_and_HGNC_symbols.csv"
         self.expression_matrix_with_HGNC_symbols_and_SLIDs_approved_by_manifest = self.outputs_of_creating_expression_matrices / "expression_matrix_with_HGNC_symbols_and_SLIDs_approved_by_manifest.csv" # EM3
+        self.expression_matrix_with_HGNC_symbols_and_SLIDs_approved_by_relaxed_manifest = self.outputs_of_creating_expression_matrices / "expression_matrix_with_HGNC_symbols_and_SLIDs_approved_by_relaxed_manifest.csv"
         self.filtered_expression_matrix_with_SLIDs_approved_by_manifest = self.outputs_of_creating_expression_matrices / "filtered_expression_matrix_with_SLIDs_approved_by_manifest.csv" # EM4
         self.filtered_expression_matrix_with_HGNC_symbols_and_SLIDs_approved_by_manifest = self.outputs_of_creating_expression_matrices / "filtered_expression_matrix_with_HGNC_symbols_and_SLIDs_approved_by_manifest.csv" # EM5
         self.logged_filtered_expression_matrix_with_SLIDs_approved_by_manifest = self.outputs_of_creating_expression_matrices / "logged_filtered_expression_matrix_with_SLIDs_approved_by_manifest.csv" # EM6
