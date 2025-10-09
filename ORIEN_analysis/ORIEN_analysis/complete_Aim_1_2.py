@@ -49,23 +49,6 @@ from rpy2.robjects.conversion import localconverter
 from rpy2 import robjects as ro
 from rpy2.robjects import vectors
 
-# -------------------------- IO helpers -------------------------- #
-
-def load_expression(expr_path: str) -> pd.DataFrame:
-    """
-    Load expression matrix.
-    Expected shape: rows=genes (index), cols=samples (column names).
-    Accepts CSV/TSV. Auto-detect delimiter.
-    """
-    expr_path = str(expr_path)
-    if expr_path.endswith(".tsv") or expr_path.endswith(".txt"):
-        df = pd.read_csv(expr_path, sep="\t", index_col=0)
-    else:
-        df = pd.read_csv(expr_path, sep=None, engine="python", index_col=0)
-    # normalize index to upper-case symbols for consistent matching
-    df.index = df.index.astype(str).str.upper()
-    return df
-
 
 def load_metadata(meta_path: str) -> pd.DataFrame:
     """
@@ -93,84 +76,52 @@ def load_gene_sets() -> Dict[str, List[str]]:
     return {k: [g.upper() for g in v] for k, v in obj.items()}
 
 
-# -------------------- Pre-ranked stats (sex) -------------------- #
-
-def map_sex_to_binary(
-    meta: pd.DataFrame,
-    sex_col: str,
-    male_label: str,
-    female_label: str
-) -> pd.Series:
-    """
-    Map sex column to binary series: female=0, male=1.
-    Accepts case-insensitive labels.
-    """
-    s = meta[sex_col].astype(str)
-    m = male_label.lower()
-    f = female_label.lower()
-    vals = s.str.lower().map({f: 0, m: 1})
-    if vals.isna().any():
-        bad = meta.loc[vals.isna(), [ "sample_id", sex_col ]]
-        raise ValueError(
-            f"Unmapped sex labels in '{sex_col}'. Offending rows:\n{bad.head(10)}"
-        )
-    return vals.astype(int)
-
-
-def point_biserial_by_gene(
-    expr: pd.DataFrame,       # genes x samples
-    sex01: pd.Series          # indexed by sample_id, values 0/1
+def compute_point_biserial_correlation_for_each_gene(
+    expression_matrix: pd.DataFrame,
+    series_of_indicators_of_sex: pd.Series
 ) -> pd.DataFrame:
-    """
-    Compute point-biserial correlation for each gene (Pearson vs. binary sex),
-    returning DataFrame with 'gene', 'r', 'n', and 'pseudovar' for diagnostics.
-
-    Implementation: Pearson correlation x ~ sex01 (0/1).
-    """
-    # Align columns/samples
-    common = expr.columns.intersection(sex01.index)
-    if len(common) < 2:
-        raise ValueError("Need at least 2 aligned samples to compute correlations.")
-    
-    X = expr.loc[:, common]
-    y = sex01.loc[common].astype(float)
-
-    # center y
-    y_c = y - y.mean()
-    y_var = y_c.pow(2).sum()
-
-    r_vals = []
-    n = float(len(common))
-    # vectorized: corr(x, y) = cov(x,y)/(sd(x) sd(y))
-    # We'll compute covariance via dot of centered vectors.
-    y_c_np = y_c.to_numpy()
-    y_sd = y_c_np.std(ddof=1)
-    if not np.isfinite(y_sd) or y_sd == 0:
-        raise ValueError("Sex column has zero variance or is misaligned (check labels/indexing).")
-
-    # center genes
-    Xc = X.subtract(X.mean(axis=1), axis=0)
-    # covariance with y for each gene: sum(xc * yc) / (n-1)
-    cov = (Xc.values @ y_c_np) / (len(common) - 1)
-    x_sd = Xc.std(axis=1, ddof=1).to_numpy()
-
-    # Avoid divide-by-zero
-    with np.errstate(divide='ignore', invalid='ignore'):
-        r = cov / (x_sd * y_sd)
-    r = np.where(np.isfinite(r), r, 0.0)
-
-    out = pd.DataFrame({
-        "gene": X.index.values,
-        "r": r,
-        "n": int(n),
-        "x_sd": x_sd,
-        "y_sd": y_sd
-    }).set_index("gene")
-
-    return out
+    series_of_centered_indicators_of_sex = series_of_indicators_of_sex - series_of_indicators_of_sex.mean()
+    number_of_samples = len(expression_matrix.columns)
+    array_of_centered_indicators_of_sex = series_of_centered_indicators_of_sex.to_numpy()
+    standard_deviation_of_centered_indicators_of_sex = array_of_centered_indicators_of_sex.std()
+    series_of_means_of_expression_values_across_samples_for_each_gene = expression_matrix.mean(axis = 1)
+    data_frame_of_centered_expression_values = expression_matrix.subtract(
+        series_of_means_of_expression_values_across_samples_for_each_gene,
+        axis = 0
+    )
+    array_of_covariances = (
+        (data_frame_of_centered_expression_values.values @ array_of_centered_indicators_of_sex) /
+        (number_of_samples - 1)
+    )
+    array_of_standard_deviations_of_expression_values_across_samples_for_each_gene = (
+        data_frame_of_centered_expression_values.std(axis = 1).to_numpy()
+    )
+    product_that_would_be_divisor = (
+        array_of_standard_deviations_of_expression_values_across_samples_for_each_gene *
+        standard_deviation_of_centered_indicators_of_sex
+    )
+    point_biserial_correlation = np.divide(
+        array_of_covariances,
+        product_that_would_be_divisor,
+        out = np.zeros_like(array_of_covariances),
+        where = (product_that_would_be_divisor != 0.0)
+    )
+    data_frame = (
+        pd.DataFrame(
+            {
+                "gene": expression_matrix.index.values,
+                "point_biserial_correlation": point_biserial_correlation,
+                "number_of_samples": number_of_samples,
+                "standard_deviation_of_expression_values_across_samples_for_each_gene": array_of_standard_deviations_of_expression_values_across_samples_for_each_gene,
+                "standard_deviation_of_centered_indicators_of_sex": standard_deviation_of_centered_indicators_of_sex,
+            }
+        )
+        .set_index("gene")
+    )
+    return data_frame
 
 
-def build_preranked_vector(stats_df: pd.DataFrame, break_ties: bool = True) -> pd.Series:
+def build_preranked_vector(data_frame_of_genes_and_statistics: pd.DataFrame, break_ties: bool = True) -> pd.Series:
     """
     Build a pre-ranked Series for fgsea from 'r' values.
     Name = gene, value = correlation coefficient.
@@ -178,7 +129,7 @@ def build_preranked_vector(stats_df: pd.DataFrame, break_ties: bool = True) -> p
     If break_ties=True, add a tiny deterministic tie-breaker
     based on the "first" rank to avoid fgsea tie warnings while preserving order.
     """
-    s = stats_df["r"].astype(float).copy()
+    s = data_frame_of_genes_and_statistics["point_biserial_correlation"].astype(float).copy()
     if break_ties:
         s = s + (s.rank(method="first") * 1e-12)
     s = s.sort_values(ascending=False)
@@ -328,16 +279,16 @@ def cliff_delta(x: np.ndarray, y: np.ndarray) -> float:
 
 def compare_by_sex(
     scores: pd.Series,         # indexed by sample_id
-    sex01: pd.Series,          # 1=male, 0=female aligned to sample_id
+    series_of_indicators_of_sex: pd.Series,          # 1=male, 0=female aligned to sample_id
     label: str
 ) -> pd.DataFrame:
     """
     Mann-Whitney test of score by sex, with Cliff's delta.
-    sex01 coding: 0=female, 1=male.
+    series_of_indicators_of_sex coding: 0=female, 1=male.
     """
-    common = scores.index.intersection(sex01.index)
+    common = scores.index.intersection(series_of_indicators_of_sex.index)
     s = scores.loc[common]
-    y = sex01.loc[common]
+    y = series_of_indicators_of_sex.loc[common]
 
     f = s[y == 0].to_numpy()  # females
     m = s[y == 1].to_numpy()  # males
@@ -388,13 +339,13 @@ def volcano_from_fgsea(res_df: pd.DataFrame, out_png: str):
     plt.close()
 
 
-def box_by_sex(scores: pd.Series, sex01: pd.Series, title: str, out_png: str):
-    common = scores.index.intersection(sex01.index)
+def box_by_sex(scores: pd.Series, series_of_indicators_of_sex: pd.Series, title: str, out_png: str):
+    common = scores.index.intersection(series_of_indicators_of_sex.index)
     df = pd.DataFrame({
         "score": scores.loc[common].values,
-        "sex01": sex01.loc[common].values
+        "series_of_indicators_of_sex": series_of_indicators_of_sex.loc[common].values
     })
-    df["sex"] = np.where(df["sex01"] == 0, "Female", "Male")
+    df["sex"] = np.where(df["series_of_indicators_of_sex"] == 0, "Female", "Male")
     plt.figure(figsize=(5, 5))
     ax = sns.boxplot(data=df, x="sex", y="score")
     sns.stripplot(data=df, x="sex", y="score", color="black", alpha=0.5)
@@ -404,76 +355,56 @@ def box_by_sex(scores: pd.Series, sex01: pd.Series, title: str, out_png: str):
     plt.close()
 
 
-# ----------------------------- Main ------------------------------ #
-
-def main(args: argparse.Namespace):
-    #outdir = Path(args.outdir)
-    outdir = Path(paths.outputs_of_completing_Aim_1_2)
-    outdir.mkdir(parents=True, exist_ok=True)
-
-    # 1) Load data
-    #expr = load_expression(args.expr)
-    expr = load_expression(paths.expression_matrix_with_HGNC_symbols_and_SLIDs_approved_by_manifest)
-    #meta = load_metadata(args.meta)
-    list_of_sample_IDs = expr.columns.tolist()
-    meta = pd.DataFrame(list_of_sample_IDs, columns = ["sample_id"])
+def main():
+    expression_matrix = pd.read_csv(
+        paths.expression_matrix_with_HGNC_symbols_and_SLIDs_approved_by_manifest,
+        index_col = 0
+    )
+    index_of_sample_IDs = expression_matrix.columns
+    metadata_frame = pd.DataFrame(
+        {"sample_id": index_of_sample_IDs}
+    )
     clinical_molecular_linkage_data = pd.read_csv(paths.clinical_molecular_linkage_data)
     patient_data = pd.read_csv(paths.patient_data)
-    meta = (
-        meta
+    data_frame_of_sample_IDs_and_patient_IDs = clinical_molecular_linkage_data[["RNASeq", "ORIENAvatarKey"]]
+    data_frame_of_sample_IDs_and_patient_IDs = (
+        data_frame_of_sample_IDs_and_patient_IDs
+        .sort_values(by = ["RNASeq", "ORIENAvatarKey"])
+        .drop_duplicates(subset = ["RNASeq"], keep = "first")
+    )
+    metadata_frame = (
+        metadata_frame
         .merge(
-            clinical_molecular_linkage_data[["RNASeq", "ORIENAvatarKey"]],
+            data_frame_of_sample_IDs_and_patient_IDs,
             how = "left",
             left_on = "sample_id",
-            right_on = "RNASeq"
+            right_on = "RNASeq",
+            validate = "one_to_one"
         )
         .drop(columns = "RNASeq")
         .merge(
             patient_data[["AvatarKey", "Sex"]],
             how = "left",
             left_on = "ORIENAvatarKey",
-            right_on = "AvatarKey"
+            right_on = "AvatarKey",
+            validate = "one_to_one"
         )
         .drop(columns = ["ORIENAvatarKey", "AvatarKey"])
+        .set_index("sample_id")
     )
-
-    '''
-    # (Optional) tumor filtering; by default include all samples present
-    if args.tumor_only_col and args.tumor_only_values:
-        vals = [v.strip().lower() for v in args.tumor_only_values.split(",")]
-        if args.tumor_only_col not in meta.columns:
-            raise ValueError(f"--tumor-only-col '{args.tumor_only_col}' not in metadata.")
-        mask = meta[args.tumor_only_col].astype(str).str.lower().isin(vals)
-        meta = meta.loc[mask].copy()
-    '''
-
-    # Harmonize samples
-    sample_intersection = pd.Index(expr.columns.astype(str)).intersection(meta["sample_id"].astype(str))
-    if sample_intersection.empty:
-        raise ValueError("No overlapping samples between expression and metadata.")
-    meta = meta.assign(sample_id = meta["sample_id"].astype(str)).set_index("sample_id").loc[sample_intersection]
-    expr = expr.loc[:, sample_intersection]
-
-    meta["Sex"] = (
-        meta["Sex"].astype(str).str.strip().str.upper()
-        .map({"M": "Male", "MALE": "Male", "F": "Female", "FEMALE": "Female"})
-        .fillna(meta["Sex"])
+    series_of_indicators_of_sex = vals = metadata_frame["Sex"].map(
+        {
+            "Female": 0,
+            "Male": 1
+        }
     )
+    data_frame_of_genes_and_statistics = compute_point_biserial_correlation_for_each_gene(
+        expression_matrix,
+        series_of_indicators_of_sex
+    )
+    data_frame_of_genes_and_statistics.to_csv(paths.data_frame_of_genes_and_statistics)
     
-    sex01 = map_sex_to_binary(meta, "Sex", "Male", "Female").astype(int)
-
-    if sex01.isna().any():
-        bad = sex01[sex01.isna()]
-        raise ValueError(f"Sex is missing for {len(bad)} samples; e.g., {bad.index.tolist()[:10]}")
-
-    # 3) Pre-ranked stats
-    stats_df = point_biserial_by_gene(expr, sex01)
-    preranked = build_preranked_vector(stats_df, break_ties=True)
-    stats_df.to_csv(outdir / "preranked_stats_point_biserial.csv")
-    stats_df = stats_df.assign(stat=stats_df["r"])
-
-    # 4) Gene sets
-    #gene_sets = load_gene_sets(args.gene_sets)
+    preranked = build_preranked_vector(data_frame_of_genes_and_statistics, break_ties=True)
     gene_sets = load_gene_sets()
 
     # 5) fgsea
@@ -485,16 +416,16 @@ def main(args: argparse.Namespace):
         max_size = 1_000,
         seed = 0
     )
-    fgsea_res.to_csv(outdir / "fgsea_results.csv", index=False)
+    fgsea_res.to_csv(paths.outputs_of_completing_Aim_1_2 / "fgsea_results.csv", index=False)
 
     # volcano-like plot
     try:
-        volcano_from_fgsea(fgsea_res, str(outdir / "fgsea_volcano.png"))
+        volcano_from_fgsea(fgsea_res, str(paths.outputs_of_completing_Aim_1_2 / "fgsea_volcano.png"))
     except Exception as e:
         print(f"[WARN] Volcano plot failed: {e}")
 
     # 6) Sample-level module scores: CD8_1..CD8_6
-    zscores = zscore_rows(expr)  # genes x samples (z per gene)
+    zscores = zscore_rows(expression_matrix)  # genes x samples (z per gene)
     fine_labels = [f"CD8_{i}" for i in range(1, 7)]
     missing = [lb for lb in fine_labels if lb not in gene_sets]
     if missing:
@@ -503,11 +434,11 @@ def main(args: argparse.Namespace):
     fine_scores = {}
     for lb in fine_labels:
         genes = gene_sets.get(lb, [])
-        fine_scores[lb] = module_score(expr, genes)
+        fine_scores[lb] = module_score(expression_matrix, genes)
 
     fine_df = pd.DataFrame(fine_scores)
     fine_df.index.name = "sample_id"
-    fine_df.to_csv(outdir / "sample_module_scores_CD8_1_to_6.csv")
+    fine_df.to_csv(paths.outputs_of_completing_Aim_1_2 / "sample_module_scores_CD8_1_to_6.csv")
 
     # Combined groups
     cd8_b_names = [f"CD8_{i}" for i in (1, 2, 3)]
@@ -515,8 +446,8 @@ def main(args: argparse.Namespace):
     cd8_b_genes = sorted(set(sum((gene_sets.get(n, []) for n in cd8_b_names), [])))
     cd8_g_genes = sorted(set(sum((gene_sets.get(n, []) for n in cd8_g_names), [])))
 
-    score_b = module_score(expr, cd8_b_genes).rename("CD8_B_score")
-    score_g = module_score(expr, cd8_g_genes).rename("CD8_G_score")
+    score_b = module_score(expression_matrix, cd8_b_genes).rename("CD8_B_score")
+    score_g = module_score(expression_matrix, cd8_g_genes).rename("CD8_G_score")
     # Difference (primary metric) and robust log-ratio (for visualization only)
     diff = (score_g - score_b).rename("CD8_G_minus_CD8_B")
     base = pd.concat([score_b, score_g])
@@ -526,40 +457,40 @@ def main(args: argparse.Namespace):
     # Save only B, G, and difference; ratio is visualization-only
     combined = pd.concat([score_b, score_g, diff], axis = 1)
     combined.index.name = "sample_id"
-    combined.to_csv(outdir / "sample_module_scores_CD8_B_vs_CD8_G.csv")
+    combined.to_csv(paths.outputs_of_completing_Aim_1_2 / "sample_module_scores_CD8_B_vs_CD8_G.csv")
 
     # 7) Stats by sex for key contrasts
     tests = []
-    tests.append(compare_by_sex(diff, sex01, "CD8_G_minus_CD8_B"))
+    tests.append(compare_by_sex(diff, series_of_indicators_of_sex, "CD8_G_minus_CD8_B"))
     # (No ratio in hypothesis testing; visualization-only)
 
     # Add each fine cluster as well
     for lb in fine_labels:
-        tests.append(compare_by_sex(fine_df[lb], sex01, lb))
+        tests.append(compare_by_sex(fine_df[lb], series_of_indicators_of_sex, lb))
 
     stats_tbl = pd.concat(tests, axis=0)
     # BH-FDR across all tests
     stats_tbl["fdr"] = multipletests(stats_tbl["pval"].values, method="fdr_bh")[1]
-    stats_tbl.to_csv(outdir / "by_sex_tests_CD8_scores.csv")
+    stats_tbl.to_csv(paths.outputs_of_completing_Aim_1_2 / "by_sex_tests_CD8_scores.csv")
 
     # 8) Plots: box by sex for CD8_G-CD8_B and (robust) log2 ratio (visualization only)
     try:
-        box_by_sex(diff, sex01, "CD8_G - CD8_B (module score) by sex",
-                   str(outdir / "box_CD8_G_minus_CD8_B_by_sex.png"))
+        box_by_sex(diff, series_of_indicators_of_sex, "CD8_G - CD8_B (module score) by sex",
+                   str(paths.outputs_of_completing_Aim_1_2 / "box_CD8_G_minus_CD8_B_by_sex.png"))
         # Clip extremes for display so a few near-zero denominators don't dominate the axis.
         rlow, rhigh = np.nanpercentile(ratio_robust, [1, 99])
         ratio_for_plot = ratio_robust.clip(lower=rlow, upper=rhigh)
         box_by_sex(
             ratio_for_plot,
-            sex01,
+            series_of_indicators_of_sex,
             "log2(CD8_G / CD8_B) (module score) by sex - robust (display only)",
-            str(outdir / "box_log2_CD8G_over_CD8B_by_sex.png")
+            str(paths.outputs_of_completing_Aim_1_2 / "box_log2_CD8G_over_CD8B_by_sex.png")
         )
     except Exception as e:
         print(f"[WARN] Boxplot failed: {e}")
 
     # 9) Write a compact README
-    with open(outdir / "README_Aim1_2.txt", "w", encoding="utf-8") as fh:
+    with open(paths.outputs_of_completing_Aim_1_2 / "README_Aim1_2.txt", "w", encoding="utf-8") as fh:
         fh.write(
             "Aim 1.2 — CD8 TIL phenotypes by sex\n"
             "-----------------------------------\n"
@@ -579,27 +510,8 @@ def main(args: argparse.Namespace):
             "  - CD8_B = union of CD8_1,2,3; CD8_G = union of CD8_4,5,6.\n"
             "  - Robust log2 ratio uses a shift-to-positive plus data-scaled pseudocount and is shown for visualization (clipped to 1st-99th percentiles).\n"
         )
-
-    print(f"[DONE] Outputs written to: {outdir}")
+    print(f"Outputs were written to {paths.outputs_of_completing_Aim_1_2}.")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Aim 1.2 CD8 TILs by sex (GSEA + module scores)")
-    '''
-    parser.add_argument("--expr", required=True, help="Expression matrix (genes x samples). CSV/TSV; index=gene Ensembl IDs.")
-    parser.add_argument("--meta", required=True, help="Metadata table with sample_id and sex.")
-    parser.add_argument("--tumor-only-col", default=None, help="(Optional) Metadata column to filter tumor specimens.")
-    parser.add_argument("--tumor-only-values", default=None, help="(Optional) Comma-separated allowed values indicating tumor.")
-    parser.add_argument("--sex-col", required=True, help="Column in metadata with sex labels.")
-    parser.add_argument("--male-label", default="Male", help="Label for male in metadata (default: Male).")
-    parser.add_argument("--female-label", default="Female", help="Label for female in metadata (default: Female).")
-    parser.add_argument("--gene-sets", required=True, help="Gene set file (.gmt/.json/.yaml) including CD8_1..CD8_6.")
-    parser.add_argument("--nperm", type=int, default=10000, help="fgsea permutations (default: 10000).")
-    parser.add_argument("--min-size", type=int, default=10, help="Minimum gene set size (default: 10).")
-    parser.add_argument("--max-size", type=int, default=1000, help="Maximum gene set size (default: 1000).")
-    parser.add_argument("--seed", type=int, default=1234, help="Random seed for fgsea.")
-    parser.add_argument("--cd8-prefix", default="CD8_", help="Prefix for fine clusters (default: CD8_).")
-    parser.add_argument("--outdir", required=True, help="Output directory.")
-    '''
-    args = parser.parse_args()
-    main(args)
+    main()

@@ -111,7 +111,7 @@ class Paths():
         # -----
         self.gene_sets = self.root / "gene_sets.json"
         # outputs
-        # <no files>
+        self.data_frame_of_genes_and_statistics = self.outputs_of_completing_Aim_1_2 / "data_frame_of_genes_and_statistics.csv"
 
 
         # ORIEN_analysis/ORIEN_analysis/complete_Aim_2_1.py
