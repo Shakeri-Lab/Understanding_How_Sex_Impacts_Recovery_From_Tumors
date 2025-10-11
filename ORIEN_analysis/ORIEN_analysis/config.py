@@ -109,10 +109,11 @@ class Paths():
         # dependencies
         self.outputs_of_completing_Aim_1_2 = self.output / "completing_Aim_1_2"
         # -----
-        self.gene_sets = self.root / "gene_sets.json"
+        self.dictionary_of_names_of_sets_of_genes_and_lists_of_genes = self.root / "dictionary_of_names_of_sets_of_genes_and_lists_of_genes.json"
         # outputs
         self.data_frame_of_genes_and_statistics = self.outputs_of_completing_Aim_1_2 / "data_frame_of_genes_and_statistics.csv"
-
+        self.data_frame_of_names_of_sets_of_genes_statistics_and_lists_of_genes = self.outputs_of_completing_Aim_1_2 / "data_frame_of_names_of_sets_of_genes_statistics_and_lists_of_genes.csv"
+        self.volcano_plot = self.outputs_of_completing_Aim_1_2 / "volcano_plot.png"
 
         # ORIEN_analysis/ORIEN_analysis/complete_Aim_2_1.py
         # dependencies

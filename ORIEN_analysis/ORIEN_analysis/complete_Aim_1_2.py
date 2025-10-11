@@ -67,13 +67,18 @@ def load_metadata(meta_path: str) -> pd.DataFrame:
     return df
 
 
-def load_gene_sets() -> Dict[str, List[str]]:
-    '''
-    Load gene sets from .json.
-    Returns dict: {set_name: [GENE1, GENE2, ...]} with genes upper-cased.
-    '''
-    obj = json.loads(paths.gene_sets.read_text(encoding = "utf-8"))
-    return {k: [g.upper() for g in v] for k, v in obj.items()}
+def load_dictionary_of_names_of_sets_of_genes_and_lists_of_genes() -> Dict[str, List[str]]:
+    string_representing_dictionary_of_names_of_sets_of_genes_and_lists_of_genes = (
+        paths.dictionary_of_names_of_sets_of_genes_and_lists_of_genes.read_text(encoding = "utf-8")
+    )
+    JSON_representing_dictionary_of_names_of_sets_of_genes_and_lists_of_genes = json.loads(
+        string_representing_dictionary_of_names_of_sets_of_genes_and_lists_of_genes
+    )
+    return {
+        name_of_set_of_genes: list_of_genes
+        for name_of_set_of_genes, list_of_genes
+        in JSON_representing_dictionary_of_names_of_sets_of_genes_and_lists_of_genes.items()
+    }
 
 
 def compute_point_biserial_correlation_for_each_gene(
@@ -121,98 +126,51 @@ def compute_point_biserial_correlation_for_each_gene(
     return data_frame
 
 
-def build_preranked_vector(data_frame_of_genes_and_statistics: pd.DataFrame, break_ties: bool = True) -> pd.Series:
-    """
-    Build a pre-ranked Series for fgsea from 'r' values.
-    Name = gene, value = correlation coefficient.
-
-    If break_ties=True, add a tiny deterministic tie-breaker
-    based on the "first" rank to avoid fgsea tie warnings while preserving order.
-    """
-    s = data_frame_of_genes_and_statistics["point_biserial_correlation"].astype(float).copy()
-    if break_ties:
-        s = s + (s.rank(method="first") * 1e-12)
-    s = s.sort_values(ascending=False)
-    s.name = "stat"
-    return s
-
-
 def run_fgsea(
-    preranked: pd.Series,
-    gene_sets: dict[str, list[str]],
-    nperm: int | None = None,
-    min_size: int = 10,
-    max_size: int = 1_000,
-    seed: int = 0
+    series_of_ranked_point_biserial_correlations: pd.Series,
+    dictionary_of_names_of_sets_of_genes_and_lists_of_genes: dict[str, list[str]]
 ) -> pd.DataFrame:
-    '''
-    Run fgsea on a pre-ranked vector and Python dict of gene sets.
-    
-    - If nperm is None (default), run fgseaMultilevel (recommended).
-    - If nperm is an int, run fgsea (Simple) with nperm permutations.
-    '''
-    base = importr("base")
     fgsea = importr("fgsea")
-
-    stats_r = vectors.FloatVector(preranked.values.astype(float))
-    stats_r.names = vectors.StrVector(preranked.index.tolist())
-    pathways_r = ro.ListVector({
-        k: vectors.StrVector(sorted(set(v)))
-        for k, v in gene_sets.items() if v
-    })
-    ro.r(f"set.seed({int(seed)})")
-    
-    if nperm is None:
-        # Recommended method
-        res_r = fgsea.fgseaMultilevel(
-            pathways = pathways_r,
-            stats = stats_r,
-            minSize = min_size,
-            maxSize = max_size
-        )
-    else:
-        res_r = fgsea.fgsea(
-            pathways = pathways_r,
-            stats = stats_r,
-            nperm = int(nperm),
-            minSize = min_size
-        )
-
-    sanitize_r = ro.r('''
-        function(d) {
-            d <- as.data.frame(d, stringsAsFactors = FALSE)
-            if (nrow(d) == 0L) {
-                return(data.frame(
-                    pathway=character(), pvalue=double(), padj=double(),
-                    ES=double(), NES=double(), size=integer(),
-                    leadingEdge=character(), stringsAsFactors=FALSE
-                ))
-            }
-            for (nm in names(d)) {
-                if (is.list(d[[nm]])) {
-                    d[[nm]] <- vapply(
-                        d[[nm]],
-                        function(x) {
-                            if (is.null(x) || length(x) == 0L) return("")
-                            if (is.atomic(x)) return(paste(as.character(x), collapse = ","))
-                            if (is.list(x)) return(paste(as.character(unlist(x, use.names = FALSE)), collapse = ","))
-                            as.character(x)
-                        },
-                        FUN.VALUE = character(1L)
-                    )
-                }
-            }
-            d
+    named_vector_of_ranked_point_biserial_correlations = vectors.FloatVector(series_of_ranked_point_biserial_correlations)
+    named_vector_of_ranked_point_biserial_correlations.names = vectors.StrVector(
+        series_of_ranked_point_biserial_correlations.index
+    )
+    named_list_of_names_of_sets_of_genes_and_lists_of_genes = ro.ListVector(
+        {
+            name_of_set_of_genes: vectors.StrVector(list_of_genes)
+            for name_of_set_of_genes, list_of_genes
+            in dictionary_of_names_of_sets_of_genes_and_lists_of_genes.items()
         }
-    ''')
-    res_r_sanitized = sanitize_r(res_r)
+    )
+    ro.r(f"set.seed(0)")
+    r_data_frame_of_names_of_sets_of_genes_statistics_and_vectors_of_genes = fgsea.fgseaMultilevel(
+        pathways = named_list_of_names_of_sets_of_genes_and_lists_of_genes,
+        stats = named_vector_of_ranked_point_biserial_correlations
+    )
+    serialize_vectors_of_genes = ro.r(
+        '''function(data_frame) {
+    for (name_of_column in names(data_frame)) {
+        if (is.list(data_frame[[name_of_column]])) {
+            data_frame[[name_of_column]] <- vapply(
+                data_frame[[name_of_column]],
+                function(element_of_column) {
+                    if (is.atomic(element_of_column)) return(paste(as.character(element_of_column), collapse = ","))
+                },
+                FUN.VALUE = character(1)
+            )
+        }
+    }
+    data_frame
+}'''
+    )
+    r_data_frame_of_names_of_sets_of_genes_statistics_and_lists_of_genes = serialize_vectors_of_genes(
+        r_data_frame_of_names_of_sets_of_genes_statistics_and_vectors_of_genes
+    )
     with localconverter(ro.default_converter + pandas2ri.converter):
-        res_df = ro.conversion.rpy2py(res_r_sanitized)
-    res_df = res_df.rename(columns = {
-        "pathway": "term"
-    })
-    cols = [c for c in ["term", "pval", "padj", "ES", "NES", "size", "leadingEdge"] if c in res_df.columns]
-    return res_df.loc[:, cols] if cols else res_df
+        data_frame_of_names_of_sets_of_genes_statistics_and_lists_of_genes = ro.conversion.rpy2py(
+            r_data_frame_of_names_of_sets_of_genes_statistics_and_lists_of_genes
+        )
+    return data_frame_of_names_of_sets_of_genes_statistics_and_lists_of_genes
 
 
 # ------------------ Sample-level module scoring ------------------ #
@@ -403,37 +361,33 @@ def main():
         series_of_indicators_of_sex
     )
     data_frame_of_genes_and_statistics.to_csv(paths.data_frame_of_genes_and_statistics)
-    
-    preranked = build_preranked_vector(data_frame_of_genes_and_statistics, break_ties=True)
-    gene_sets = load_gene_sets()
-
-    # 5) fgsea
-    fgsea_res = run_fgsea(
-        preranked,
-        gene_sets,
-        nperm = None,
-        min_size = 10,
-        max_size = 1_000,
-        seed = 0
+    series_of_point_biserial_correlations = data_frame_of_genes_and_statistics["point_biserial_correlation"].copy()
+    series_of_ranks = series_of_point_biserial_correlations.rank(method = "first")
+    # Point biserial correlations are ranked in ascending order.
+    # When 2 point biserial correlations are equal, the first receives a lower rank and the second receives a higher rank.
+    series_of_point_biserial_correlations = series_of_point_biserial_correlations + (series_of_ranks * 1e-12)
+    series_of_ranked_point_biserial_correlations = series_of_point_biserial_correlations.sort_values(ascending = False)
+    dictionary_of_names_of_sets_of_genes_and_lists_of_genes = load_dictionary_of_names_of_sets_of_genes_and_lists_of_genes()
+    data_frame_of_names_of_sets_of_genes_statistics_and_lists_of_genes = run_fgsea(
+        series_of_ranked_point_biserial_correlations,
+        dictionary_of_names_of_sets_of_genes_and_lists_of_genes
     )
-    fgsea_res.to_csv(paths.outputs_of_completing_Aim_1_2 / "fgsea_results.csv", index=False)
-
-    # volcano-like plot
-    try:
-        volcano_from_fgsea(fgsea_res, str(paths.outputs_of_completing_Aim_1_2 / "fgsea_volcano.png"))
-    except Exception as e:
-        print(f"[WARN] Volcano plot failed: {e}")
+    data_frame_of_names_of_sets_of_genes_statistics_and_lists_of_genes.to_csv(
+        paths.data_frame_of_names_of_sets_of_genes_statistics_and_lists_of_genes,
+        index = False
+    )
+    volcano_from_fgsea(data_frame_of_names_of_sets_of_genes_statistics_and_lists_of_genes, paths.volcano_plot)
 
     # 6) Sample-level module scores: CD8_1..CD8_6
     zscores = zscore_rows(expression_matrix)  # genes x samples (z per gene)
     fine_labels = [f"CD8_{i}" for i in range(1, 7)]
-    missing = [lb for lb in fine_labels if lb not in gene_sets]
+    missing = [lb for lb in fine_labels if lb not in dictionary_of_names_of_sets_of_genes_and_lists_of_genes]
     if missing:
         print(f"[WARN] Missing expected fine clusters in gene sets: {missing}")
 
     fine_scores = {}
     for lb in fine_labels:
-        genes = gene_sets.get(lb, [])
+        genes = dictionary_of_names_of_sets_of_genes_and_lists_of_genes.get(lb, [])
         fine_scores[lb] = module_score(expression_matrix, genes)
 
     fine_df = pd.DataFrame(fine_scores)
@@ -443,8 +397,8 @@ def main():
     # Combined groups
     cd8_b_names = [f"CD8_{i}" for i in (1, 2, 3)]
     cd8_g_names = [f"CD8_{i}" for i in (4, 5, 6)]
-    cd8_b_genes = sorted(set(sum((gene_sets.get(n, []) for n in cd8_b_names), [])))
-    cd8_g_genes = sorted(set(sum((gene_sets.get(n, []) for n in cd8_g_names), [])))
+    cd8_b_genes = sorted(set(sum((dictionary_of_names_of_sets_of_genes_and_lists_of_genes.get(n, []) for n in cd8_b_names), [])))
+    cd8_g_genes = sorted(set(sum((dictionary_of_names_of_sets_of_genes_and_lists_of_genes.get(n, []) for n in cd8_g_names), [])))
 
     score_b = module_score(expression_matrix, cd8_b_genes).rename("CD8_B_score")
     score_g = module_score(expression_matrix, cd8_g_genes).rename("CD8_G_score")
