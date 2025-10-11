@@ -173,49 +173,39 @@ def run_fgsea(
     return data_frame_of_names_of_sets_of_genes_statistics_and_lists_of_genes
 
 
-# ------------------ Sample-level module scoring ------------------ #
+def z_score_expressions_for_gene(expression_matrix: pd.DataFrame) -> pd.DataFrame:
+    series_of_mean_expressions = expression_matrix.mean(axis = 1)
+    series_of_standard_deviations = expression_matrix.std(axis = 1)
+    z_scored_expression_matrix = (
+        expression_matrix
+        .sub(series_of_mean_expressions, axis = 0)
+        .div(series_of_standard_deviations, axis = 0)
+    )
+    return z_scored_expression_matrix
 
-def zscore_rows(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Z-score each gene (row) across samples (columns).
-    """
-    mu = df.mean(axis=1)
-    sd = df.std(axis=1, ddof=1).replace(0, np.nan)
-    z = df.sub(mu, axis=0).div(sd, axis=0).fillna(0.0)
-    return z
+
+def create_series_of_module_scores(expression_matrix: pd.DataFrame, list_of_genes: List[str]) -> pd.Series:
+    list_of_genes = [gene for gene in list_of_genes if gene in expression_matrix.index]
+    expression_submatrix_corresponding_to_provided_genes = expression_matrix.loc[list_of_genes]
+    z_scored_expression_submatrix = z_score_expressions_for_gene(expression_submatrix_corresponding_to_provided_genes)
+    return z_scored_expression_submatrix.mean(axis = 0).rename("module_score")
 
 
-def module_score(
-    expr: pd.DataFrame,               # genes x samples
-    genes: List[str]
+def create_series_of_logs_of_ratios_of_CD8_G_module_scores_to_CD8_B_module_scores(
+    series_of_CD8_G_module_scores_for_samples: pd.Series,
+    series_of_CD8_B_module_scores_for_samples: pd.Series
 ) -> pd.Series:
-    """
-    Mean z-scored expression across given genes present in expr.
-    """
-    genes = [g for g in genes if g in expr.index]
-    if len(genes) == 0:
-        return pd.Series(0.0, index=expr.columns, name="score")
-    z = zscore_rows(expr.loc[genes])
-    return z.mean(axis=0).rename("score")
-
-
-def robust_log2_ratio(numer: pd.Series, denom: pd.Series) -> pd.Series:
-    '''
-    Visualization-only log2 ratio between two centered scores.
-    Ensures strictly positive arguments to log2 by:
-    1) shifting both series so the global minimum is > 0
-    2) adding a data-scaled pseudocount to avoid tiny denominators
-    '''
-    base = pd.concat([numer, denom])
-    min_val = float(base.min())
-    # shift so the smallest value becomes ~1e-6
-    shift_pos = (-min_val + 1e-6) if min_val <= 0 else 1e-6
-    # pseudocount based on typical scale of the data
-    pseudo = max(float(base.abs().median()), 0.25)
-    num_pos = numer + shift_pos + pseudo
-    den_pos = denom + shift_pos + pseudo
-    # strictly positive by construction; no invalid log2
-    return np.log2(num_pos / den_pos)
+    series_of_module_scores = pd.concat(
+        [
+            series_of_CD8_G_module_scores_for_samples,
+            series_of_CD8_B_module_scores_for_samples
+        ]
+    )
+    minimum_module_score = series_of_module_scores.min()
+    shift = 1e-6 - minimum_module_score
+    series_of_shifted_CD8_G_module_scores_for_samples = series_of_CD8_G_module_scores_for_samples + shift
+    series_of_shifted_CD8_B_module_scores_for_samples = series_of_CD8_B_module_scores_for_samples + shift
+    return np.log2(series_of_shifted_CD8_G_module_scores_for_samples / series_of_shifted_CD8_B_module_scores_for_samples)
 
 
 def cliff_delta(x: np.ndarray, y: np.ndarray) -> float:
@@ -266,34 +256,26 @@ def compare_by_sex(
     }).set_index("contrast")
 
 
-# ----------------------------- Plots ----------------------------- #
-
-def volcano_from_fgsea(res_df: pd.DataFrame, out_png: str):
-    '''
-    Volcano-like plot: NES vs. FDR using 'padj' from fgsea.
-    '''
-    df = res_df.copy()
-    if df.empty:
-        print("[WARN] fgsea result is empty; skipping volcano plot.")
-        return
-    if "padj" not in df.columns:
-        raise ValueError("fgsea results are missing 'padj' (FDR) column.")
-    df["FDR"] = df["padj"].replace(0, np.nextafter(0, 1))
-    plt.figure(figsize=(7, 5))
+def plot_FDR_vs_Normalized_Enrichment_Score(
+    data_frame_of_names_of_sets_of_genes_statistics_and_lists_of_genes: pd.DataFrame,
+    plot_of_FDR_vs_Normalized_Enrichment_Score: str
+):
+    data_frame = data_frame_of_names_of_sets_of_genes_statistics_and_lists_of_genes.copy()
+    data_frame["FDR"] = data_frame["padj"]
+    series_of_indicators_that_FDRs_are_suggestive = data_frame["FDR"] < 0.1
+    series_of_indicators_that_FDRs_are_significant = data_frame["FDR"] < 0.05
     ax = sns.scatterplot(
-        data=df, x="NES", y="FDR",
-        hue=(df["padj"] < 0.1), style=(df["padj"] < 0.05),
-        s=60
-    )
-    ax.axhline(0.1, ls="--", lw=1)
-    ax.axvline(0, ls=":", lw=1)
+        data = data_frame,
+        x = "NES",
+        y = "FDR",
+        hue = series_of_indicators_that_FDRs_are_suggestive,
+        style = series_of_indicators_that_FDRs_are_significant
+    ) 
+    ax.set_ylim(bottom = 0, top = 1)
     ax.set_xlabel("Normalized Enrichment Score (NES)")
-    ax.set_ylabel("FDR")
-    ax.set_title("fgsea results (sex pre-ranked)")
-    if ax.get_legend() is not None:
-        ax.legend(title = "FDR thresholds")
-    plt.tight_layout()
-    plt.savefig(out_png, dpi=200)
+    ax.set_ylabel("False Discovery Rate (FDR)")
+    ax.set_title("False Discovery Rate vs. Normalized Enrichment Score")
+    plt.savefig(paths.plot_of_FDR_vs_Normalized_Enrichment_Score)
     plt.close()
 
 
@@ -376,72 +358,122 @@ def main():
         paths.data_frame_of_names_of_sets_of_genes_statistics_and_lists_of_genes,
         index = False
     )
-    volcano_from_fgsea(data_frame_of_names_of_sets_of_genes_statistics_and_lists_of_genes, paths.volcano_plot)
-
-    # 6) Sample-level module scores: CD8_1..CD8_6
-    zscores = zscore_rows(expression_matrix)  # genes x samples (z per gene)
-    fine_labels = [f"CD8_{i}" for i in range(1, 7)]
-    missing = [lb for lb in fine_labels if lb not in dictionary_of_names_of_sets_of_genes_and_lists_of_genes]
-    if missing:
-        print(f"[WARN] Missing expected fine clusters in gene sets: {missing}")
-
-    fine_scores = {}
-    for lb in fine_labels:
-        genes = dictionary_of_names_of_sets_of_genes_and_lists_of_genes.get(lb, [])
-        fine_scores[lb] = module_score(expression_matrix, genes)
-
-    fine_df = pd.DataFrame(fine_scores)
-    fine_df.index.name = "sample_id"
-    fine_df.to_csv(paths.outputs_of_completing_Aim_1_2 / "sample_module_scores_CD8_1_to_6.csv")
-
-    # Combined groups
-    cd8_b_names = [f"CD8_{i}" for i in (1, 2, 3)]
-    cd8_g_names = [f"CD8_{i}" for i in (4, 5, 6)]
-    cd8_b_genes = sorted(set(sum((dictionary_of_names_of_sets_of_genes_and_lists_of_genes.get(n, []) for n in cd8_b_names), [])))
-    cd8_g_genes = sorted(set(sum((dictionary_of_names_of_sets_of_genes_and_lists_of_genes.get(n, []) for n in cd8_g_names), [])))
-
-    score_b = module_score(expression_matrix, cd8_b_genes).rename("CD8_B_score")
-    score_g = module_score(expression_matrix, cd8_g_genes).rename("CD8_G_score")
-    # Difference (primary metric) and robust log-ratio (for visualization only)
-    diff = (score_g - score_b).rename("CD8_G_minus_CD8_B")
-    base = pd.concat([score_b, score_g])
-    c = max(float(base.abs().median()), 0.25)
-    ratio_robust = robust_log2_ratio(score_g, score_b).rename("log2_CD8_G_over_CD8_B_robust")
-
-    # Save only B, G, and difference; ratio is visualization-only
-    combined = pd.concat([score_b, score_g, diff], axis = 1)
-    combined.index.name = "sample_id"
-    combined.to_csv(paths.outputs_of_completing_Aim_1_2 / "sample_module_scores_CD8_B_vs_CD8_G.csv")
-
-    # 7) Stats by sex for key contrasts
-    tests = []
-    tests.append(compare_by_sex(diff, series_of_indicators_of_sex, "CD8_G_minus_CD8_B"))
-    # (No ratio in hypothesis testing; visualization-only)
-
-    # Add each fine cluster as well
-    for lb in fine_labels:
-        tests.append(compare_by_sex(fine_df[lb], series_of_indicators_of_sex, lb))
-
-    stats_tbl = pd.concat(tests, axis=0)
-    # BH-FDR across all tests
-    stats_tbl["fdr"] = multipletests(stats_tbl["pval"].values, method="fdr_bh")[1]
-    stats_tbl.to_csv(paths.outputs_of_completing_Aim_1_2 / "by_sex_tests_CD8_scores.csv")
+    plot_FDR_vs_Normalized_Enrichment_Score(
+        data_frame_of_names_of_sets_of_genes_statistics_and_lists_of_genes,
+        paths.plot_of_FDR_vs_Normalized_Enrichment_Score
+    )
+    list_of_names_of_sets_of_genes = [f"CD8_{i}" for i in range(1, 6 + 1)]
+    dictionary_of_names_of_sets_of_genes_and_series_of_module_scores = {}
+    for name_of_set_of_genes in list_of_names_of_sets_of_genes:
+        list_of_genes = dictionary_of_names_of_sets_of_genes_and_lists_of_genes.get(name_of_set_of_genes)
+        dictionary_of_names_of_sets_of_genes_and_series_of_module_scores[name_of_set_of_genes] = create_series_of_module_scores(
+            expression_matrix,
+            list_of_genes
+        )
+    data_frame_of_sample_IDs_and_module_scores_for_6_sets_of_genes = pd.DataFrame(
+        dictionary_of_names_of_sets_of_genes_and_series_of_module_scores
+    )
+    data_frame_of_sample_IDs_and_module_scores_for_6_sets_of_genes.index.name = "sample_id"
+    data_frame_of_sample_IDs_and_module_scores_for_6_sets_of_genes.to_csv(
+        paths.data_frame_of_sample_IDs_and_module_scores_for_6_sets_of_genes
+    )
+    list_of_names_of_sets_of_genes_in_set_CD8_B = [f"CD8_{i}" for i in (1, 2, 3)]
+    list_of_names_of_sets_of_genes_in_set_CD8_G = [f"CD8_{i}" for i in (4, 5, 6)]
+    sorted_list_of_genes_in_set_CD8_B = sorted(
+        set(
+            sum(
+                (
+                    dictionary_of_names_of_sets_of_genes_and_lists_of_genes.get(name_of_set_of_genes)
+                    for name_of_set_of_genes in list_of_names_of_sets_of_genes_in_set_CD8_B
+                ), # tuple of lists of genes
+                []
+            ) # list of genes
+        ) # set of genes
+    ) # sorted list of genes
+    sorted_list_of_genes_in_set_CD8_G = sorted(
+        set(
+            sum(
+                (
+                    dictionary_of_names_of_sets_of_genes_and_lists_of_genes.get(name_of_set_of_genes)
+                    for name_of_set_of_genes in list_of_names_of_sets_of_genes_in_set_CD8_G
+                ),
+                []
+            )
+        )
+    )
+    series_of_CD8_B_module_scores_for_samples = create_series_of_module_scores(
+        expression_matrix,
+        sorted_list_of_genes_in_set_CD8_B
+    ).rename("CD8_B_module_score_for_sample")
+    series_of_CD8_G_module_scores_for_samples = create_series_of_module_scores(
+        expression_matrix,
+        sorted_list_of_genes_in_set_CD8_G
+    ).rename("CD8_G_module_score_for_sample")
+    series_of_differences = (
+        series_of_CD8_G_module_scores_for_samples - series_of_CD8_B_module_scores_for_samples
+    ).rename("difference_between_CD8_G_and_CD8_B_module_scores")
+    series_of_logs_of_ratios_of_CD8_G_module_scores_to_CD8_B_module_scores = create_series_of_logs_of_ratios_of_CD8_G_module_scores_to_CD8_B_module_scores(
+        series_of_CD8_G_module_scores_for_samples,
+        series_of_CD8_B_module_scores_for_samples
+    ).rename("log_of_ratio_of_CD8_G_module_score_to_CD8_B_module_score")
+    data_frame_of_sample_IDs_CD8_B_and_G_module_scores_and_differences = pd.concat(
+        [
+            series_of_CD8_B_module_scores_for_samples,
+            series_of_CD8_G_module_scores_for_samples,
+            series_of_differences
+        ],
+        axis = 1
+    )
+    data_frame_of_sample_IDs_CD8_B_and_G_module_scores_and_differences.index.name = "sample_id"
+    data_frame_of_sample_IDs_CD8_B_and_G_module_scores_and_differences.to_csv(
+        paths.data_frame_of_sample_IDs_CD8_B_and_G_module_scores_and_differences
+    )
+    list_of_data_frames_of_categories_of_module_scores_and_statistics = []
+    data_frame_of_category_of_module_score_CD8_G_minus_CD8_B_and_statistics = compare_by_sex(
+        series_of_differences,
+        series_of_indicators_of_sex,
+        "CD8_G_minus_CD8_B"
+    )
+    list_of_data_frames_of_categories_of_module_scores_and_statistics.append(
+        data_frame_of_category_of_module_score_CD8_G_minus_CD8_B_and_statistics
+    )
+    for name_of_set_of_genes in list_of_names_of_sets_of_genes:
+        series_of_module_scores = data_frame_of_sample_IDs_and_module_scores_for_6_sets_of_genes[name_of_set_of_genes]
+        list_of_data_frames_of_categories_of_module_scores_and_statistics.append(
+            compare_by_sex(
+                series_of_module_scores,
+                series_of_indicators_of_sex,
+                name_of_set_of_genes
+            )
+        )
+    data_frame_of_categories_of_module_scores_and_statistics = pd.concat(
+        list_of_data_frames_of_categories_of_module_scores_and_statistics,
+        axis = 0
+    )
+    data_frame_of_categories_of_module_scores_and_statistics["FDR"] = multipletests(
+        data_frame_of_categories_of_module_scores_and_statistics["pval"],
+        method = "fdr_bh"
+    )[1]
+    data_frame_of_categories_of_module_scores_and_statistics.to_csv(
+        paths.data_frame_of_categories_of_module_scores_and_statistics
+    )
 
     # 8) Plots: box by sex for CD8_G-CD8_B and (robust) log2 ratio (visualization only)
-    try:
-        box_by_sex(diff, series_of_indicators_of_sex, "CD8_G - CD8_B (module score) by sex",
-                   str(paths.outputs_of_completing_Aim_1_2 / "box_CD8_G_minus_CD8_B_by_sex.png"))
-        # Clip extremes for display so a few near-zero denominators don't dominate the axis.
-        rlow, rhigh = np.nanpercentile(ratio_robust, [1, 99])
-        ratio_for_plot = ratio_robust.clip(lower=rlow, upper=rhigh)
-        box_by_sex(
-            ratio_for_plot,
-            series_of_indicators_of_sex,
-            "log2(CD8_G / CD8_B) (module score) by sex - robust (display only)",
-            str(paths.outputs_of_completing_Aim_1_2 / "box_log2_CD8G_over_CD8B_by_sex.png")
-        )
-    except Exception as e:
-        print(f"[WARN] Boxplot failed: {e}")
+    box_by_sex(
+        series_of_differences,
+        series_of_indicators_of_sex,
+        "CD8_G - CD8_B (module score) by sex",
+        str(paths.outputs_of_completing_Aim_1_2 / "box_CD8_G_minus_CD8_B_by_sex.png")
+    )
+    # Clip extremes for display so a few near-zero denominators don't dominate the axis.
+    rlow, rhigh = np.nanpercentile(series_of_logs_of_ratios_of_CD8_G_module_scores_to_CD8_B_module_scores, [1, 99])
+    ratio_for_plot = series_of_logs_of_ratios_of_CD8_G_module_scores_to_CD8_B_module_scores.clip(lower=rlow, upper=rhigh)
+    box_by_sex(
+        ratio_for_plot,
+        series_of_indicators_of_sex,
+        "log2(CD8_G / CD8_B) (module score) by sex - robust (display only)",
+        str(paths.outputs_of_completing_Aim_1_2 / "box_log2_CD8G_over_CD8B_by_sex.png")
+    )
 
     # 9) Write a compact README
     with open(paths.outputs_of_completing_Aim_1_2 / "README_Aim1_2.txt", "w", encoding="utf-8") as fh:
@@ -464,7 +496,6 @@ def main():
             "  - CD8_B = union of CD8_1,2,3; CD8_G = union of CD8_4,5,6.\n"
             "  - Robust log2 ratio uses a shift-to-positive plus data-scaled pseudocount and is shown for visualization (clipped to 1st-99th percentiles).\n"
         )
-    print(f"Outputs were written to {paths.outputs_of_completing_Aim_1_2}.")
 
 
 if __name__ == "__main__":

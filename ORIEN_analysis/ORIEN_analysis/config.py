@@ -113,7 +113,10 @@ class Paths():
         # outputs
         self.data_frame_of_genes_and_statistics = self.outputs_of_completing_Aim_1_2 / "data_frame_of_genes_and_statistics.csv"
         self.data_frame_of_names_of_sets_of_genes_statistics_and_lists_of_genes = self.outputs_of_completing_Aim_1_2 / "data_frame_of_names_of_sets_of_genes_statistics_and_lists_of_genes.csv"
-        self.volcano_plot = self.outputs_of_completing_Aim_1_2 / "volcano_plot.png"
+        self.plot_of_FDR_vs_Normalized_Enrichment_Score = self.outputs_of_completing_Aim_1_2 / "plot_of_FDR_vs_Normalized_Enrichment_Score.png"
+        self.data_frame_of_sample_IDs_and_module_scores_for_6_sets_of_genes = self.outputs_of_completing_Aim_1_2 / "data_frame_of_sample_IDs_and_module_scores_for_6_sets_of_genes.csv"
+        self.data_frame_of_sample_IDs_CD8_B_and_G_module_scores_and_differences = self.outputs_of_completing_Aim_1_2 / "data_frame_of_sample_IDs_CD8_B_and_G_module_scores_and_differences.csv"
+        self.data_frame_of_categories_of_module_scores_and_statistics = self.outputs_of_completing_Aim_1_2 / "data_frame_of_categories_of_module_scores_and_statistics.csv"
 
         # ORIEN_analysis/ORIEN_analysis/complete_Aim_2_1.py
         # dependencies
