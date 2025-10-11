@@ -49,6 +49,8 @@ from rpy2.robjects.conversion import localconverter
 from rpy2 import robjects as ro
 from rpy2.robjects import vectors
 
+from cliffs_delta import cliffs_delta
+
 
 def load_metadata(meta_path: str) -> pd.DataFrame:
     """
@@ -203,57 +205,38 @@ def create_series_of_logs_of_ratios_of_CD8_G_module_scores_to_CD8_B_module_score
     )
     minimum_module_score = series_of_module_scores.min()
     shift = 1e-6 - minimum_module_score
-    series_of_shifted_CD8_G_module_scores_for_samples = series_of_CD8_G_module_scores_for_samples + shift
-    series_of_shifted_CD8_B_module_scores_for_samples = series_of_CD8_B_module_scores_for_samples + shift
+    #pseudocount = series_of_module_scores.abs().median()
+    series_of_shifted_CD8_G_module_scores_for_samples = series_of_CD8_G_module_scores_for_samples + shift# + pseudocount
+    series_of_shifted_CD8_B_module_scores_for_samples = series_of_CD8_B_module_scores_for_samples + shift# + pseudocount
     return np.log2(series_of_shifted_CD8_G_module_scores_for_samples / series_of_shifted_CD8_B_module_scores_for_samples)
 
 
-def cliff_delta(x: np.ndarray, y: np.ndarray) -> float:
-    """
-    Cliff's delta effect size: P(X>Y)-P(X<Y).
-    Computed via ranks to avoid O(n*m).
-    """
-    nx, ny = len(x), len(y)
-    allv = np.concatenate([x, y])
-    ranks = rankdata(allv, method="average")
-    rx = ranks[:nx]
-    ry = ranks[nx:]
-    # Equivalent formula using U statistic:
-    # U = sum_{i} rank(x_i) - nx*(nx+1)/2
-    U = rx.sum() - nx * (nx + 1) / 2.0
-    delta = (2*U) / (nx*ny) - 1
-    return float(delta)
-
-
 def compare_by_sex(
-    scores: pd.Series,         # indexed by sample_id
-    series_of_indicators_of_sex: pd.Series,          # 1=male, 0=female aligned to sample_id
-    label: str
+    series_of_values: pd.Series,
+    series_of_indicators_of_sex: pd.Series,
+    category_of_module_score: str
 ) -> pd.DataFrame:
-    """
-    Mann-Whitney test of score by sex, with Cliff's delta.
-    series_of_indicators_of_sex coding: 0=female, 1=male.
-    """
-    common = scores.index.intersection(series_of_indicators_of_sex.index)
-    s = scores.loc[common]
-    y = series_of_indicators_of_sex.loc[common]
-
-    f = s[y == 0].to_numpy()  # females
-    m = s[y == 1].to_numpy()  # males
-    if len(f) == 0 or len(m) == 0:
-        raise ValueError("One of the sex groups is empty after alignment.")
-    u_stat, pval = mannwhitneyu(f, m, alternative="two-sided")
-    delta = cliff_delta(m, f)  # positive -> higher in males
-    return pd.DataFrame({
-        "contrast": [label],
-        "n_female": [len(f)],
-        "n_male": [len(m)],
-        "mw_u": [u_stat],
-        "pval": [pval],
-        "cliffs_delta_male_minus_female": [delta],
-        "mean_female": [float(np.mean(f))],
-        "mean_male": [float(np.mean(m))]
-    }).set_index("contrast")
+    series_of_values_for_females = series_of_values[series_of_indicators_of_sex == 0]
+    series_of_values_for_males = series_of_values[series_of_indicators_of_sex == 1]
+    number_of_females = len(series_of_values_for_females)
+    number_of_males = len(series_of_values_for_males)
+    mean_value_for_females = np.mean(series_of_values_for_females)
+    mean_value_for_males = np.mean(series_of_values_for_males)
+    value_of_cliffs_delta, _ = cliffs_delta(series_of_values_for_males, series_of_values_for_females)
+    U_statistic, p_value = mannwhitneyu(series_of_values_for_females, series_of_values_for_males, alternative = "two-sided")
+    value_of_cliffs_delta, _ = cliffs_delta(series_of_values_for_males, series_of_values_for_females)
+    return pd.DataFrame(
+        {
+            "category_of_module_score": [category_of_module_score],
+            "number_of_females": [number_of_females],
+            "number_of_males": [number_of_males],
+            "U_statistic": [U_statistic],
+            "p_value": [p_value],
+            "Cliffs_delta": [value_of_cliffs_delta],
+            "mean_value_for_females": [mean_value_for_females],
+            "mean_value_for_males": [mean_value_for_males]
+        }
+    ).set_index("category_of_module_score")
 
 
 def plot_FDR_vs_Normalized_Enrichment_Score(
@@ -451,28 +434,31 @@ def main():
         axis = 0
     )
     data_frame_of_categories_of_module_scores_and_statistics["FDR"] = multipletests(
-        data_frame_of_categories_of_module_scores_and_statistics["pval"],
+        data_frame_of_categories_of_module_scores_and_statistics["p_value"],
         method = "fdr_bh"
     )[1]
     data_frame_of_categories_of_module_scores_and_statistics.to_csv(
         paths.data_frame_of_categories_of_module_scores_and_statistics
     )
-
-    # 8) Plots: box by sex for CD8_G-CD8_B and (robust) log2 ratio (visualization only)
     box_by_sex(
         series_of_differences,
         series_of_indicators_of_sex,
-        "CD8_G - CD8_B (module score) by sex",
-        str(paths.outputs_of_completing_Aim_1_2 / "box_CD8_G_minus_CD8_B_by_sex.png")
+        "Difference between CD8 G Module Score and CD8 B Module Score vs. Sex",
+        paths.plot_of_difference_between_CD8_G_module_score_and_CD8_B_module_score_vs_sex
     )
-    # Clip extremes for display so a few near-zero denominators don't dominate the axis.
-    rlow, rhigh = np.nanpercentile(series_of_logs_of_ratios_of_CD8_G_module_scores_to_CD8_B_module_scores, [1, 99])
-    ratio_for_plot = series_of_logs_of_ratios_of_CD8_G_module_scores_to_CD8_B_module_scores.clip(lower=rlow, upper=rhigh)
+    first_percentile, ninety_ninth_percentile = np.nanpercentile(
+        series_of_logs_of_ratios_of_CD8_G_module_scores_to_CD8_B_module_scores,
+        [1, 99]
+    )
+    series_of_clipped_logs_of_ratios = series_of_logs_of_ratios_of_CD8_G_module_scores_to_CD8_B_module_scores.clip(
+        lower = first_percentile,
+        upper = ninety_ninth_percentile
+    )
     box_by_sex(
-        ratio_for_plot,
+        series_of_clipped_logs_of_ratios,
         series_of_indicators_of_sex,
-        "log2(CD8_G / CD8_B) (module score) by sex - robust (display only)",
-        str(paths.outputs_of_completing_Aim_1_2 / "box_log2_CD8G_over_CD8B_by_sex.png")
+        "Log of Ratio of CD8 G Module Score and CD8 B Module Score vs. Sex",
+        paths.plot_of_log_of_ratio_of_CD8_G_module_score_and_CD8_B_module_score_vs_sex
     )
 
     # 9) Write a compact README

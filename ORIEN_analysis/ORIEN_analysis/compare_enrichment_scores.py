@@ -72,9 +72,8 @@ Each file contains one row per cell type with columns
 
 from pathlib import Path
 import argparse
-from ORIEN_analysis.fit_linear_models import (
-    create_data_frame_of_enrichment_scores_and_clinical_and_QC_data
-)
+from cliffs_delta import cliffs_delta
+from ORIEN_analysis.fit_linear_models import create_data_frame_of_enrichment_scores_and_clinical_and_QC_data
 from statsmodels.stats.multitest import multipletests
 import numpy as np
 from ORIEN_analysis.config import paths
@@ -147,9 +146,6 @@ def create_series_of_enrichment_scores_or_residuals(
         name_of_column_of_enrichment_scores_or_residuals
     ]
     return series_of_values_for_indicator_0, series_of_values_for_indicator_1
-
-
-from cliffs_delta import cliffs_delta
 
 
 def create_data_frame_of_cell_types_and_statistics(
