@@ -57,10 +57,10 @@ def compute_point_biserial_correlation_for_each_gene(
     expression_matrix: pd.DataFrame,
     series_of_indicators_of_sex: pd.Series
 ) -> pd.DataFrame:
-    series_of_centered_indicators_of_sex = series_of_indicators_of_sex - series_of_indicators_of_sex.mean()
     number_of_samples = len(expression_matrix.columns)
+    series_of_centered_indicators_of_sex = series_of_indicators_of_sex - series_of_indicators_of_sex.mean()
     array_of_centered_indicators_of_sex = series_of_centered_indicators_of_sex.to_numpy()
-    standard_deviation_of_centered_indicators_of_sex = array_of_centered_indicators_of_sex.std()
+    standard_deviation_of_centered_indicators_of_sex = array_of_centered_indicators_of_sex.std(ddof = 1)
     series_of_means_of_expression_values_across_samples_for_each_gene = expression_matrix.mean(axis = 1)
     data_frame_of_centered_expression_values = expression_matrix.subtract(
         series_of_means_of_expression_values_across_samples_for_each_gene,
@@ -71,7 +71,7 @@ def compute_point_biserial_correlation_for_each_gene(
         (number_of_samples - 1)
     )
     array_of_standard_deviations_of_expression_values_across_samples_for_each_gene = (
-        data_frame_of_centered_expression_values.std(axis = 1).to_numpy()
+        data_frame_of_centered_expression_values.std(axis = 1, ddof = 1).to_numpy()
     )
     product_that_would_be_divisor = (
         array_of_standard_deviations_of_expression_values_across_samples_for_each_gene *
@@ -117,7 +117,8 @@ def run_fgsea(
     ro.r(f"set.seed(0)")
     r_data_frame_of_names_of_sets_of_genes_statistics_and_vectors_of_genes = fgsea.fgseaMultilevel(
         pathways = named_list_of_names_of_sets_of_genes_and_lists_of_genes,
-        stats = named_vector_of_ranked_point_biserial_correlations
+        stats = named_vector_of_ranked_point_biserial_correlations,
+        eps = 0
     )
     serialize_vectors_of_genes = ro.r(
         '''function(data_frame) {
@@ -147,7 +148,7 @@ def run_fgsea(
 
 def z_score_expressions_for_gene(expression_matrix: pd.DataFrame) -> pd.DataFrame:
     series_of_mean_expressions = expression_matrix.mean(axis = 1)
-    series_of_standard_deviations = expression_matrix.std(axis = 1)
+    series_of_standard_deviations = expression_matrix.std(axis = 1, ddof = 1)
     z_scored_expression_matrix = (
         expression_matrix
         .sub(series_of_mean_expressions, axis = 0)
@@ -424,7 +425,7 @@ def main():
     series_of_point_biserial_correlations_re_ICB_status = data_frame_of_genes_and_statistics_re_ICB_status["point_biserial_correlation"].copy()
     series_of_ranks_re_ICB_status = series_of_point_biserial_correlations_re_ICB_status.rank(method = "first")
     series_of_point_biserial_correlations_re_ICB_status = series_of_point_biserial_correlations_re_ICB_status + (series_of_ranks_re_ICB_status * 1e-12)
-    series_of_ranked_point_biserial_correlations_re_ICB_status = series_of_point_biserial_correlations_re_sex.sort_values(ascending = False)
+    series_of_ranked_point_biserial_correlations_re_ICB_status = series_of_point_biserial_correlations_re_ICB_status.sort_values(ascending = False)
 
     dictionary_of_names_of_sets_of_genes_and_lists_of_genes = load_dictionary_of_names_of_sets_of_genes_and_lists_of_genes()
     data_frame_of_names_of_sets_of_genes_statistics_and_lists_of_genes_re_sex = run_fgsea(
