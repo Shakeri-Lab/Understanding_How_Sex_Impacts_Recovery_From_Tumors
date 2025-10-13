@@ -119,6 +119,7 @@ class Paths():
         self.data_frame_of_categories_of_module_scores_and_statistics = self.outputs_of_completing_Aim_1_2 / "data_frame_of_categories_of_module_scores_and_statistics.csv"
         self.plot_of_difference_between_CD8_G_module_score_and_CD8_B_module_score_vs_sex = self.outputs_of_completing_Aim_1_2 / "plot_of_difference_between_CD8_G_module_score_and_CD8_B_module_score_vs_sex.png"
         self.plot_of_log_of_ratio_of_CD8_G_module_score_and_CD8_B_module_score_vs_sex = self.outputs_of_completing_Aim_1_2 / "plot_of_log_of_ratio_of_CD8_G_module_score_and_CD8_B_module_score_vs_sex.png"
+        self.README_for_Aim_1_2 = self.outputs_of_completing_Aim_1_2 / "README.txt"
 
         # ORIEN_analysis/ORIEN_analysis/complete_Aim_2_1.py
         # dependencies

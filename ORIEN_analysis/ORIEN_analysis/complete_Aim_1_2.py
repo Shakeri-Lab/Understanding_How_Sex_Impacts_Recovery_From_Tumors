@@ -211,7 +211,7 @@ def create_series_of_logs_of_ratios_of_CD8_G_module_scores_to_CD8_B_module_score
     return np.log2(series_of_shifted_CD8_G_module_scores_for_samples / series_of_shifted_CD8_B_module_scores_for_samples)
 
 
-def compare_by_sex(
+def create_data_frame_of_category_of_module_score_and_statistics(
     series_of_values: pd.Series,
     series_of_indicators_of_sex: pd.Series,
     category_of_module_score: str
@@ -262,19 +262,29 @@ def plot_FDR_vs_Normalized_Enrichment_Score(
     plt.close()
 
 
-def box_by_sex(scores: pd.Series, series_of_indicators_of_sex: pd.Series, title: str, out_png: str):
-    common = scores.index.intersection(series_of_indicators_of_sex.index)
-    df = pd.DataFrame({
-        "score": scores.loc[common].values,
-        "series_of_indicators_of_sex": series_of_indicators_of_sex.loc[common].values
-    })
-    df["sex"] = np.where(df["series_of_indicators_of_sex"] == 0, "Female", "Male")
-    plt.figure(figsize=(5, 5))
-    ax = sns.boxplot(data=df, x="sex", y="score")
-    sns.stripplot(data=df, x="sex", y="score", color="black", alpha=0.5)
+def plot_value_vs_sex(
+    series_of_values: pd.Series,
+    series_of_indicators_of_sex: pd.Series,
+    title: str,
+    path_to_plot: str
+):
+    data_frame_of_values_and_indicators_of_sex = pd.DataFrame(
+        {
+            "value": series_of_values,
+            "indicator_of_sex": series_of_indicators_of_sex
+        }
+    )
+    data_frame_of_values_and_indicators_of_sex["sex"] = np.where(
+        data_frame_of_values_and_indicators_of_sex["indicator_of_sex"] == 0,
+        "Female",
+        "Male"
+    )
+    plt.figure()
+    ax = sns.boxplot(data = data_frame_of_values_and_indicators_of_sex, x = "sex", y = "value")
+    sns.stripplot(data = data_frame_of_values_and_indicators_of_sex, x = "sex", y = "value", color = "black")
     ax.set_title(title)
     plt.tight_layout()
-    plt.savefig(out_png, dpi=200)
+    plt.savefig(path_to_plot)
     plt.close()
 
 
@@ -412,7 +422,7 @@ def main():
         paths.data_frame_of_sample_IDs_CD8_B_and_G_module_scores_and_differences
     )
     list_of_data_frames_of_categories_of_module_scores_and_statistics = []
-    data_frame_of_category_of_module_score_CD8_G_minus_CD8_B_and_statistics = compare_by_sex(
+    data_frame_of_category_of_module_score_CD8_G_minus_CD8_B_and_statistics = create_data_frame_of_category_of_module_score_and_statistics(
         series_of_differences,
         series_of_indicators_of_sex,
         "CD8_G_minus_CD8_B"
@@ -423,7 +433,7 @@ def main():
     for name_of_set_of_genes in list_of_names_of_sets_of_genes:
         series_of_module_scores = data_frame_of_sample_IDs_and_module_scores_for_6_sets_of_genes[name_of_set_of_genes]
         list_of_data_frames_of_categories_of_module_scores_and_statistics.append(
-            compare_by_sex(
+            create_data_frame_of_category_of_module_score_and_statistics(
                 series_of_module_scores,
                 series_of_indicators_of_sex,
                 name_of_set_of_genes
@@ -440,10 +450,10 @@ def main():
     data_frame_of_categories_of_module_scores_and_statistics.to_csv(
         paths.data_frame_of_categories_of_module_scores_and_statistics
     )
-    box_by_sex(
+    plot_value_vs_sex(
         series_of_differences,
         series_of_indicators_of_sex,
-        "Difference between CD8 G Module Score and CD8 B Module Score vs. Sex",
+        "Difference between CD8 G Module Score and CD8 B Module Score\nvs. Sex",
         paths.plot_of_difference_between_CD8_G_module_score_and_CD8_B_module_score_vs_sex
     )
     first_percentile, ninety_ninth_percentile = np.nanpercentile(
@@ -454,34 +464,12 @@ def main():
         lower = first_percentile,
         upper = ninety_ninth_percentile
     )
-    box_by_sex(
+    plot_value_vs_sex(
         series_of_clipped_logs_of_ratios,
         series_of_indicators_of_sex,
-        "Log of Ratio of CD8 G Module Score and CD8 B Module Score vs. Sex",
+        "Log of Ratio of CD8 G Module Score and CD8 B Module Score\nvs. Sex",
         paths.plot_of_log_of_ratio_of_CD8_G_module_score_and_CD8_B_module_score_vs_sex
     )
-
-    # 9) Write a compact README
-    with open(paths.outputs_of_completing_Aim_1_2 / "README_Aim1_2.txt", "w", encoding="utf-8") as fh:
-        fh.write(
-            "Aim 1.2 — CD8 TIL phenotypes by sex\n"
-            "-----------------------------------\n"
-            "Files:\n"
-            "  - preranked_stats_point_biserial.csv: gene-level r vs sex (female=0, male=1).\n"
-            "  - fgsea_results.csv: fgsea on pre-ranked stats (NES, ES, pval, padj [BH-FDR], leading edge).\n"
-            "  - fgsea_volcano.png: NES vs FDR scatter (FDR = padj).\n"
-            "  - sample_module_scores_CD8_1_to_6.csv: per-sample module scores for fine clusters.\n"
-            "  - sample_module_scores_CD8_B_vs_CD8_G.csv: per-sample CD8_B, CD8_G, and difference (CD8_G_minus_CD8_B) (ratio is visualization-only).\n"
-            "  - by_sex_tests_CD8_scores.csv: Mann-Whitney + Cliff's delta + FDR across contrasts (no ratio tests). Cliff's delta: positive = higher in males\n"
-            "  - box_*.png: box/strip plots by sex for key contrasts.\n"
-            "\n"
-            "Methods:\n"
-            "  - Pre-ranking uses point-biserial (Pearson vs binary sex), with tiny deterministic tie-breaking.\n"
-            "  - fgsea: Multilevel by default (recommended); min size filter applied.\n"
-            "  - Module scores = mean z-scored expression across genes in the set.\n"
-            "  - CD8_B = union of CD8_1,2,3; CD8_G = union of CD8_4,5,6.\n"
-            "  - Robust log2 ratio uses a shift-to-positive plus data-scaled pseudocount and is shown for visualization (clipped to 1st-99th percentiles).\n"
-        )
 
 
 if __name__ == "__main__":
