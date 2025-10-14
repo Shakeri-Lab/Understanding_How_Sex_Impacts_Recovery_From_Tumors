@@ -55,19 +55,19 @@ def load_dictionary_of_names_of_sets_of_genes_and_lists_of_genes() -> dict[str, 
 
 def compute_point_biserial_correlation_for_each_gene(
     expression_matrix: pd.DataFrame,
-    series_of_indicators_of_sex: pd.Series
+    series_of_indicators: pd.Series
 ) -> pd.DataFrame:
     number_of_samples = len(expression_matrix.columns)
-    series_of_centered_indicators_of_sex = series_of_indicators_of_sex - series_of_indicators_of_sex.mean()
-    array_of_centered_indicators_of_sex = series_of_centered_indicators_of_sex.to_numpy()
-    standard_deviation_of_centered_indicators_of_sex = array_of_centered_indicators_of_sex.std(ddof = 1)
+    series_of_centered_indicators = series_of_indicators - series_of_indicators.mean()
+    array_of_centered_indicators = series_of_centered_indicators.to_numpy()
+    standard_deviation_of_centered_indicators = array_of_centered_indicators.std(ddof = 1)
     series_of_means_of_expression_values_across_samples_for_each_gene = expression_matrix.mean(axis = 1)
     data_frame_of_centered_expression_values = expression_matrix.subtract(
         series_of_means_of_expression_values_across_samples_for_each_gene,
         axis = 0
     )
     array_of_covariances = (
-        (data_frame_of_centered_expression_values.values @ array_of_centered_indicators_of_sex) /
+        (data_frame_of_centered_expression_values.values @ array_of_centered_indicators) /
         (number_of_samples - 1)
     )
     array_of_standard_deviations_of_expression_values_across_samples_for_each_gene = (
@@ -75,7 +75,7 @@ def compute_point_biserial_correlation_for_each_gene(
     )
     product_that_would_be_divisor = (
         array_of_standard_deviations_of_expression_values_across_samples_for_each_gene *
-        standard_deviation_of_centered_indicators_of_sex
+        standard_deviation_of_centered_indicators
     )
     point_biserial_correlation = np.divide(
         array_of_covariances,
@@ -90,7 +90,7 @@ def compute_point_biserial_correlation_for_each_gene(
                 "point_biserial_correlation": point_biserial_correlation,
                 "number_of_samples": number_of_samples,
                 "standard_deviation_of_expression_values_across_samples_for_each_gene": array_of_standard_deviations_of_expression_values_across_samples_for_each_gene,
-                "standard_deviation_of_centered_indicators_of_sex": standard_deviation_of_centered_indicators_of_sex,
+                "standard_deviation_of_centered_indicators": standard_deviation_of_centered_indicators,
             }
         )
         .set_index("gene")
@@ -118,7 +118,7 @@ def run_fgsea(
     r_data_frame_of_names_of_sets_of_genes_statistics_and_vectors_of_genes = fgsea.fgseaMultilevel(
         pathways = named_list_of_names_of_sets_of_genes_and_lists_of_genes,
         stats = named_vector_of_ranked_point_biserial_correlations,
-        eps = 0
+        nPermSimple = 10_000
     )
     serialize_vectors_of_genes = ro.r(
         '''function(data_frame) {
@@ -356,16 +356,8 @@ def create_series_of_indicators_of_ICB_status(
 
 
 def main():
-    expression_matrix = pd.read_csv(
-        paths.expression_matrix_with_HGNC_symbols_and_SLIDs_approved_by_manifest,
-        index_col = 0
-    )
-    index_of_sample_IDs = expression_matrix.columns
-    metadata_frame = pd.DataFrame(
-        {"sample_id": index_of_sample_IDs}
-    )
+    paths.ensure_dependencies_for_comparing_enrichment_scores_exist()
     clinical_molecular_linkage_data = pd.read_csv(paths.clinical_molecular_linkage_data)
-    patient_data = pd.read_csv(paths.patient_data)
     data_frame_of_sample_IDs_and_patient_IDs = clinical_molecular_linkage_data[["RNASeq", "ORIENAvatarKey"]]
     data_frame_of_sample_IDs_and_patient_IDs = (
         data_frame_of_sample_IDs_and_patient_IDs
@@ -375,102 +367,19 @@ def main():
             keep = "first"
         )
     )
-    metadata_frame = (
-        metadata_frame
-        .merge(
-            data_frame_of_sample_IDs_and_patient_IDs,
-            how = "left",
-            left_on = "sample_id",
-            right_on = "RNASeq",
-            validate = "one_to_one"
-        )
-        .drop(columns = "RNASeq")
-        .merge(
-            patient_data[["AvatarKey", "Sex"]],
-            how = "left",
-            left_on = "ORIENAvatarKey",
-            right_on = "AvatarKey",
-            validate = "one_to_one"
-        )
-        .drop(columns = ["ORIENAvatarKey", "AvatarKey"])
-        .set_index("sample_id")
+    dictionary_of_names_of_sets_of_genes_and_lists_of_genes = load_dictionary_of_names_of_sets_of_genes_and_lists_of_genes()
+    expression_matrix = pd.read_csv(
+        paths.expression_matrix_with_HGNC_symbols_and_SLIDs_approved_by_manifest,
+        index_col = 0
     )
-    series_of_indicators_of_sex = metadata_frame["Sex"].map(
-        {
-            "Female": 0,
-            "Male": 1
-        }
-    )
+    list_of_names_of_sets_of_genes = [f"CD8_{i}" for i in range(1, 6 + 1)]
+    list_of_names_of_sets_of_genes_in_set_CD8_B = [f"CD8_{i}" for i in (1, 2, 3)]
+    list_of_names_of_sets_of_genes_in_set_CD8_G = [f"CD8_{i}" for i in (4, 5, 6)]
+    patient_data = pd.read_csv(paths.patient_data)
     series_of_indicators_of_ICB_status = create_series_of_indicators_of_ICB_status(
         clinical_molecular_linkage_data,
         expression_matrix
     )
-    data_frame_of_genes_and_statistics_re_sex = compute_point_biserial_correlation_for_each_gene(
-        expression_matrix,
-        series_of_indicators_of_sex
-    )
-    data_frame_of_genes_and_statistics_re_sex.to_csv(paths.data_frame_of_genes_and_statistics_re_sex)
-    series_of_point_biserial_correlations_re_sex = data_frame_of_genes_and_statistics_re_sex["point_biserial_correlation"].copy()
-    series_of_ranks_re_sex = series_of_point_biserial_correlations_re_sex.rank(method = "first")
-    # Point biserial correlations are ranked in ascending order.
-    # When 2 point biserial correlations are equal, the first receives a lower rank and the second receives a higher rank.
-    series_of_point_biserial_correlations_re_sex = series_of_point_biserial_correlations_re_sex + (series_of_ranks_re_sex * 1e-12)
-    series_of_ranked_point_biserial_correlations_re_sex = series_of_point_biserial_correlations_re_sex.sort_values(ascending = False)
-
-    data_frame_of_genes_and_statistics_re_ICB_status = compute_point_biserial_correlation_for_each_gene(
-        expression_matrix,
-        series_of_indicators_of_ICB_status
-    )
-    data_frame_of_genes_and_statistics_re_ICB_status.to_csv(paths.data_frame_of_genes_and_statistics_re_ICB_status)
-    series_of_point_biserial_correlations_re_ICB_status = data_frame_of_genes_and_statistics_re_ICB_status["point_biserial_correlation"].copy()
-    series_of_ranks_re_ICB_status = series_of_point_biserial_correlations_re_ICB_status.rank(method = "first")
-    series_of_point_biserial_correlations_re_ICB_status = series_of_point_biserial_correlations_re_ICB_status + (series_of_ranks_re_ICB_status * 1e-12)
-    series_of_ranked_point_biserial_correlations_re_ICB_status = series_of_point_biserial_correlations_re_ICB_status.sort_values(ascending = False)
-
-    dictionary_of_names_of_sets_of_genes_and_lists_of_genes = load_dictionary_of_names_of_sets_of_genes_and_lists_of_genes()
-    data_frame_of_names_of_sets_of_genes_statistics_and_lists_of_genes_re_sex = run_fgsea(
-        series_of_ranked_point_biserial_correlations_re_sex,
-        dictionary_of_names_of_sets_of_genes_and_lists_of_genes
-    )
-    data_frame_of_names_of_sets_of_genes_statistics_and_lists_of_genes_re_sex.to_csv(
-        paths.data_frame_of_names_of_sets_of_genes_statistics_and_lists_of_genes_re_sex,
-        index = False
-    )
-    plot_FDR_vs_Normalized_Enrichment_Score(
-        data_frame_of_names_of_sets_of_genes_statistics_and_lists_of_genes_re_sex,
-        paths.plot_of_FDR_vs_Normalized_Enrichment_Score_re_sex
-    )
-
-    data_frame_of_names_of_sets_of_genes_statistics_and_lists_of_genes_re_ICB_status = run_fgsea(
-        series_of_ranked_point_biserial_correlations_re_ICB_status,
-        dictionary_of_names_of_sets_of_genes_and_lists_of_genes
-    )
-    data_frame_of_names_of_sets_of_genes_statistics_and_lists_of_genes_re_ICB_status.to_csv(
-        paths.data_frame_of_names_of_sets_of_genes_statistics_and_lists_of_genes_re_ICB_status,
-        index = False
-    )
-    plot_FDR_vs_Normalized_Enrichment_Score(
-        data_frame_of_names_of_sets_of_genes_statistics_and_lists_of_genes_re_ICB_status,
-        paths.plot_of_FDR_vs_Normalized_Enrichment_Score_re_ICB_status
-    )
-
-    list_of_names_of_sets_of_genes = [f"CD8_{i}" for i in range(1, 6 + 1)]
-    dictionary_of_names_of_sets_of_genes_and_series_of_module_scores = {}
-    for name_of_set_of_genes in list_of_names_of_sets_of_genes:
-        list_of_genes = dictionary_of_names_of_sets_of_genes_and_lists_of_genes.get(name_of_set_of_genes)
-        dictionary_of_names_of_sets_of_genes_and_series_of_module_scores[name_of_set_of_genes] = create_series_of_module_scores(
-            expression_matrix,
-            list_of_genes
-        )
-    data_frame_of_sample_IDs_and_module_scores_for_6_sets_of_genes = pd.DataFrame(
-        dictionary_of_names_of_sets_of_genes_and_series_of_module_scores
-    )
-    data_frame_of_sample_IDs_and_module_scores_for_6_sets_of_genes.index.name = "sample_id"
-    data_frame_of_sample_IDs_and_module_scores_for_6_sets_of_genes.to_csv(
-        paths.data_frame_of_sample_IDs_and_module_scores_for_6_sets_of_genes
-    )
-    list_of_names_of_sets_of_genes_in_set_CD8_B = [f"CD8_{i}" for i in (1, 2, 3)]
-    list_of_names_of_sets_of_genes_in_set_CD8_G = [f"CD8_{i}" for i in (4, 5, 6)]
     sorted_list_of_genes_in_set_CD8_B = sorted(
         set(
             sum(
@@ -493,148 +402,352 @@ def main():
             )
         )
     )
-    series_of_CD8_B_module_scores_for_samples = create_series_of_module_scores(
-        expression_matrix,
-        sorted_list_of_genes_in_set_CD8_B
-    ).rename("CD8_B_module_score_for_sample")
-    series_of_CD8_G_module_scores_for_samples = create_series_of_module_scores(
-        expression_matrix,
-        sorted_list_of_genes_in_set_CD8_G
-    ).rename("CD8_G_module_score_for_sample")
-    series_of_differences = (
-        series_of_CD8_G_module_scores_for_samples - series_of_CD8_B_module_scores_for_samples
-    ).rename("difference_between_CD8_G_and_CD8_B_module_scores")
-    series_of_logs_of_ratios_of_CD8_G_module_scores_to_CD8_B_module_scores = create_series_of_logs_of_ratios_of_CD8_G_module_scores_to_CD8_B_module_scores(
-        series_of_CD8_G_module_scores_for_samples,
-        series_of_CD8_B_module_scores_for_samples
-    ).rename("log_of_ratio_of_CD8_G_module_score_to_CD8_B_module_score")
-    data_frame_of_sample_IDs_CD8_B_and_G_module_scores_and_differences = pd.concat(
-        [
-            series_of_CD8_B_module_scores_for_samples,
-            series_of_CD8_G_module_scores_for_samples,
-            series_of_differences
-        ],
-        axis = 1
-    )
-    data_frame_of_sample_IDs_CD8_B_and_G_module_scores_and_differences.index.name = "sample_id"
-    data_frame_of_sample_IDs_CD8_B_and_G_module_scores_and_differences.to_csv(
-        paths.data_frame_of_sample_IDs_CD8_B_and_G_module_scores_and_differences
-    )
-    list_of_data_frames_of_categories_of_module_scores_and_statistics_re_sex = []
-    data_frame_of_category_of_module_score_CD8_G_minus_CD8_B_and_statistics_re_sex = create_data_frame_of_category_of_module_score_and_statistics(
-        series_of_differences,
-        series_of_indicators_of_sex,
-        "females",
-        "males",
-        "CD8_G_minus_CD8_B"
-    )
-    list_of_data_frames_of_categories_of_module_scores_and_statistics_re_sex.append(
-        data_frame_of_category_of_module_score_CD8_G_minus_CD8_B_and_statistics_re_sex
-    )
-    for name_of_set_of_genes in list_of_names_of_sets_of_genes:
-        series_of_module_scores = data_frame_of_sample_IDs_and_module_scores_for_6_sets_of_genes[name_of_set_of_genes]
-        list_of_data_frames_of_categories_of_module_scores_and_statistics_re_sex.append(
-            create_data_frame_of_category_of_module_score_and_statistics(
-                series_of_module_scores,
-                series_of_indicators_of_sex,
-                "females",
-                "males",
-                name_of_set_of_genes
-            )
+    for stratum in ["all", "naive", "experienced"]:
+        if stratum == "all":
+            series_of_indicators_of_ICB_status_for_stratum = series_of_indicators_of_ICB_status
+        elif stratum == "naive":
+            series_of_indicators_of_ICB_status_for_stratum = series_of_indicators_of_ICB_status[
+                series_of_indicators_of_ICB_status == 0
+            ]
+        elif stratum == "experienced":
+            series_of_indicators_of_ICB_status_for_stratum = series_of_indicators_of_ICB_status[
+                series_of_indicators_of_ICB_status == 1
+            ]
+        else:
+            raise Exception("Stratum is invalid.")
+        expression_submatrix = expression_matrix[series_of_indicators_of_ICB_status_for_stratum.index]
+        index_of_sample_IDs = series_of_indicators_of_ICB_status_for_stratum.index
+        metadata_frame = pd.DataFrame(
+            {"sample_id": index_of_sample_IDs}
         )
-    data_frame_of_categories_of_module_scores_and_statistics_re_sex = pd.concat(
-        list_of_data_frames_of_categories_of_module_scores_and_statistics_re_sex,
-        axis = 0
-    )
-    data_frame_of_categories_of_module_scores_and_statistics_re_sex["FDR"] = multipletests(
-        data_frame_of_categories_of_module_scores_and_statistics_re_sex["p_value"],
-        method = "fdr_bh"
-    )[1]
-    data_frame_of_categories_of_module_scores_and_statistics_re_sex.to_csv(
-        paths.data_frame_of_categories_of_module_scores_and_statistics_re_sex
-    )
-    plot_value_vs_indicator(
-        series_of_differences,
-        series_of_indicators_of_sex,
-        "Female",
-        "Male",
-        "Difference between CD8 G Module Score and CD8 B Module Score\nvs. Sex",
-        paths.plot_of_difference_between_CD8_G_module_score_and_CD8_B_module_score_vs_sex
-    )
-    first_percentile, ninety_ninth_percentile = np.nanpercentile(
-        series_of_logs_of_ratios_of_CD8_G_module_scores_to_CD8_B_module_scores,
-        [1, 99]
-    )
-    series_of_clipped_logs_of_ratios = series_of_logs_of_ratios_of_CD8_G_module_scores_to_CD8_B_module_scores.clip(
-        lower = first_percentile,
-        upper = ninety_ninth_percentile
-    )
-    plot_value_vs_indicator(
-        series_of_clipped_logs_of_ratios,
-        series_of_indicators_of_sex,
-        "Female",
-        "Male",
-        "Log of Ratio of CD8 G Module Score and CD8 B Module Score\nvs. Sex",
-        paths.plot_of_log_of_ratio_of_CD8_G_module_score_and_CD8_B_module_score_vs_sex
-    )
-
-    list_of_data_frames_of_categories_of_module_scores_and_statistics_re_ICB_status = []
-    data_frame_of_category_of_module_score_CD8_G_minus_CD8_B_and_statistics_re_ICB_status = create_data_frame_of_category_of_module_score_and_statistics(
-        series_of_differences,
-        series_of_indicators_of_ICB_status,
-        "naive",
-        "experienced",
-        "CD8_G_minus_CD8_B"
-    )
-    list_of_data_frames_of_categories_of_module_scores_and_statistics_re_ICB_status.append(
-        data_frame_of_category_of_module_score_CD8_G_minus_CD8_B_and_statistics_re_ICB_status
-    )
-    for name_of_set_of_genes in list_of_names_of_sets_of_genes:
-        series_of_module_scores = data_frame_of_sample_IDs_and_module_scores_for_6_sets_of_genes[name_of_set_of_genes]
-        list_of_data_frames_of_categories_of_module_scores_and_statistics_re_ICB_status.append(
-            create_data_frame_of_category_of_module_score_and_statistics(
-                series_of_module_scores,
-                series_of_indicators_of_ICB_status,
+        metadata_frame = (
+            metadata_frame
+            .merge(
+                data_frame_of_sample_IDs_and_patient_IDs,
+                how = "left",
+                left_on = "sample_id",
+                right_on = "RNASeq",
+                validate = "one_to_one"
+            )
+            .drop(columns = "RNASeq")
+            .merge(
+                patient_data[["AvatarKey", "Sex"]],
+                how = "left",
+                left_on = "ORIENAvatarKey",
+                right_on = "AvatarKey",
+                validate = "one_to_one"
+            )
+            .drop(columns = ["ORIENAvatarKey", "AvatarKey"])
+            .set_index("sample_id")
+        )
+        series_of_indicators_of_sex = metadata_frame["Sex"].map(
+            {
+                "Female": 0,
+                "Male": 1
+            }
+        )
+        data_frame_of_genes_and_statistics_re_sex = compute_point_biserial_correlation_for_each_gene(
+            expression_submatrix,
+            series_of_indicators_of_sex
+        )
+        if stratum == "all":
+            data_frame_of_genes_and_statistics_re_sex.to_csv(paths.data_frame_of_genes_and_statistics_re_sex_for_all_samples)
+        elif stratum == "naive":
+            data_frame_of_genes_and_statistics_re_sex.to_csv(paths.data_frame_of_genes_and_statistics_re_sex_for_naive_samples)
+        elif stratum == "experienced":
+            data_frame_of_genes_and_statistics_re_sex.to_csv(paths.data_frame_of_genes_and_statistics_re_sex_for_experienced_samples)
+        else:
+            raise Exception("Stratum is invalid.")
+        series_of_point_biserial_correlations_re_sex = data_frame_of_genes_and_statistics_re_sex["point_biserial_correlation"].copy()
+        series_of_ranks_re_sex = series_of_point_biserial_correlations_re_sex.rank(method = "first")
+        # Point biserial correlations are ranked in ascending order.
+        # When 2 point biserial correlations are equal, the first receives a lower rank and the second receives a higher rank.
+        series_of_point_biserial_correlations_re_sex = series_of_point_biserial_correlations_re_sex + (series_of_ranks_re_sex * 1e-12)
+        series_of_ranked_point_biserial_correlations_re_sex = series_of_point_biserial_correlations_re_sex.sort_values(ascending = False)
+        if stratum == "all":
+            data_frame_of_genes_and_statistics_re_ICB_status = compute_point_biserial_correlation_for_each_gene(
+                expression_submatrix,
+                series_of_indicators_of_ICB_status_for_stratum
+            )
+            data_frame_of_genes_and_statistics_re_ICB_status.to_csv(paths.data_frame_of_genes_and_statistics_re_ICB_status)
+            series_of_point_biserial_correlations_re_ICB_status = data_frame_of_genes_and_statistics_re_ICB_status["point_biserial_correlation"].copy()
+            series_of_ranks_re_ICB_status = series_of_point_biserial_correlations_re_ICB_status.rank(method = "first")
+            series_of_point_biserial_correlations_re_ICB_status = series_of_point_biserial_correlations_re_ICB_status + (series_of_ranks_re_ICB_status * 1e-12)
+            series_of_ranked_point_biserial_correlations_re_ICB_status = series_of_point_biserial_correlations_re_ICB_status.sort_values(ascending = False)
+        data_frame_of_names_of_sets_of_genes_statistics_and_lists_of_genes_re_sex = run_fgsea(
+            series_of_ranked_point_biserial_correlations_re_sex,
+            dictionary_of_names_of_sets_of_genes_and_lists_of_genes
+        )
+        if stratum == "all":
+            data_frame_of_names_of_sets_of_genes_statistics_and_lists_of_genes_re_sex.to_csv(
+                paths.data_frame_of_names_of_sets_of_genes_statistics_and_lists_of_genes_re_sex_for_all_samples,
+                index = False
+            )
+        elif stratum == "naive":
+            data_frame_of_names_of_sets_of_genes_statistics_and_lists_of_genes_re_sex.to_csv(
+                paths.data_frame_of_names_of_sets_of_genes_statistics_and_lists_of_genes_re_sex_for_naive_samples,
+                index = False
+            )
+        elif stratum == "experienced":
+            data_frame_of_names_of_sets_of_genes_statistics_and_lists_of_genes_re_sex.to_csv(
+                paths.data_frame_of_names_of_sets_of_genes_statistics_and_lists_of_genes_re_sex_for_experienced_samples,
+                index = False
+            )
+        else:
+            raise Exception("Stratum is invalid.")
+        if stratum == "all":
+            plot_FDR_vs_Normalized_Enrichment_Score(
+                data_frame_of_names_of_sets_of_genes_statistics_and_lists_of_genes_re_sex,
+                paths.plot_of_FDR_vs_Normalized_Enrichment_Score_re_sex_for_all_samples
+            )
+        elif stratum == "naive":
+            plot_FDR_vs_Normalized_Enrichment_Score(
+                data_frame_of_names_of_sets_of_genes_statistics_and_lists_of_genes_re_sex,
+                paths.plot_of_FDR_vs_Normalized_Enrichment_Score_re_sex_for_naive_samples
+            )
+        elif stratum == "experienced":
+            plot_FDR_vs_Normalized_Enrichment_Score(
+                data_frame_of_names_of_sets_of_genes_statistics_and_lists_of_genes_re_sex,
+                paths.plot_of_FDR_vs_Normalized_Enrichment_Score_re_sex_for_experienced_samples
+            )
+        else:
+            raise Exception("Stratum is invalid.")
+        if stratum == "all":
+            data_frame_of_names_of_sets_of_genes_statistics_and_lists_of_genes_re_ICB_status = run_fgsea(
+                series_of_ranked_point_biserial_correlations_re_ICB_status,
+                dictionary_of_names_of_sets_of_genes_and_lists_of_genes
+            )
+            data_frame_of_names_of_sets_of_genes_statistics_and_lists_of_genes_re_ICB_status.to_csv(
+                paths.data_frame_of_names_of_sets_of_genes_statistics_and_lists_of_genes_re_ICB_status,
+                index = False
+            )
+            plot_FDR_vs_Normalized_Enrichment_Score(
+                data_frame_of_names_of_sets_of_genes_statistics_and_lists_of_genes_re_ICB_status,
+                paths.plot_of_FDR_vs_Normalized_Enrichment_Score_re_ICB_status
+            )    
+        dictionary_of_names_of_sets_of_genes_and_series_of_module_scores = {}
+        for name_of_set_of_genes in list_of_names_of_sets_of_genes:
+            list_of_genes = dictionary_of_names_of_sets_of_genes_and_lists_of_genes.get(name_of_set_of_genes)
+            dictionary_of_names_of_sets_of_genes_and_series_of_module_scores[name_of_set_of_genes] = create_series_of_module_scores(
+                expression_submatrix,
+                list_of_genes
+            )
+        data_frame_of_sample_IDs_and_module_scores_for_6_sets_of_genes = pd.DataFrame(
+            dictionary_of_names_of_sets_of_genes_and_series_of_module_scores
+        )
+        data_frame_of_sample_IDs_and_module_scores_for_6_sets_of_genes.index.name = "sample_id"
+        if stratum == "all":
+            data_frame_of_sample_IDs_and_module_scores_for_6_sets_of_genes.to_csv(
+                paths.data_frame_of_sample_IDs_and_module_scores_for_6_sets_of_genes_for_all_samples
+            )
+        elif stratum == "naive":
+            data_frame_of_sample_IDs_and_module_scores_for_6_sets_of_genes.to_csv(
+                paths.data_frame_of_sample_IDs_and_module_scores_for_6_sets_of_genes_for_naive_samples
+            )
+        elif stratum == "experienced":
+            data_frame_of_sample_IDs_and_module_scores_for_6_sets_of_genes.to_csv(
+                paths.data_frame_of_sample_IDs_and_module_scores_for_6_sets_of_genes_for_experienced_samples
+            )
+        else:
+            raise Exception("Stratum is invalid.")
+        series_of_CD8_B_module_scores_for_samples = create_series_of_module_scores(
+            expression_submatrix,
+            sorted_list_of_genes_in_set_CD8_B
+        ).rename("CD8_B_module_score_for_sample")
+        series_of_CD8_G_module_scores_for_samples = create_series_of_module_scores(
+            expression_submatrix,
+            sorted_list_of_genes_in_set_CD8_G
+        ).rename("CD8_G_module_score_for_sample")
+        series_of_differences = (
+            series_of_CD8_G_module_scores_for_samples - series_of_CD8_B_module_scores_for_samples
+        ).rename("difference_between_CD8_G_and_CD8_B_module_scores")
+        series_of_logs_of_ratios_of_CD8_G_module_scores_to_CD8_B_module_scores = create_series_of_logs_of_ratios_of_CD8_G_module_scores_to_CD8_B_module_scores(
+            series_of_CD8_G_module_scores_for_samples,
+            series_of_CD8_B_module_scores_for_samples
+        ).rename("log_of_ratio_of_CD8_G_module_score_to_CD8_B_module_score")
+        data_frame_of_sample_IDs_CD8_B_and_G_module_scores_and_differences = pd.concat(
+            [
+                series_of_CD8_B_module_scores_for_samples,
+                series_of_CD8_G_module_scores_for_samples,
+                series_of_differences
+            ],
+            axis = 1
+        )
+        data_frame_of_sample_IDs_CD8_B_and_G_module_scores_and_differences.index.name = "sample_id"
+        if stratum == "all":
+            data_frame_of_sample_IDs_CD8_B_and_G_module_scores_and_differences.to_csv(
+                paths.data_frame_of_sample_IDs_CD8_B_and_G_module_scores_and_differences_for_all_samples
+            )
+        elif stratum == "naive":
+            data_frame_of_sample_IDs_CD8_B_and_G_module_scores_and_differences.to_csv(
+                paths.data_frame_of_sample_IDs_CD8_B_and_G_module_scores_and_differences_for_naive_samples
+            )
+        elif stratum == "experienced":
+            data_frame_of_sample_IDs_CD8_B_and_G_module_scores_and_differences.to_csv(
+                paths.data_frame_of_sample_IDs_CD8_B_and_G_module_scores_and_differences_for_experienced_samples
+            )
+        else:
+            raise Exception("Stratum is invalid.")
+        list_of_data_frames_of_categories_of_module_scores_and_statistics_re_sex = []
+        data_frame_of_category_of_module_score_CD8_G_minus_CD8_B_and_statistics_re_sex = create_data_frame_of_category_of_module_score_and_statistics(
+            series_of_differences,
+            series_of_indicators_of_sex,
+            "females",
+            "males",
+            "CD8_G_minus_CD8_B"
+        )
+        list_of_data_frames_of_categories_of_module_scores_and_statistics_re_sex.append(
+            data_frame_of_category_of_module_score_CD8_G_minus_CD8_B_and_statistics_re_sex
+        )
+        for name_of_set_of_genes in list_of_names_of_sets_of_genes:
+            series_of_module_scores = data_frame_of_sample_IDs_and_module_scores_for_6_sets_of_genes[name_of_set_of_genes]
+            list_of_data_frames_of_categories_of_module_scores_and_statistics_re_sex.append(
+                create_data_frame_of_category_of_module_score_and_statistics(
+                    series_of_module_scores,
+                    series_of_indicators_of_sex,
+                    "females",
+                    "males",
+                    name_of_set_of_genes
+                )
+            )
+        data_frame_of_categories_of_module_scores_and_statistics_re_sex = pd.concat(
+            list_of_data_frames_of_categories_of_module_scores_and_statistics_re_sex,
+            axis = 0
+        )
+        data_frame_of_categories_of_module_scores_and_statistics_re_sex["FDR"] = multipletests(
+            data_frame_of_categories_of_module_scores_and_statistics_re_sex["p_value"],
+            method = "fdr_bh"
+        )[1]
+        if stratum == "all":
+            data_frame_of_categories_of_module_scores_and_statistics_re_sex.to_csv(
+                paths.data_frame_of_categories_of_module_scores_and_statistics_re_sex_for_all_samples
+            )
+        elif stratum == "naive":
+            data_frame_of_categories_of_module_scores_and_statistics_re_sex.to_csv(
+                paths.data_frame_of_categories_of_module_scores_and_statistics_re_sex_for_naive_samples
+            )
+        elif stratum == "experienced":
+            data_frame_of_categories_of_module_scores_and_statistics_re_sex.to_csv(
+                paths.data_frame_of_categories_of_module_scores_and_statistics_re_sex_for_experienced_samples
+            )
+        else:
+            raise Exception("Stratum is invalid.")
+        if stratum == "all":
+            plot_value_vs_indicator(
+                series_of_differences,
+                series_of_indicators_of_sex,
+                "Female",
+                "Male",
+                "Difference between CD8 G Module Score and CD8 B Module Score\nvs. Sex",
+                paths.plot_of_difference_between_CD8_G_module_score_and_CD8_B_module_score_vs_sex_for_all_samples
+            )
+        elif stratum == "naive":
+            plot_value_vs_indicator(
+                series_of_differences,
+                series_of_indicators_of_sex,
+                "Female",
+                "Male",
+                "Difference between CD8 G Module Score and CD8 B Module Score\nvs. Sex",
+                paths.plot_of_difference_between_CD8_G_module_score_and_CD8_B_module_score_vs_sex_for_naive_samples
+            )
+        elif stratum == "experienced":
+            plot_value_vs_indicator(
+                series_of_differences,
+                series_of_indicators_of_sex,
+                "Female",
+                "Male",
+                "Difference between CD8 G Module Score and CD8 B Module Score\nvs. Sex",
+                paths.plot_of_difference_between_CD8_G_module_score_and_CD8_B_module_score_vs_sex_for_experienced_samples
+            )
+        else:
+            raise Exception("Stratum is invalid.")
+        first_percentile, ninety_ninth_percentile = np.nanpercentile(
+            series_of_logs_of_ratios_of_CD8_G_module_scores_to_CD8_B_module_scores,
+            [1, 99]
+        )
+        series_of_clipped_logs_of_ratios = series_of_logs_of_ratios_of_CD8_G_module_scores_to_CD8_B_module_scores.clip(
+            lower = first_percentile,
+            upper = ninety_ninth_percentile
+        )
+        if stratum == "all":
+            plot_value_vs_indicator(
+                series_of_clipped_logs_of_ratios,
+                series_of_indicators_of_sex,
+                "Female",
+                "Male",
+                "Log of Ratio of CD8 G Module Score and CD8 B Module Score\nvs. Sex",
+                paths.plot_of_log_of_ratio_of_CD8_G_module_score_and_CD8_B_module_score_vs_sex_for_all_samples
+            )
+        elif stratum == "naive":
+            plot_value_vs_indicator(
+                series_of_clipped_logs_of_ratios,
+                series_of_indicators_of_sex,
+                "Female",
+                "Male",
+                "Log of Ratio of CD8 G Module Score and CD8 B Module Score\nvs. Sex",
+                paths.plot_of_log_of_ratio_of_CD8_G_module_score_and_CD8_B_module_score_vs_sex_for_naive_samples
+            )
+        elif stratum == "experienced":
+            plot_value_vs_indicator(
+                series_of_clipped_logs_of_ratios,
+                series_of_indicators_of_sex,
+                "Female",
+                "Male",
+                "Log of Ratio of CD8 G Module Score and CD8 B Module Score\nvs. Sex",
+                paths.plot_of_log_of_ratio_of_CD8_G_module_score_and_CD8_B_module_score_vs_sex_for_experienced_samples
+            )
+        else:
+            raise Exception("Stratum is invalid.")
+        if stratum == "all":
+            list_of_data_frames_of_categories_of_module_scores_and_statistics_re_ICB_status = []
+            data_frame_of_category_of_module_score_CD8_G_minus_CD8_B_and_statistics_re_ICB_status = create_data_frame_of_category_of_module_score_and_statistics(
+                series_of_differences,
+                series_of_indicators_of_ICB_status_for_stratum,
                 "naive",
                 "experienced",
-                name_of_set_of_genes
+                "CD8_G_minus_CD8_B"
             )
-        )
-    data_frame_of_categories_of_module_scores_and_statistics_re_ICB_status = pd.concat(
-        list_of_data_frames_of_categories_of_module_scores_and_statistics_re_ICB_status,
-        axis = 0
-    )
-    data_frame_of_categories_of_module_scores_and_statistics_re_ICB_status["FDR"] = multipletests(
-        data_frame_of_categories_of_module_scores_and_statistics_re_ICB_status["p_value"],
-        method = "fdr_bh"
-    )[1]
-    data_frame_of_categories_of_module_scores_and_statistics_re_ICB_status.to_csv(
-        paths.data_frame_of_categories_of_module_scores_and_statistics_re_ICB_status
-    )
-    plot_value_vs_indicator(
-        series_of_differences,
-        series_of_indicators_of_ICB_status,
-        "naive",
-        "experienced",
-        "Difference between CD8 G Module Score and CD8 B Module Score\nvs. ICB Status",
-        paths.plot_of_difference_between_CD8_G_module_score_and_CD8_B_module_score_vs_ICB_status
-    )
-    first_percentile, ninety_ninth_percentile = np.nanpercentile(
-        series_of_logs_of_ratios_of_CD8_G_module_scores_to_CD8_B_module_scores,
-        [1, 99]
-    )
-    series_of_clipped_logs_of_ratios = series_of_logs_of_ratios_of_CD8_G_module_scores_to_CD8_B_module_scores.clip(
-        lower = first_percentile,
-        upper = ninety_ninth_percentile
-    )
-    plot_value_vs_indicator(
-        series_of_clipped_logs_of_ratios,
-        series_of_indicators_of_ICB_status,
-        "naive",
-        "experienced",
-        "Log of Ratio of CD8 G Module Score and CD8 B Module Score\nvs. ICB Status",
-        paths.plot_of_log_of_ratio_of_CD8_G_module_score_and_CD8_B_module_score_vs_ICB_status
-    )
+            list_of_data_frames_of_categories_of_module_scores_and_statistics_re_ICB_status.append(
+                data_frame_of_category_of_module_score_CD8_G_minus_CD8_B_and_statistics_re_ICB_status
+            )
+            for name_of_set_of_genes in list_of_names_of_sets_of_genes:
+                series_of_module_scores = data_frame_of_sample_IDs_and_module_scores_for_6_sets_of_genes[name_of_set_of_genes]
+                list_of_data_frames_of_categories_of_module_scores_and_statistics_re_ICB_status.append(
+                    create_data_frame_of_category_of_module_score_and_statistics(
+                        series_of_module_scores,
+                        series_of_indicators_of_ICB_status_for_stratum,
+                        "naive",
+                        "experienced",
+                        name_of_set_of_genes
+                    )
+                )
+            data_frame_of_categories_of_module_scores_and_statistics_re_ICB_status = pd.concat(
+                list_of_data_frames_of_categories_of_module_scores_and_statistics_re_ICB_status,
+                axis = 0
+            )
+            data_frame_of_categories_of_module_scores_and_statistics_re_ICB_status["FDR"] = multipletests(
+                data_frame_of_categories_of_module_scores_and_statistics_re_ICB_status["p_value"],
+                method = "fdr_bh"
+            )[1]
+            data_frame_of_categories_of_module_scores_and_statistics_re_ICB_status.to_csv(
+                paths.data_frame_of_categories_of_module_scores_and_statistics_re_ICB_status
+            )
+            plot_value_vs_indicator(
+                series_of_differences,
+                series_of_indicators_of_ICB_status_for_stratum,
+                "naive",
+                "experienced",
+                "Difference between CD8 G Module Score and CD8 B Module Score\nvs. ICB Status",
+                paths.plot_of_difference_between_CD8_G_module_score_and_CD8_B_module_score_vs_ICB_status
+            )
+            plot_value_vs_indicator(
+                series_of_clipped_logs_of_ratios,
+                series_of_indicators_of_ICB_status_for_stratum,
+                "naive",
+                "experienced",
+                "Log of Ratio of CD8 G Module Score and CD8 B Module Score\nvs. ICB Status",
+                paths.plot_of_log_of_ratio_of_CD8_G_module_score_and_CD8_B_module_score_vs_ICB_status
+            )
 
 
 if __name__ == "__main__":

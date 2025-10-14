@@ -111,21 +111,36 @@ class Paths():
         # -----
         self.dictionary_of_names_of_sets_of_genes_and_lists_of_genes = self.root / "dictionary_of_names_of_sets_of_genes_and_lists_of_genes.json"
         # outputs
-        self.data_frame_of_genes_and_statistics_re_sex = self.outputs_of_completing_Aim_1_2 / "data_frame_of_genes_and_statistics_re_sex.csv"
+        self.data_frame_of_genes_and_statistics_re_sex_for_all_samples = self.outputs_of_completing_Aim_1_2 / "data_frame_of_genes_and_statistics_re_sex_for_all_samples.csv"
+        self.data_frame_of_genes_and_statistics_re_sex_for_naive_samples = self.outputs_of_completing_Aim_1_2 / "data_frame_of_genes_and_statistics_re_sex_for_naive_samples.csv"
+        self.data_frame_of_genes_and_statistics_re_sex_for_experienced_samples = self.outputs_of_completing_Aim_1_2 / "data_frame_of_genes_and_statistics_re_sex_for_experienced_samples.csv"
         self.data_frame_of_genes_and_statistics_re_ICB_status = self.outputs_of_completing_Aim_1_2 / "data_frame_of_genes_and_statistics_re_ICB_status.csv"
-        self.data_frame_of_names_of_sets_of_genes_statistics_and_lists_of_genes_re_sex = self.outputs_of_completing_Aim_1_2 / "data_frame_of_names_of_sets_of_genes_statistics_and_lists_of_genes_re_sex.csv"
+        self.data_frame_of_names_of_sets_of_genes_statistics_and_lists_of_genes_re_sex_for_all_samples = self.outputs_of_completing_Aim_1_2 / "data_frame_of_names_of_sets_of_genes_statistics_and_lists_of_genes_re_sex_for_all_samples.csv"
+        self.data_frame_of_names_of_sets_of_genes_statistics_and_lists_of_genes_re_sex_for_naive_samples = self.outputs_of_completing_Aim_1_2 / "data_frame_of_names_of_sets_of_genes_statistics_and_lists_of_genes_re_sex_for_naive_samples.csv"
+        self.data_frame_of_names_of_sets_of_genes_statistics_and_lists_of_genes_re_sex_for_experienced_samples = self.outputs_of_completing_Aim_1_2 / "data_frame_of_names_of_sets_of_genes_statistics_and_lists_of_genes_re_sex_for_experienced_samples.csv"
         self.data_frame_of_names_of_sets_of_genes_statistics_and_lists_of_genes_re_ICB_status = self.outputs_of_completing_Aim_1_2 / "data_frame_of_names_of_sets_of_genes_statistics_and_lists_of_genes_re_ICB_status.csv"
-        self.plot_of_FDR_vs_Normalized_Enrichment_Score_re_sex = self.outputs_of_completing_Aim_1_2 / "plot_of_FDR_vs_Normalized_Enrichment_Score_re_sex.png"
+        self.plot_of_FDR_vs_Normalized_Enrichment_Score_re_sex_for_all_samples = self.outputs_of_completing_Aim_1_2 / "plot_of_FDR_vs_Normalized_Enrichment_Score_re_sex_for_all_samples.png"
+        self.plot_of_FDR_vs_Normalized_Enrichment_Score_re_sex_for_naive_samples = self.outputs_of_completing_Aim_1_2 / "plot_of_FDR_vs_Normalized_Enrichment_Score_re_sex_for_naive_samples.png"
+        self.plot_of_FDR_vs_Normalized_Enrichment_Score_re_sex_for_experienced_samples = self.outputs_of_completing_Aim_1_2 / "plot_of_FDR_vs_Normalized_Enrichment_Score_re_sex_for_experienced_samples.png"
         self.plot_of_FDR_vs_Normalized_Enrichment_Score_re_ICB_status = self.outputs_of_completing_Aim_1_2 / "plot_of_FDR_vs_Normalized_Enrichment_Score_re_ICB_status.png"
-        self.data_frame_of_sample_IDs_and_module_scores_for_6_sets_of_genes = self.outputs_of_completing_Aim_1_2 / "data_frame_of_sample_IDs_and_module_scores_for_6_sets_of_genes.csv"
-        self.data_frame_of_sample_IDs_CD8_B_and_G_module_scores_and_differences = self.outputs_of_completing_Aim_1_2 / "data_frame_of_sample_IDs_CD8_B_and_G_module_scores_and_differences.csv"
-        self.data_frame_of_categories_of_module_scores_and_statistics_re_sex = self.outputs_of_completing_Aim_1_2 / "data_frame_of_categories_of_module_scores_and_statistics_re_sex.csv"
+        self.data_frame_of_sample_IDs_and_module_scores_for_6_sets_of_genes_for_all_samples = self.outputs_of_completing_Aim_1_2 / "data_frame_of_sample_IDs_and_module_scores_for_6_sets_of_genes_for_all_samples.csv"
+        self.data_frame_of_sample_IDs_and_module_scores_for_6_sets_of_genes_for_naive_samples = self.outputs_of_completing_Aim_1_2 / "data_frame_of_sample_IDs_and_module_scores_for_6_sets_of_genes_for_naive_samples.csv"
+        self.data_frame_of_sample_IDs_and_module_scores_for_6_sets_of_genes_for_experienced_samples = self.outputs_of_completing_Aim_1_2 / "data_frame_of_sample_IDs_and_module_scores_for_6_sets_of_genes_for_experienced_samples.csv"
+        self.data_frame_of_sample_IDs_CD8_B_and_G_module_scores_and_differences_for_all_samples = self.outputs_of_completing_Aim_1_2 / "data_frame_of_sample_IDs_CD8_B_and_G_module_scores_and_differences_for_all_samples.csv"
+        self.data_frame_of_sample_IDs_CD8_B_and_G_module_scores_and_differences_for_naive_samples = self.outputs_of_completing_Aim_1_2 / "data_frame_of_sample_IDs_CD8_B_and_G_module_scores_and_differences_for_naive_samples.csv"
+        self.data_frame_of_sample_IDs_CD8_B_and_G_module_scores_and_differences_for_experienced_samples = self.outputs_of_completing_Aim_1_2 / "data_frame_of_sample_IDs_CD8_B_and_G_module_scores_and_differences_for_experienced_samples.csv"
+        self.data_frame_of_categories_of_module_scores_and_statistics_re_sex_for_all_samples = self.outputs_of_completing_Aim_1_2 / "data_frame_of_categories_of_module_scores_and_statistics_re_sex_for_all_samples.csv"
+        self.data_frame_of_categories_of_module_scores_and_statistics_re_sex_for_naive_samples = self.outputs_of_completing_Aim_1_2 / "data_frame_of_categories_of_module_scores_and_statistics_re_sex_for_naive_samples.csv"
+        self.data_frame_of_categories_of_module_scores_and_statistics_re_sex_for_experienced_samples = self.outputs_of_completing_Aim_1_2 / "data_frame_of_categories_of_module_scores_and_statistics_re_sex_for_experienced_samples.csv"
         self.data_frame_of_categories_of_module_scores_and_statistics_re_ICB_status = self.outputs_of_completing_Aim_1_2 / "data_frame_of_categories_of_module_scores_and_statistics_re_ICB_status.csv"
-        self.plot_of_difference_between_CD8_G_module_score_and_CD8_B_module_score_vs_sex = self.outputs_of_completing_Aim_1_2 / "plot_of_difference_between_CD8_G_module_score_and_CD8_B_module_score_vs_sex.png"
+        self.plot_of_difference_between_CD8_G_module_score_and_CD8_B_module_score_vs_sex_for_all_samples = self.outputs_of_completing_Aim_1_2 / "plot_of_difference_between_CD8_G_module_score_and_CD8_B_module_score_vs_sex_for_all_samples.png"
+        self.plot_of_difference_between_CD8_G_module_score_and_CD8_B_module_score_vs_sex_for_naive_samples = self.outputs_of_completing_Aim_1_2 / "plot_of_difference_between_CD8_G_module_score_and_CD8_B_module_score_vs_sex_for_naive_samples.png"
+        self.plot_of_difference_between_CD8_G_module_score_and_CD8_B_module_score_vs_sex_for_experienced_samples = self.outputs_of_completing_Aim_1_2 / "plot_of_difference_between_CD8_G_module_score_and_CD8_B_module_score_vs_sex_for_experienced_samples.png"
         self.plot_of_difference_between_CD8_G_module_score_and_CD8_B_module_score_vs_ICB_status = self.outputs_of_completing_Aim_1_2 / "plot_of_difference_between_CD8_G_module_score_and_CD8_B_module_score_vs_ICB_status.png"
-        self.plot_of_log_of_ratio_of_CD8_G_module_score_and_CD8_B_module_score_vs_sex = self.outputs_of_completing_Aim_1_2 / "plot_of_log_of_ratio_of_CD8_G_module_score_and_CD8_B_module_score_vs_sex.png"
+        self.plot_of_log_of_ratio_of_CD8_G_module_score_and_CD8_B_module_score_vs_sex_for_all_samples = self.outputs_of_completing_Aim_1_2 / "plot_of_log_of_ratio_of_CD8_G_module_score_and_CD8_B_module_score_vs_sex_for_all_samples.png"
+        self.plot_of_log_of_ratio_of_CD8_G_module_score_and_CD8_B_module_score_vs_sex_for_naive_samples = self.outputs_of_completing_Aim_1_2 / "plot_of_log_of_ratio_of_CD8_G_module_score_and_CD8_B_module_score_vs_sex_for_naive_samples.png"
+        self.plot_of_log_of_ratio_of_CD8_G_module_score_and_CD8_B_module_score_vs_sex_for_experienced_samples = self.outputs_of_completing_Aim_1_2 / "plot_of_log_of_ratio_of_CD8_G_module_score_and_CD8_B_module_score_vs_sex_for_experienced_samples.png"
         self.plot_of_log_of_ratio_of_CD8_G_module_score_and_CD8_B_module_score_vs_ICB_status = self.outputs_of_completing_Aim_1_2 / "plot_of_log_of_ratio_of_CD8_G_module_score_and_CD8_B_module_score_vs_ICB_status.png"
-        self.README_for_Aim_1_2 = self.outputs_of_completing_Aim_1_2 / "README.txt"
 
         # ORIEN_analysis/ORIEN_analysis/complete_Aim_2_1.py
         # dependencies
@@ -195,6 +210,17 @@ class Paths():
         for path in [
             self.enrichment_data_frame_per_xCell,
             self.enrichment_data_frame_per_xCell2_and_Pan_Cancer
+        ]:
+            assert os.path.exists(path), f"The dependency of comparing enrichment scores `{path}` does not exist."
+
+
+    def ensure_dependencies_for_comparing_enrichment_scores_exist(self):
+        for path in [
+            self.outputs_of_completing_Aim_1_2
+        ]:
+            os.makedirs(path, exist_ok = True)
+        for path in [
+
         ]:
             assert os.path.exists(path), f"The dependency of comparing enrichment scores `{path}` does not exist."
 
