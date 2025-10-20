@@ -355,6 +355,46 @@ def create_series_of_indicators_of_ICB_status(
     return series_of_indicators_of_ICB_status
 
 
+def create_scatterplot_of_module_score_vs_ICB_status_by_sex(
+    series_of_module_scores: pd.Series,
+    series_of_indicators_of_ICB_status: pd.Series,
+    series_of_indicators_of_sex: pd.Series,
+    title: str,
+    path_to_plot: str
+):
+    data_frame_of_module_scores_and_indicators_of_ICB_status_and_sex = pd.DataFrame(
+        {
+            "module_score": series_of_module_scores,
+            "ICB_indicator": series_of_indicators_of_ICB_status,
+            "sex_indicator": series_of_indicators_of_sex
+        }
+    ).dropna()
+    data_frame_of_module_scores_and_indicators_of_ICB_status_and_sex["ICB_status"] = np.where(
+        data_frame_of_module_scores_and_indicators_of_ICB_status_and_sex["ICB_indicator"] == 0,
+        "Naive",
+        "Experienced"
+    )
+    data_frame_of_module_scores_and_indicators_of_ICB_status_and_sex["Sex"] = np.where(
+        data_frame_of_module_scores_and_indicators_of_ICB_status_and_sex["sex_indicator"] == 0,
+        "Female",
+        "Male"
+    )
+    plt.figure()
+    ax = sns.stripplot(
+        data = data_frame_of_module_scores_and_indicators_of_ICB_status_and_sex,
+        x = "ICB_status",
+        y = "module_score",
+        hue = "Sex",
+        jitter = 0.25
+    )
+    ax.set_xlabel("ICB status")
+    ax.set_ylabel("module score")
+    ax.set_title(title)
+    plt.tight_layout()
+    plt.savefig(path_to_plot)
+    plt.close()
+
+
 def main():
     paths.ensure_dependencies_for_comparing_enrichment_scores_exist()
     clinical_molecular_linkage_data = pd.read_csv(paths.clinical_molecular_linkage_data)
@@ -550,6 +590,20 @@ def main():
             )
         else:
             raise Exception("Stratum is invalid.")
+        if stratum == "all":
+            for name_of_set_of_genes in list_of_names_of_sets_of_genes:
+                series_of_module_scores = (
+                    data_frame_of_sample_IDs_and_module_scores_for_6_sets_of_genes[name_of_set_of_genes]
+                )
+                create_scatterplot_of_module_score_vs_ICB_status_by_sex(
+                    series_of_module_scores = series_of_module_scores,
+                    series_of_indicators_of_ICB_status = series_of_indicators_of_ICB_status_for_stratum,
+                    series_of_indicators_of_sex = series_of_indicators_of_sex,
+                    title = f"Module Score vs. ICB Status for Set of Genes {name_of_set_of_genes} by Sex",
+                    path_to_plot = (
+                        paths.outputs_of_completing_Aim_1_2 / f"plot_of_module_score_vs_ICB_status_by_sex_for_set_of_genes_{name_of_set_of_genes}.png"
+                    )
+                )
         series_of_CD8_B_module_scores_for_samples = create_series_of_module_scores(
             expression_submatrix,
             sorted_list_of_genes_in_set_CD8_B
