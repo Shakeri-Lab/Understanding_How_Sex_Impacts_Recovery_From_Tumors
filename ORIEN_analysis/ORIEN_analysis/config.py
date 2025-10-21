@@ -141,6 +141,12 @@ class Paths():
         self.plot_of_log_of_ratio_of_CD8_G_module_score_and_CD8_B_module_score_vs_sex_for_naive_samples = self.outputs_of_completing_Aim_1_2 / "plot_of_log_of_ratio_of_CD8_G_module_score_and_CD8_B_module_score_vs_sex_for_naive_samples.png"
         self.plot_of_log_of_ratio_of_CD8_G_module_score_and_CD8_B_module_score_vs_sex_for_experienced_samples = self.outputs_of_completing_Aim_1_2 / "plot_of_log_of_ratio_of_CD8_G_module_score_and_CD8_B_module_score_vs_sex_for_experienced_samples.png"
         self.plot_of_log_of_ratio_of_CD8_G_module_score_and_CD8_B_module_score_vs_ICB_status = self.outputs_of_completing_Aim_1_2 / "plot_of_log_of_ratio_of_CD8_G_module_score_and_CD8_B_module_score_vs_ICB_status.png"
+        self.data_frame_of_genes_log_FCs_p_values_and_FDRs_for_naive_and_experienced_samples = self.outputs_of_completing_Aim_1_2 / "data_frame_of_genes_log_FCs_p_values_and_FDRs_for_naive_and_experienced_samples.csv"
+        self.data_frame_of_genes_log_FCs_p_values_and_FDRs_for_female_and_male_samples = self.outputs_of_completing_Aim_1_2 / "data_frame_of_genes_log_FCs_p_values_and_FDRs_for_female_and_male_samples.csv"
+        self.volcano_plot_for_female_and_male_samples = self.outputs_of_completing_Aim_1_2 / "volcano_plot_for_female_and_male_samples.png"
+        self.volcano_plot_for_naive_and_experienced_samples = self.outputs_of_completing_Aim_1_2 / "volcano_plot_for_naive_and_experienced_samples.png"
+        self.heatmap_of_normalized_expressions_for_top_differentially_expressed_genes_for_female_and_male_samples = self.outputs_of_completing_Aim_1_2 / "heatmap_of_normalized_expressions_for_top_differentially_expressed_genes_for_female_and_male_samples.png"
+        self.heatmap_of_normalized_expressions_for_top_differentially_expressed_genes_for_naive_and_experienced_samples = self.outputs_of_completing_Aim_1_2 / "heatmap_of_normalized_expressions_for_top_differentially_expressed_genes_for_naive_and_experienced_samples.png"
 
         # ORIEN_analysis/ORIEN_analysis/complete_Aim_2_1.py
         # dependencies

@@ -450,139 +450,159 @@ def create_plot_of_mean_module_score_vs_ICB_status_by_sex(
     plt.close()
 
 
-def _per_gene_de_stats(expression_matrix: pd.DataFrame,
-                       indicators: pd.Series,
-                       name0: str,
-                       name1: str,
-                       pseudocount: float = 1e-6) -> pd.DataFrame:
-    """
-    Compute per-gene stats between group0 (indicator==0) and group1 (indicator==1).
-    Returns a DataFrame with columns: log2_fc (group1/group0), p_value, FDR.
-    """
-    expr = expression_matrix.loc[:, indicators.index]  # align columns
-    group0 = expr.loc[:, indicators == 0]
-    group1 = expr.loc[:, indicators == 1]
-
-    # log2 fold change of means with tiny pseudocount (robust for TPM)
-    mean0 = (group0.mean(axis=1) + pseudocount)
-    mean1 = (group1.mean(axis=1) + pseudocount)
-    log2_fc = np.log2(mean1 / mean0)
-
-    # Mann–Whitney U, two-sided (works for non-normal TPM)
-    pvals = []
-    for g in expr.index:
-        a = group0.loc[g].to_numpy()
-        b = group1.loc[g].to_numpy()
-        if np.all(np.isfinite(a)) and np.all(np.isfinite(b)) and (a.size > 0) and (b.size > 0):
-            # If all values identical across both groups, p=1.0 quickly
-            if (np.nanstd(a) == 0) and (np.nanstd(b) == 0) and (np.nanmean(a) == np.nanmean(b)):
-                pvals.append(1.0)
-            else:
-                stat, p = mannwhitneyu(a, b, alternative="two-sided")
-                pvals.append(p)
-        else:
-            pvals.append(np.nan)
-    pvals = pd.Series(pvals, index=expr.index, name="p_value")
-    FDR = pd.Series(multipletests(pvals.fillna(1.0), method="fdr_bh")[1],
-                    index=expr.index, name="FDR")
-
-    out = pd.DataFrame({"log2_fc": log2_fc, "p_value": pvals, "FDR": FDR})
-    out.index.name = "gene"
-    return out
+def create_data_frame_of_genes_log_FCs_p_values_and_FDRs(
+    expression_submatrix: pd.DataFrame,
+    series_of_indicators: pd.Series
+) -> pd.DataFrame:
+    expression_submatrix_for_indicator_0 = expression_submatrix.loc[:, series_of_indicators == 0]
+    expression_submatrix_for_indicator_1 = expression_submatrix.loc[:, series_of_indicators == 1]
+    pseudocount: float = 1e-6
+    series_of_mean_expressions_for_indicator_0 = expression_submatrix_for_indicator_0.mean(axis = 1) + pseudocount
+    series_of_mean_expressions_for_indicator_1 = expression_submatrix_for_indicator_1.mean(axis = 1) + pseudocount
+    series_of_log_FCs = np.log2(series_of_mean_expressions_for_indicator_1 / series_of_mean_expressions_for_indicator_0)
+    list_of_p_values = []
+    for gene in expression_submatrix.index:
+        series_of_expressions_for_gene_and_indicator_0 = expression_submatrix_for_indicator_0.loc[gene].to_numpy()
+        series_of_expressions_for_gene_and_indicator_1 = expression_submatrix_for_indicator_1.loc[gene].to_numpy()
+        _, p_value = mannwhitneyu(
+            series_of_expressions_for_gene_and_indicator_0,
+            series_of_expressions_for_gene_and_indicator_1,
+            alternative = "two-sided"
+        )
+        list_of_p_values.append(p_value)
+    series_of_p_values = pd.Series(list_of_p_values, index = expression_submatrix.index, name = "p_value")
+    series_of_FDRs = multipletests(series_of_p_values, method = "fdr_bh")[1]
+    data_frame_of_genes_log_FCs_p_values_and_FDRs = pd.DataFrame(
+        {
+            "log_FC": series_of_log_FCs,
+            "p_value": list_of_p_values,
+            "FDR": series_of_FDRs
+        }
+    )
+    data_frame_of_genes_log_FCs_p_values_and_FDRs.index.name = "gene"
+    return data_frame_of_genes_log_FCs_p_values_and_FDRs
 
 
-def create_volcano_plot(de_df: pd.DataFrame,
-                        title: str,
-                        path_to_plot: str,
-                        fdr_thresh: float = 0.05,
-                        lfc_thresh: float = 1.0,
-                        top_labels: int = 15):
-    """
-    de_df has columns: log2_fc, p_value, FDR and index=gene.
-    """
-    df = de_df.copy()
-    df["neglog10p"] = -np.log10(df["p_value"].clip(lower=1e-300))
-    df["sig"] = (df["FDR"] < fdr_thresh)
-
-    plt.figure(figsize=(7, 6))
-    ax = sns.scatterplot(data=df, x="log2_fc", y="neglog10p", hue="sig", edgecolor=None, s=10)
-    ax.axvline(-lfc_thresh, ls="--", lw=1, c="gray")
-    ax.axvline( lfc_thresh, ls="--", lw=1, c="gray")
-    ax.axhline(-np.log10(fdr_thresh), ls="--", lw=1, c="gray")
-    ax.set_xlabel("log2 fold change")
-    ax.set_ylabel("-log10(p-value)")
+def create_volcano_plot(
+    data_frame_of_genes_log_FCs_p_values_and_FDRs: pd.DataFrame,
+    title: str,
+    path_of_plot: str
+):
+    data_frame = data_frame_of_genes_log_FCs_p_values_and_FDRs.copy()
+    data_frame["negative_log_base_10_of_p_value"] = -np.log10(data_frame["p_value"])
+    significance_level = 0.05
+    data_frame["indicator_of_whether_differential_expression_is_significant"] = (data_frame["FDR"] < significance_level)
+    plt.figure()
+    ax = sns.scatterplot(
+        data = data_frame,
+        x = "log_FC",
+        y = "negative_log_base_10_of_p_value",
+        hue = "indicator_of_whether_differential_expression_is_significant",
+        s = 10
+    )
+    log_fold_change_of_1 = 1.0
+    ax.axvline(-log_fold_change_of_1, lw = 1, c = "black")
+    ax.axvline(log_fold_change_of_1, lw = 1, c = "black")
+    log_base_10_of_significance_level = -np.log10(significance_level)
+    ax.axhline(log_base_10_of_significance_level, lw = 1, c = "black")
+    ax.set_xlabel("log_2(fold change)")
+    ax.set_ylabel("-log_10(p value)")
     ax.set_title(title)
-    ax.legend(title=f"FDR < {fdr_thresh:g}", loc="upper right")
-
-    # annotate a few top hits by |lfc| * -log10(p)
-    score = df["neglog10p"] * df["log2_fc"].abs()
-    for gene in score.nlargest(top_labels).index:
-        x = df.at[gene, "log2_fc"]
-        y = df.at[gene, "neglog10p"]
-        ax.text(x, y, gene, fontsize=7)
-
+    ax.legend(title = f"FDR < {significance_level}")
+    data_frame_of_scores = data_frame["negative_log_base_10_of_p_value"] * data_frame["log_FC"].abs()
+    number_of_labels = 3
+    for gene in data_frame_of_scores.nlargest(number_of_labels).index:
+        horizontal_coordinate = data_frame.at[gene, "log_FC"]
+        vertical_coordinate = data_frame.at[gene, "negative_log_base_10_of_p_value"]
+        ax.text(horizontal_coordinate, vertical_coordinate, gene, fontsize = 7)
     plt.tight_layout()
-    plt.savefig(path_to_plot, dpi=300)
+    plt.savefig(path_of_plot)
     plt.close()
 
 
-def create_expression_heatmap(expression_matrix: pd.DataFrame,
-                              indicators: pd.Series,
-                              name0: str,
-                              name1: str,
-                              title: str,
-                              path_to_plot: str,
-                              de_df: pd.DataFrame | None = None,
-                              max_genes: int = 100,
-                              cluster_rows: bool = False):
-    """
-    Heatmap across a *subset* of genes to avoid OOM:
-      - If de_df is provided, select up to max_genes (half up, half down) among FDR<0.05 by |log2_fc|.
-      - Otherwise, randomly sample up to max_genes genes.
-    Rows are z-scored per gene. Columns annotated by group.
-    """
-    # align
-    expr = expression_matrix.loc[:, indicators.index]
-
-    # choose genes
-    if de_df is not None and ("log2_fc" in de_df.columns) and ("FDR" in de_df.columns):
-        sig = de_df[de_df["FDR"] < 0.05].copy()
-        if sig.empty:
-            chosen = de_df.reindex(expr.index).nlargest(max_genes, columns="log2_fc", keep="all").index
-        else:
-            k_each = max_genes // 2
-            up = sig.sort_values("log2_fc", ascending=False).head(k_each).index
-            down = sig.sort_values("log2_fc", ascending=True).head(k_each).index
-            chosen = pd.Index(up).union(pd.Index(down))
-    else:
-        chosen = pd.Index(expr.index).to_series().sample(min(max_genes, expr.shape[0]), random_state=0).index
-
-    expr = expr.loc[chosen]
-
-    # z-score per gene (float32 to reduce memory)
-    z_expr = z_score_expressions_for_gene(expr).astype(np.float32)
-
-    # column order: group0 then group1
-    ordered_cols = list(indicators[indicators == 0].index) + list(indicators[indicators == 1].index)
-    z_expr = z_expr.loc[:, ordered_cols]
-
-    # column colors
-    col_colors = indicators.loc[ordered_cols].map({0: name0, 1: name1})
-    palette = {name0: "#1f77b4", name1: "#d62728"}  # blue / red
-    col_colors = col_colors.map(palette)
-    col_colors.name = "Sex" if name0 == "Female" else "ICB status"
-
-    # Use heatmap (no row clustering) to avoid O(n^2) memory
-    g = sns.clustermap(z_expr,
-                       col_cluster=False,
-                       row_cluster=cluster_rows,   # default False
-                       cmap="RdBu_r",
-                       xticklabels=False,
-                       yticklabels=False,
-                       col_colors=col_colors,
-                       figsize=(8, 10))
-    plt.suptitle(title, y=1.02)
-    plt.savefig(path_to_plot, dpi=300, bbox_inches="tight")
+def create_expression_heatmap(
+    expression_submatrix: pd.DataFrame,
+    series_of_indicators: pd.Series,
+    name_of_indicator_0: str,
+    name_of_indicator_1: str,
+    title: str,
+    path_of_plot: str,
+    data_frame_of_genes_log_FCs_p_values_and_FDRs: pd.DataFrame
+):
+    number_of_genes = 100
+    data_frame = data_frame_of_genes_log_FCs_p_values_and_FDRs.copy()
+    data_frame["volcano_score"] = -np.log10(data_frame["p_value"]) * data_frame["log_FC"].abs()
+    series_of_indicators_that_differential_expression_is_significant = data_frame["FDR"] < 0.05
+    data_frame_of_significant_genes_and_statistics = (
+        data_frame[series_of_indicators_that_differential_expression_is_significant].copy()
+    )
+    data_frame_of_significant_or_insignificant_genes_and_statistics = (
+        data_frame_of_significant_genes_and_statistics
+        if not data_frame_of_significant_genes_and_statistics.empty
+        else data_frame
+    )
+    index_of_significant_or_insignificant_genes_with_positive_log_FCs_and_highest_volcano_scores_and_log_FCs = (
+        data_frame_of_significant_or_insignificant_genes_and_statistics
+        [data_frame_of_significant_or_insignificant_genes_and_statistics["log_FC"] > 0]
+        .sort_values(
+            ["volcano_score", "log_FC"],
+            ascending = [False, False]
+        )
+        .head(number_of_genes // 2)
+        .index
+    )
+    index_of_significant_or_insignificant_genes_with_negative_log_FCs_highest_volcano_scores_and_lowest_log_FCs = (
+        data_frame_of_significant_or_insignificant_genes_and_statistics
+        [data_frame_of_significant_or_insignificant_genes_and_statistics["log_FC"] < 0]
+        .sort_values(
+            ["volcano_score", "log_FC"],
+            ascending = [False, True]
+        )
+        .head(number_of_genes // 2)
+        .index
+    )
+    union_of_indices = (
+        pd.Index(index_of_significant_or_insignificant_genes_with_positive_log_FCs_and_highest_volcano_scores_and_log_FCs)
+        .union(
+            pd.Index(
+                index_of_significant_or_insignificant_genes_with_negative_log_FCs_highest_volcano_scores_and_lowest_log_FCs
+            )
+        )
+    )
+    if len(union_of_indices) < number_of_genes:
+        union_of_indices = union_of_indices.union(
+            data_frame_of_significant_or_insignificant_genes_and_statistics
+            .drop(union_of_indices)
+            .sort_values("volcano_score", ascending = False)
+            .head(number_of_genes - len(union_of_indices))
+            .index
+        )
+    expression_submatrix = expression_submatrix.loc[union_of_indices]
+    z_scored_expression_matrix = z_score_expressions_for_gene(expression_submatrix)
+    list_of_genes_ordered_by_indicator = list(series_of_indicators[series_of_indicators == 0].index) + list(series_of_indicators[series_of_indicators == 1].index)
+    z_scored_expression_matrix = z_scored_expression_matrix.loc[:, list_of_genes_ordered_by_indicator]
+    series_of_genes_and_colors = series_of_indicators.loc[list_of_genes_ordered_by_indicator].map(
+        {
+            0: "#1f77b4", # blue
+            1: "#d62728" # red
+        }
+    )
+    series_of_genes_and_colors.name = "Sex" if name_of_indicator_0 == "Female" else "ICB status"
+    _ = sns.clustermap(
+        z_scored_expression_matrix,
+        row_cluster = False,
+        col_cluster = False,
+        col_colors = series_of_genes_and_colors,
+        center = 0,
+        cmap = "RdBu_r",
+        vmin = -2,
+        vmax = 2,
+        xticklabels = False,
+        yticklabels = False
+    )
+    plt.suptitle(title)
+    plt.tight_layout()
+    plt.savefig(path_of_plot)
     plt.close()
 
 
@@ -677,55 +697,51 @@ def main():
                 "Male": 1
             }
         )
-
-
-
         if stratum == "all":
-            de_sex = _per_gene_de_stats(
+            data_frame_of_genes_log_FCs_p_values_and_FDRs_for_female_and_male_samples = create_data_frame_of_genes_log_FCs_p_values_and_FDRs(
                 expression_submatrix,
-                series_of_indicators_of_sex,
-                name0="Female", name1="Male"
+                series_of_indicators_of_sex
             )
-            de_sex.to_csv(paths.outputs_of_completing_Aim_1_2 / "DE_sex_male_vs_female_all_samples.csv")
+            data_frame_of_genes_log_FCs_p_values_and_FDRs_for_female_and_male_samples.to_csv(
+                paths.data_frame_of_genes_log_FCs_p_values_and_FDRs_for_female_and_male_samples
+            )
             create_volcano_plot(
-                de_df=de_sex,
-                title="Volcano: Male vs Female (all samples)",
-                path_to_plot=paths.outputs_of_completing_Aim_1_2 / "volcano_male_vs_female_all_samples.png"
+                data_frame_of_genes_log_FCs_p_values_and_FDRs = (
+                    data_frame_of_genes_log_FCs_p_values_and_FDRs_for_female_and_male_samples
+                ),
+                title = "Volcano Plot of Genes for Female and Male Samples",
+                path_of_plot = paths.volcano_plot_for_female_and_male_samples
             )
-            # Sex heatmap
             create_expression_heatmap(
-                expression_matrix=expression_submatrix,
-                indicators=series_of_indicators_of_sex,
-                name0="Female", name1="Male",
-                title="Expression heatmap (top DE genes): Female vs Male",
-                path_to_plot=paths.outputs_of_completing_Aim_1_2 / "heatmap_topDE_female_vs_male.png",
-                de_df=de_sex, max_genes=100, cluster_rows=False
+                expression_submatrix = expression_submatrix,
+                series_of_indicators = series_of_indicators_of_sex,
+                name_of_indicator_0 = "Female",
+                name_of_indicator_1 = "Male",
+                title = "Heatmap of Normalized Expressions\nfor Top Differentially Expressed Genes\nfor Female and Male Samples",
+                path_of_plot = paths.heatmap_of_normalized_expressions_for_top_differentially_expressed_genes_for_female_and_male_samples,
+                data_frame_of_genes_log_FCs_p_values_and_FDRs = data_frame_of_genes_log_FCs_p_values_and_FDRs_for_female_and_male_samples
             )
-        # ---------- NEW: Volcano + Heatmap for ICB (Experienced vs Naive) ----------
-        if stratum == "all":
-            de_icb = _per_gene_de_stats(
+            data_frame_of_genes_log_FCs_p_values_and_FDRs_for_naive_and_experienced_samples = create_data_frame_of_genes_log_FCs_p_values_and_FDRs(
                 expression_submatrix,
-                series_of_indicators_of_ICB_status_for_stratum,
-                name0="Naive", name1="Experienced"
+                series_of_indicators_of_ICB_status_for_stratum
             )
-            de_icb.to_csv(paths.outputs_of_completing_Aim_1_2 / "DE_ICB_experienced_vs_naive_all_samples.csv")
+            data_frame_of_genes_log_FCs_p_values_and_FDRs_for_naive_and_experienced_samples.to_csv(
+                paths.data_frame_of_genes_log_FCs_p_values_and_FDRs_for_naive_and_experienced_samples
+            )
             create_volcano_plot(
-                de_df=de_icb,
-                title="Volcano: ICB Experienced vs Naive (all samples)",
-                path_to_plot=paths.outputs_of_completing_Aim_1_2 / "volcano_ICB_experienced_vs_naive_all_samples.png"
+                data_frame_of_genes_log_FCs_p_values_and_FDRs = data_frame_of_genes_log_FCs_p_values_and_FDRs_for_naive_and_experienced_samples,
+                title = "Volcano Plot of Genes for Naive and Experienced Samples",
+                path_of_plot = paths.volcano_plot_for_naive_and_experienced_samples
             )
-            # ICB heatmap
             create_expression_heatmap(
-                expression_matrix=expression_submatrix,
-                indicators=series_of_indicators_of_ICB_status_for_stratum,
-                name0="Naive", name1="Experienced",
-                title="Expression heatmap (top DE genes): ICB Naive vs Experienced",
-                path_to_plot=paths.outputs_of_completing_Aim_1_2 / "heatmap_topDE_ICB_naive_vs_experienced.png",
-                de_df=de_icb, max_genes=100, cluster_rows=False
+                expression_submatrix = expression_submatrix,
+                series_of_indicators = series_of_indicators_of_ICB_status_for_stratum,
+                name_of_indicator_0 = "Naive",
+                name_of_indicator_1 = "Experienced",
+                title = "Heatmap of Normalized Expressions\nfor Top Differentially Expressed Genes\nfor Naive and Experienced Samples",
+                path_of_plot = paths.heatmap_of_normalized_expressions_for_top_differentially_expressed_genes_for_naive_and_experienced_samples,
+                data_frame_of_genes_log_FCs_p_values_and_FDRs = data_frame_of_genes_log_FCs_p_values_and_FDRs_for_naive_and_experienced_samples
             )
-
-
-
         data_frame_of_genes_and_statistics_re_sex = compute_point_biserial_correlation_for_each_gene(
             expression_submatrix,
             series_of_indicators_of_sex
