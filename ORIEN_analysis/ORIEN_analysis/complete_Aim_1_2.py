@@ -570,13 +570,18 @@ def create_expression_heatmap(
         )
     )
     if len(union_of_indices) < number_of_genes:
-        union_of_indices = union_of_indices.union(
+        index_of_significant_or_insignificant_genes_other_than_genes_in_union_of_indices = (
             data_frame_of_significant_or_insignificant_genes_and_statistics
             .drop(union_of_indices)
             .sort_values("volcano_score", ascending = False)
             .head(number_of_genes - len(union_of_indices))
             .index
         )
+        union_of_indices = union_of_indices.union(
+            index_of_significant_or_insignificant_genes_other_than_genes_in_union_of_indices
+        )
+    if len(union_of_indices) < number_of_genes:
+        raise Exception("Union of indices still does not have 100 genes.")
     expression_submatrix = expression_submatrix.loc[union_of_indices]
     z_scored_expression_matrix = z_score_expressions_for_gene(expression_submatrix)
     list_of_genes_ordered_by_indicator = list(series_of_indicators[series_of_indicators == 0].index) + list(series_of_indicators[series_of_indicators == 1].index)
