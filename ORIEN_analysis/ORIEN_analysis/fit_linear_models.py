@@ -7,8 +7,6 @@ import statsmodels.formula.api as smf
 from scipy import stats
 
 import matplotlib.pyplot as plt
-import os
-import re
 
 
 def numericize_age(age) -> float:
@@ -40,6 +38,69 @@ def _dedupe(df: pd.DataFrame, key: str, name: str, keep="first") -> pd.DataFrame
     return df
 
 
+def create_data_frame_of_output_and_clinical_molecular_linkage_data(
+    clinical_molecular_linkage_data: pd.DataFrame,
+    output_of_pairing_clinical_data_and_stages_of_tumors: pd.DataFrame
+):
+    data_frame_of_output_and_clinical_molecular_linkage_data = (
+        output_of_pairing_clinical_data_and_stages_of_tumors[["ORIENSpecimenID", "EKN Assigned Stage", "AvatarKey"]]
+        .merge(
+            clinical_molecular_linkage_data[["DeidSpecimenID", "Age At Specimen Collection", "RNASeq"]],
+            how = "left",
+            left_on = "ORIENSpecimenID",
+            right_on = "DeidSpecimenID",
+            validate = "one_to_one"
+        )
+        .drop(columns = "DeidSpecimenID")
+        .rename(
+            columns = {
+                "Age At Specimen Collection": "Age_At_Specimen_Collection",
+                "EKN Assigned Stage": "EKN_Assigned_Stage"
+            }
+        )
+    )
+    data_frame_of_output_and_clinical_molecular_linkage_data["Age_At_Specimen_Collection"] = (
+        data_frame_of_output_and_clinical_molecular_linkage_data["Age_At_Specimen_Collection"].apply(numericize_age)
+    )
+    return data_frame_of_output_and_clinical_molecular_linkage_data
+
+
+def create_data_frame_of_specimen_IDs_and_indicators_that_patient_received_ICB_therapy(
+    clinical_molecular_linkage_data: pd.DataFrame,
+    data_frame_of_output_and_clinical_molecular_linkage_data,
+    medications_data: pd.DataFrame,
+    output_of_pairing_clinical_data_and_stages_of_tumors: pd.DataFrame
+):
+    set_of_medications_for_ICB_therapy = {
+        "Pembrolizumab", "Nivolumab", # PD‑1
+        "Atezolizumab", # PD‑L1
+        "Ipilimumab" # CTLA‑4
+    }
+    medications_data["medication_is_for_ICB_therapy"] = medications_data["Medication"].isin(
+        set_of_medications_for_ICB_therapy
+    )
+    medications_data_for_ICB_therapy = medications_data[medications_data["medication_is_for_ICB_therapy"]].copy()
+    medications_data_for_ICB_therapy["AgeAtMedStart"] = medications_data_for_ICB_therapy["AgeAtMedStart"].apply(numericize_age)
+    data_frame_of_output_clinical_molecular_linkage_and_medications_data = (
+        data_frame_of_output_and_clinical_molecular_linkage_data[["ORIENSpecimenID", "AvatarKey", "Age_At_Specimen_Collection"]]
+        .merge(
+            medications_data_for_ICB_therapy[["AvatarKey", "AgeAtMedStart"]],
+            on = "AvatarKey",
+            how = "left"
+        )
+    )
+    data_frame_of_output_clinical_molecular_linkage_and_medications_data["patient_received_ICB_therapy_at_or_before_age_of_specimen_collection"] = (
+        data_frame_of_output_clinical_molecular_linkage_and_medications_data["AgeAtMedStart"] <= data_frame_of_output_clinical_molecular_linkage_and_medications_data["Age_At_Specimen_Collection"]
+    )
+    data_frame_of_specimen_IDs_and_indicators_that_patient_received_ICB_therapy = (
+        data_frame_of_output_clinical_molecular_linkage_and_medications_data
+        .groupby("ORIENSpecimenID", as_index = False)
+        ["patient_received_ICB_therapy_at_or_before_age_of_specimen_collection"]
+        .agg(lambda series: series.any())
+    )
+    return data_frame_of_specimen_IDs_and_indicators_that_patient_received_ICB_therapy
+
+
 def create_data_frame_of_enrichment_scores_and_clinical_and_QC_data(
     path_of_enrichment_matrix
 ) -> tuple[pd.DataFrame, list[str]]:
@@ -69,56 +130,18 @@ def create_data_frame_of_enrichment_scores_and_clinical_and_QC_data(
     clinical_molecular_linkage_data = _dedupe(clinical_molecular_linkage_data, "RNASeq", "CML by RNASeq")
     output_of_pairing_clinical_data_and_stages_of_tumors = _dedupe(output_of_pairing_clinical_data_and_stages_of_tumors, "ORIENSpecimenID", "Output by ORIENSpecimenID")
     enrichment_matrix = _dedupe(enrichment_matrix, "SampleID", "Enrichment by SampleID")
-
-    set_of_medications_for_ICB_therapy = {
-        "Pembrolizumab", "Nivolumab", # PD‑1
-        "Atezolizumab", # PD‑L1
-        "Ipilimumab" # CTLA‑4
-    }
-    medications_data["medication_is_for_ICB_therapy"] = medications_data["Medication"].isin(
-        set_of_medications_for_ICB_therapy
-    )
-    medications_data_for_ICB_therapy = medications_data[medications_data["medication_is_for_ICB_therapy"]].copy()
-    medications_data_for_ICB_therapy["AgeAtMedStart"] = medications_data_for_ICB_therapy["AgeAtMedStart"].apply(numericize_age)
-
-    data_frame_of_output_and_clinical_molecular_linkage_data = (
-        output_of_pairing_clinical_data_and_stages_of_tumors[["ORIENSpecimenID", "EKN Assigned Stage", "AvatarKey"]]
-        .merge(
-            clinical_molecular_linkage_data[["DeidSpecimenID", "Age At Specimen Collection", "RNASeq"]],
-            how = "left",
-            left_on = "ORIENSpecimenID",
-            right_on = "DeidSpecimenID",
-            validate = "one_to_one"
-        )
-        .drop(columns = "DeidSpecimenID")
-        .rename(
-            columns = {
-                "Age At Specimen Collection": "Age_At_Specimen_Collection",
-                "EKN Assigned Stage": "EKN_Assigned_Stage"
-            }
-        )
-    )
-    data_frame_of_output_and_clinical_molecular_linkage_data["Age_At_Specimen_Collection"] = (
-        data_frame_of_output_and_clinical_molecular_linkage_data["Age_At_Specimen_Collection"].apply(numericize_age)
-    )
-    data_frame_of_output_clinical_molecular_linkage_and_medications_data = (
-        data_frame_of_output_and_clinical_molecular_linkage_data[["ORIENSpecimenID", "AvatarKey", "Age_At_Specimen_Collection"]]
-        .merge(
-            medications_data_for_ICB_therapy[["AvatarKey", "AgeAtMedStart"]],
-            on = "AvatarKey",
-            how = "left"
-        )
-    )
-    data_frame_of_output_clinical_molecular_linkage_and_medications_data["patient_received_ICB_therapy_at_or_before_age_of_specimen_collection"] = (
-        data_frame_of_output_clinical_molecular_linkage_and_medications_data["AgeAtMedStart"] <= data_frame_of_output_clinical_molecular_linkage_and_medications_data["Age_At_Specimen_Collection"]
+    data_frame_of_output_and_clinical_molecular_linkage_data = create_data_frame_of_output_and_clinical_molecular_linkage_data(
+        clinical_molecular_linkage_data,
+        output_of_pairing_clinical_data_and_stages_of_tumors
     )
     data_frame_of_specimen_IDs_and_indicators_that_patient_received_ICB_therapy = (
-        data_frame_of_output_clinical_molecular_linkage_and_medications_data
-        .groupby("ORIENSpecimenID", as_index = False)
-        ["patient_received_ICB_therapy_at_or_before_age_of_specimen_collection"]
-        .agg(lambda series: series.any())
+        create_data_frame_of_specimen_IDs_and_indicators_that_patient_received_ICB_therapy(
+            clinical_molecular_linkage_data,
+            data_frame_of_output_and_clinical_molecular_linkage_data,
+            medications_data,
+            output_of_pairing_clinical_data_and_stages_of_tumors
+        )
     )
-
     data_frame_of_enrichment_scores_and_clinical_and_QC_data = (
         data_frame_of_output_and_clinical_molecular_linkage_data[
             data_frame_of_output_and_clinical_molecular_linkage_data["RNASeq"].notna()
@@ -173,29 +196,28 @@ def create_data_frame_of_enrichment_scores_and_clinical_and_QC_data(
 
 def try_to_fit_different_models(formula: str, data_frame: pd.DataFrame):
     df = data_frame.copy()
-
+    scalers = {}
     for name_of_column in ["Age_At_Specimen_Collection", "SequencingDepth"]:
         series = df[name_of_column]
         average = df[name_of_column].mean()
         standard_deviation = df[name_of_column].std()
+        scalers[name_of_column] = (average, standard_deviation)
         df[name_of_column] = (series - average) / standard_deviation
 
     series_of_patient_IDs = df["AvatarKey"]
     series_of_batch_IDs = df["NexusBatch"]
-    array_of_indices_of_patient_IDs = pd.Categorical(series_of_patient_IDs).codes
-    array_of_indices_of_batch_IDs = pd.Categorical(series_of_batch_IDs).codes
-    series_of_unique_patient_IDs_and_numbers_of_occurrences = series_of_patient_IDs.value_counts()
-    series_of_unique_batch_IDs_and_numbers_of_occurrences = series_of_batch_IDs.value_counts()
-    number_of_unique_patient_IDs = series_of_patient_IDs.nunique()
-    number_of_unique_batch_IDs = series_of_batch_IDs.nunique()
-    number_of_patient_IDs_occurring_multiple_times = (series_of_unique_patient_IDs_and_numbers_of_occurrences >= 2).sum()
-    number_of_batch_IDs_occurring_multiple_times = (series_of_unique_batch_IDs_and_numbers_of_occurrences >= 2).sum()
-    there_are_at_least_2_patient_IDs_that_occur_multiple_times = number_of_patient_IDs_occurring_multiple_times >= 2
+    OLS_model = smf.ols(formula, df)
+    regression_results_wrapper = OLS_model.fit()
+    row_labels = regression_results_wrapper.model.data.row_labels
+    number_of_unique_patient_IDs = df.loc[row_labels, "AvatarKey"].nunique()
+    number_of_unique_batch_IDs = df.loc[row_labels, "NexusBatch"].nunique()
+    number_of_patient_IDs_occurring_multiple_times = df.loc[row_labels, "AvatarKey"].value_counts().ge(2).sum()
+    number_of_batch_IDs_occurring_multiple_times = df.loc[row_labels, "NexusBatch"].value_counts().ge(2).sum()
     clusters_of_batch_IDs_exist = (
         (number_of_batch_IDs_occurring_multiple_times >= 1) and
         (number_of_unique_batch_IDs >= 2)
     )
-
+    there_are_at_least_2_patient_IDs_that_occur_multiple_times = number_of_patient_IDs_occurring_multiple_times >= 2
     if there_are_at_least_2_patient_IDs_that_occur_multiple_times:
         dictionary_of_variance_parameters_and_formulas = (
             {"batch": "0 + C(NexusBatch)"}
@@ -205,21 +227,21 @@ def try_to_fit_different_models(formula: str, data_frame: pd.DataFrame):
         linear_mixed_model = smf.mixedlm(
             formula,
             df,
-            groups = series_of_patient_IDs,
+            groups = df["AvatarKey"],
             re_formula = "1",
             vc_formula = dictionary_of_variance_parameters_and_formulas
         )
         regression_results_wrapper = linear_mixed_model.fit()
         type_of_model = "mixed_patient_batch" if clusters_of_batch_IDs_exist else "mixed_patient"
-        return regression_results_wrapper, type_of_model
-    OLS_model = smf.ols(formula, df)
+        return regression_results_wrapper, type_of_model, scalers
+    array_of_indices_of_patient_IDs = pd.Categorical(df.loc[row_labels, "AvatarKey"]).codes
+    array_of_indices_of_batch_IDs = pd.Categorical(df.loc[row_labels, "NexusBatch"]).codes
     minimum_number_of_clusters_for_reliable_cluster_robust_inference = 10
     if (
         (number_of_patient_IDs_occurring_multiple_times >= 1) and
         (number_of_unique_patient_IDs >= minimum_number_of_clusters_for_reliable_cluster_robust_inference) and
         (number_of_unique_batch_IDs >= minimum_number_of_clusters_for_reliable_cluster_robust_inference)
     ):
-        regression_results_wrapper = OLS_model.fit()
         tuple_of_cluster_robust_covariance_matrices = cov_cluster_2groups(
             regression_results_wrapper,
             array_of_indices_of_patient_IDs,
@@ -227,39 +249,41 @@ def try_to_fit_different_models(formula: str, data_frame: pd.DataFrame):
         )
         regression_results_wrapper.cov_params_default = tuple_of_cluster_robust_covariance_matrices[0]
         regression_results_wrapper.cov_type = "cluster_2groups"
-        regression_results_wrapper.cov_kwds = {"groups": (series_of_patient_IDs, series_of_batch_IDs)}
+        regression_results_wrapper.cov_kwds = {"groups": (df.loc[row_labels, "AvatarKey"], df.loc[row_labels, "NexusBatch"])}
         regression_results_wrapper.use_t = False
-        return regression_results_wrapper, "ols_cluster_patient_batch"
+        return regression_results_wrapper, "ols_cluster_patient_batch", scalers
     if number_of_unique_batch_IDs >= minimum_number_of_clusters_for_reliable_cluster_robust_inference:
-        regression_results_wrapper = OLS_model.fit(
+        robust_covariance_results = regression_results_wrapper.get_robustcov_results(
             cov_type = "cluster",
-            cov_kwds = {"groups": array_of_indices_of_batch_IDs}
+            groups = array_of_indices_of_batch_IDs
         )
-        return regression_results_wrapper, "ols_cluster_batch"
+        return robust_covariance_results, "ols_cluster_batch", scalers
     if number_of_unique_patient_IDs >= minimum_number_of_clusters_for_reliable_cluster_robust_inference:
-        regression_results_wrapper = OLS_model.fit(
+        robust_covariance_results = regression_results_wrapper.get_robustcov_results(
             cov_type = "cluster",
-            cov_kwds = {"groups": array_of_indices_of_patient_IDs}
+            groups = array_of_indices_of_patient_IDs
         )
-        return regression_results_wrapper, "ols_cluster_patient"
-    regression_results_wrapper = OLS_model.fit(cov_type = "HC3")
-    return regression_results_wrapper, "ols_hc3"
+        return robust_covariance_results, "ols_cluster_patient", scalers
+    robust_covariance_results = regression_results_wrapper.get_robustcov_results(cov_type = "HC3")
+    return robust_covariance_results, "ols_hc3", scalers
 
 
 def get_statistics(regression_results_wrapper, variable: str):
     list_of_names_of_fixed_effects = regression_results_wrapper.model.exog_names
-    series_of_parameters_of_fixed_effects = regression_results_wrapper.params.loc[list_of_names_of_fixed_effects]
+    series_of_parameters_of_fixed_effects = pd.Series(
+        regression_results_wrapper.params,
+        index = list_of_names_of_fixed_effects
+    )
     parameter = series_of_parameters_of_fixed_effects[variable]
     
-    series_of_standard_errors_of_parameters = regression_results_wrapper.bse
-    series_of_standard_errors_of_parameters_of_fixed_effects = series_of_standard_errors_of_parameters.loc[
-        list_of_names_of_fixed_effects
-    ]
-    standard_error = series_of_standard_errors_of_parameters_of_fixed_effects[variable]
+    series_of_standard_errors_of_parameters = pd.Series(
+        regression_results_wrapper.bse,
+        index = list_of_names_of_fixed_effects
+    )
+    standard_error = series_of_standard_errors_of_parameters[variable]
 
-    series_of_p_values_of_parameters = regression_results_wrapper.pvalues
-    series_of_p_values_of_parameters_of_fixed_effects = series_of_p_values_of_parameters.loc[list_of_names_of_fixed_effects]
-    p_value = series_of_p_values_of_parameters_of_fixed_effects[variable]
+    series_of_p_values_of_parameters = pd.Series(regression_results_wrapper.pvalues, index = list_of_names_of_fixed_effects)
+    p_value = series_of_p_values_of_parameters[variable]
 
     return parameter, standard_error, p_value
 
@@ -281,9 +305,11 @@ def plot_residuals_by_batch(data_frame: pd.DataFrame, formula: str, cell_type: s
     test statistics are deflated, and
     p values are inflated.
     '''
-    OLS_linear_model = smf.ols(formula, data_frame).fit()
-    series_of_residuals = OLS_linear_model.resid
-    series_of_batch_IDs = data_frame["NexusBatch"]
+    OLS_linear_model = smf.ols(formula, data_frame)
+    regression_results_wrapper = OLS_linear_model.fit()
+    row_labels = regression_results_wrapper.model.data.row_labels
+    series_of_residuals = regression_results_wrapper.resid
+    series_of_batch_IDs = data_frame.loc[row_labels, "NexusBatch"]
     data_frame_of_residuals_and_batch_IDs = pd.DataFrame(
         {
             "residual": series_of_residuals,
@@ -368,7 +394,12 @@ def fit_linear_models_for_subset(
             list_of_predictors.append(interaction_term)
         formula = "Score ~ " + " + ".join(list_of_predictors)
         plot_residuals_by_batch(data_frame, formula, cell_type, subset = subset)
-        regression_results_wrapper, type_of_model = try_to_fit_different_models(formula, data_frame)
+        regression_results_wrapper, type_of_model, scalers = try_to_fit_different_models(formula, data_frame)
+        def apply_scalers(df, scalers):
+            for k, (mu, sd) in scalers.items():
+                df[k] = (df[k] - mu) / sd
+            return df
+
         parameter_for_Sex, standard_error_of_parameter_for_Sex, p_value_for_Sex = get_statistics(
             regression_results_wrapper,
             "indicator_of_sex"
@@ -383,8 +414,10 @@ def fit_linear_models_for_subset(
 
         data_frame_for_females = data_frame.copy()
         data_frame_for_females["indicator_of_sex"] = 0
+        data_frame_for_females = apply_scalers(data_frame_for_females, scalers)
         data_frame_for_males = data_frame.copy()
         data_frame_for_males["indicator_of_sex"] = 1
+        data_frame_for_males = apply_scalers(data_frame_for_males, scalers)
         series_of_predicted_enrichment_scores_for_females = regression_results_wrapper.predict(data_frame_for_females)
         series_of_predicted_enrichment_scores_for_males = regression_results_wrapper.predict(data_frame_for_males)
         expected_enrichment_score_given_patient_is_female_and_other_objects_have_certain_values = (

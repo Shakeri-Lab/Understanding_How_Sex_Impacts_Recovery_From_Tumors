@@ -23,6 +23,10 @@ from rpy2.robjects import FloatVector
 from rpy2.robjects import ListVector
 from rpy2.robjects import StrVector
 from cliffs_delta import cliffs_delta
+from ORIEN_analysis.fit_linear_models import (
+    create_data_frame_of_output_and_clinical_molecular_linkage_data,
+    create_data_frame_of_specimen_IDs_and_indicators_that_patient_received_ICB_therapy
+)
 from rpy2.robjects.packages import importr
 import json
 from rpy2.robjects.conversion import localconverter
@@ -266,54 +270,21 @@ def create_series_of_indicators_of_ICB_status(
     clinical_molecular_linkage_data: pd.DataFrame,
     expression_matrix: pd.DataFrame
 ) -> pd.Series:
-    output_of_pairing_clinical_data_and_stages_of_tumors = pd.read_csv(paths.output_of_pairing_clinical_data_and_stages_of_tumors)
     medications_data = pd.read_csv(paths.medications_data)
-    set_of_medications_for_ICB_therapy = {
-        "Pembrolizumab", "Nivolumab", # PD‑1
-        "Atezolizumab", # PD‑L1
-        "Ipilimumab" # CTLA‑4
-    }
-    medications_data["medication_is_for_ICB_therapy"] = medications_data["Medication"].isin(
-        set_of_medications_for_ICB_therapy
+    output_of_pairing_clinical_data_and_stages_of_tumors = pd.read_csv(
+        paths.output_of_pairing_clinical_data_and_stages_of_tumors
     )
-    medications_data_for_ICB_therapy = medications_data[medications_data["medication_is_for_ICB_therapy"]].copy()
-    medications_data_for_ICB_therapy["AgeAtMedStart"] = medications_data_for_ICB_therapy["AgeAtMedStart"].apply(numericize_age)
-    data_frame_of_output_and_clinical_molecular_linkage_data = (
-        output_of_pairing_clinical_data_and_stages_of_tumors[["ORIENSpecimenID", "EKN Assigned Stage", "AvatarKey"]]
-        .merge(
-            clinical_molecular_linkage_data[["DeidSpecimenID", "Age At Specimen Collection", "RNASeq"]],
-            how = "left",
-            left_on = "ORIENSpecimenID",
-            right_on = "DeidSpecimenID",
-            validate = "one_to_one"
-        )
-        .drop(columns = "DeidSpecimenID")
-        .rename(
-            columns = {
-                "Age At Specimen Collection": "Age_At_Specimen_Collection",
-                "EKN Assigned Stage": "EKN_Assigned_Stage"
-            }
-        )
-    )
-    data_frame_of_output_and_clinical_molecular_linkage_data["Age_At_Specimen_Collection"] = (
-        data_frame_of_output_and_clinical_molecular_linkage_data["Age_At_Specimen_Collection"].apply(numericize_age)
-    )
-    data_frame_of_output_clinical_molecular_linkage_and_medications_data = (
-        data_frame_of_output_and_clinical_molecular_linkage_data[["ORIENSpecimenID", "AvatarKey", "Age_At_Specimen_Collection"]]
-        .merge(
-            medications_data_for_ICB_therapy[["AvatarKey", "AgeAtMedStart"]],
-            on = "AvatarKey",
-            how = "left"
-        )
-    )
-    data_frame_of_output_clinical_molecular_linkage_and_medications_data["patient_received_ICB_therapy_at_or_before_age_of_specimen_collection"] = (
-        data_frame_of_output_clinical_molecular_linkage_and_medications_data["AgeAtMedStart"] <= data_frame_of_output_clinical_molecular_linkage_and_medications_data["Age_At_Specimen_Collection"]
+    data_frame_of_output_and_clinical_molecular_linkage_data = create_data_frame_of_output_and_clinical_molecular_linkage_data(
+        clinical_molecular_linkage_data,
+        output_of_pairing_clinical_data_and_stages_of_tumors
     )
     data_frame_of_specimen_IDs_and_indicators_that_patient_received_ICB_therapy = (
-        data_frame_of_output_clinical_molecular_linkage_and_medications_data
-        .groupby("ORIENSpecimenID", as_index = False)
-        ["patient_received_ICB_therapy_at_or_before_age_of_specimen_collection"]
-        .agg(lambda series: series.any())
+        create_data_frame_of_specimen_IDs_and_indicators_that_patient_received_ICB_therapy(
+            clinical_molecular_linkage_data,
+            data_frame_of_output_and_clinical_molecular_linkage_data,
+            medications_data,
+            output_of_pairing_clinical_data_and_stages_of_tumors
+        )
     )
     data_frame_of_enrichment_scores_and_clinical_and_QC_data = (
         data_frame_of_output_and_clinical_molecular_linkage_data[
