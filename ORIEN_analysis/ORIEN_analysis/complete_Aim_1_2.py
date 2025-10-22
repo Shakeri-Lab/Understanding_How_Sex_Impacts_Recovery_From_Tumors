@@ -286,10 +286,9 @@ def create_series_of_indicators_of_ICB_status(
             output_of_pairing_clinical_data_and_stages_of_tumors
         )
     )
-    data_frame_of_enrichment_scores_and_clinical_and_QC_data = (
-        data_frame_of_output_and_clinical_molecular_linkage_data[
-            data_frame_of_output_and_clinical_molecular_linkage_data["RNASeq"].notna()
-        ]
+    data_frame_of_clinical_data = (
+        data_frame_of_output_and_clinical_molecular_linkage_data
+        [data_frame_of_output_and_clinical_molecular_linkage_data["RNASeq"].notna()]
         .merge(
             pd.DataFrame(
                 {"SampleID": expression_matrix.columns}
@@ -310,15 +309,14 @@ def create_series_of_indicators_of_ICB_status(
             validate = "one_to_one"
         )
     )
-    data_frame_of_enrichment_scores_and_clinical_and_QC_data["patient_received_ICB_therapy_at_or_before_age_of_specimen_collection"] = (
-        data_frame_of_enrichment_scores_and_clinical_and_QC_data["patient_received_ICB_therapy_at_or_before_age_of_specimen_collection"]
+    data_frame_of_clinical_data["patient_received_ICB_therapy_at_or_before_age_of_specimen_collection"] = (
+        data_frame_of_clinical_data["patient_received_ICB_therapy_at_or_before_age_of_specimen_collection"]
         .astype("boolean")
         .fillna(False)
     )
     series_of_indicators_of_ICB_status = (
-        data_frame_of_enrichment_scores_and_clinical_and_QC_data[
-            ["RNASeq", "patient_received_ICB_therapy_at_or_before_age_of_specimen_collection"]
-        ]
+        data_frame_of_clinical_data
+        [["RNASeq", "patient_received_ICB_therapy_at_or_before_age_of_specimen_collection"]]
         .set_index("RNASeq")
         ["patient_received_ICB_therapy_at_or_before_age_of_specimen_collection"]
         .astype(int)

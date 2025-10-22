@@ -18,26 +18,6 @@ def numericize_age(age) -> float:
         return float(age)
 
 
-def _norm_str(s: pd.Series) -> pd.Series:
-    s = s.copy()
-    mask = s.notna()
-    s.loc[mask] = s.loc[mask].astype(str).str.strip()
-    s.replace("", np.nan, inplace = True)
-    return s
-
-
-def _dedupe(df: pd.DataFrame, key: str, name: str, keep="first") -> pd.DataFrame:
-    if key not in df.columns:
-        return df
-    nonnull = df[key].notna()
-    dup_mask = df.loc[nonnull, key].duplicated(keep = False)
-    if dup_mask.any():
-        ex = df.loc[nonnull, key][dup_mask].drop_duplicates().head(10).tolist()
-        print(f"[WARN] {name}: {dup_mask.sum()} rows have duplicate {key}. Examples: {ex}")
-        df = df.drop_duplicates(subset=[key], keep=keep)
-    return df
-
-
 def create_data_frame_of_output_and_clinical_molecular_linkage_data(
     clinical_molecular_linkage_data: pd.DataFrame,
     output_of_pairing_clinical_data_and_stages_of_tumors: pd.DataFrame
@@ -113,23 +93,6 @@ def create_data_frame_of_enrichment_scores_and_clinical_and_QC_data(
         paths.output_of_pairing_clinical_data_and_stages_of_tumors
     )
     patient_data = pd.read_csv(paths.patient_data)
-
-    for df, cols in [
-        (QC_data, ["SLID", "NexusBatch"]),
-        (clinical_molecular_linkage_data, ["DeidSpecimenID", "RNASeq"]),
-        (output_of_pairing_clinical_data_and_stages_of_tumors, ["ORIENSpecimenID", "AvatarKey"]),
-        (patient_data, ["AvatarKey"]),
-        (enrichment_matrix, ["SampleID"])
-    ]:
-        for c in cols:
-            if c in df.columns:
-                df[c] = df[c].astype("string")
-                df[c] = _norm_str(df[c])
-    QC_data = _dedupe(QC_data, "SLID", "QC_data")
-    clinical_molecular_linkage_data = _dedupe(clinical_molecular_linkage_data, "DeidSpecimenID", "CML by DeidSpecimenID")
-    clinical_molecular_linkage_data = _dedupe(clinical_molecular_linkage_data, "RNASeq", "CML by RNASeq")
-    output_of_pairing_clinical_data_and_stages_of_tumors = _dedupe(output_of_pairing_clinical_data_and_stages_of_tumors, "ORIENSpecimenID", "Output by ORIENSpecimenID")
-    enrichment_matrix = _dedupe(enrichment_matrix, "SampleID", "Enrichment by SampleID")
     data_frame_of_output_and_clinical_molecular_linkage_data = create_data_frame_of_output_and_clinical_molecular_linkage_data(
         clinical_molecular_linkage_data,
         output_of_pairing_clinical_data_and_stages_of_tumors
@@ -143,9 +106,8 @@ def create_data_frame_of_enrichment_scores_and_clinical_and_QC_data(
         )
     )
     data_frame_of_enrichment_scores_and_clinical_and_QC_data = (
-        data_frame_of_output_and_clinical_molecular_linkage_data[
-            data_frame_of_output_and_clinical_molecular_linkage_data["RNASeq"].notna()
-        ]
+        data_frame_of_output_and_clinical_molecular_linkage_data
+        [data_frame_of_output_and_clinical_molecular_linkage_data["RNASeq"].notna()]
         .merge(
             enrichment_matrix,
             how = "inner",
@@ -570,7 +532,9 @@ def main():
     for path_of_enrichment_data_frame, tuple_of_paths_of_results_of_fitting_LMs in dictionary_of_paths_of_enrichment_data_frames_and_tuples_of_paths_of_results_of_fitting_LMs.items():
         path_of_results_of_fitting_LMs = tuple_of_paths_of_results_of_fitting_LMs[0]
         path_of_significant_results_of_fitting_LMs = tuple_of_paths_of_results_of_fitting_LMs[1]
-        data_frame_of_enrichment_scores_and_clinical_and_QC_data, list_of_cell_types = create_data_frame_of_enrichment_scores_and_clinical_and_QC_data(path_of_enrichment_data_frame)
+        data_frame_of_enrichment_scores_and_clinical_and_QC_data, list_of_cell_types = (
+            create_data_frame_of_enrichment_scores_and_clinical_and_QC_data(path_of_enrichment_data_frame)
+        )
         data_frame_of_results_of_fitting_LMs = fit_linear_models(data_frame_of_enrichment_scores_and_clinical_and_QC_data, list_of_cell_types)
         data_frame_of_results_of_fitting_LMs = adjust_p_values_for_Sex(data_frame_of_results_of_fitting_LMs)
         data_frame_of_results_of_fitting_LMs.sort_values(["subset", "interaction term should be included", "q value for Sex"]).to_csv(path_of_results_of_fitting_LMs, index = False)
