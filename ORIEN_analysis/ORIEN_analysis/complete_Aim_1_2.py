@@ -627,6 +627,8 @@ def main():
             )
         )
     )
+    dictionary_of_names_of_sets_of_genes_and_lists_of_genes["CD8_B"] = sorted_list_of_genes_in_set_CD8_B
+    dictionary_of_names_of_sets_of_genes_and_lists_of_genes["CD8_G"] = sorted_list_of_genes_in_set_CD8_G
     for stratum in ["all", "naive", "experienced"]:
         if stratum == "all":
             series_of_indicators_of_ICB_status_for_stratum = series_of_indicators_of_ICB_status
@@ -806,6 +808,14 @@ def main():
             dictionary_of_names_of_sets_of_genes_and_series_of_module_scores
         )
         data_frame_of_sample_IDs_and_module_scores_for_6_sets_of_genes.index.name = "sample_id"
+        data_frame_of_sample_IDs_and_module_scores_for_6_sets_of_genes["CD8_B"] = create_series_of_module_scores(
+            expression_submatrix,
+            sorted_list_of_genes_in_set_CD8_B
+        )
+        data_frame_of_sample_IDs_and_module_scores_for_6_sets_of_genes["CD8_G"] = create_series_of_module_scores(
+            expression_submatrix,
+            sorted_list_of_genes_in_set_CD8_G
+        )
         if stratum == "all":
             data_frame_of_sample_IDs_and_module_scores_for_6_sets_of_genes.to_csv(
                 paths.data_frame_of_sample_IDs_and_module_scores_for_6_sets_of_genes_for_all_samples
@@ -856,6 +866,15 @@ def main():
         series_of_differences = (
             series_of_CD8_G_module_scores_for_samples - series_of_CD8_B_module_scores_for_samples
         ).rename("difference_between_CD8_G_and_CD8_B_module_scores")
+        dictionary_of_names_of_modules_and_series_of_values = {
+            "CD8_G_minus_CD8_B": series_of_differences,
+            "CD8_B": series_of_CD8_B_module_scores_for_samples,
+            "CD8_G": series_of_CD8_G_module_scores_for_samples
+        }
+        for name_of_set_of_genes in list_of_names_of_sets_of_genes:
+            dictionary_of_names_of_modules_and_series_of_values[name_of_set_of_genes] = (
+                data_frame_of_sample_IDs_and_module_scores_for_6_sets_of_genes[name_of_set_of_genes]
+            )
         series_of_logs_of_ratios_of_CD8_G_module_scores_to_CD8_B_module_scores = create_series_of_logs_of_ratios_of_CD8_G_module_scores_to_CD8_B_module_scores(
             series_of_CD8_G_module_scores_for_samples,
             series_of_CD8_B_module_scores_for_samples
@@ -884,21 +903,10 @@ def main():
         else:
             raise Exception("Stratum is invalid.")
         list_of_data_frames_of_categories_of_module_scores_and_statistics_re_sex = []
-        data_frame_of_category_of_module_score_CD8_G_minus_CD8_B_and_statistics_re_sex = create_data_frame_of_category_of_module_score_and_statistics(
-            series_of_differences,
-            series_of_indicators_of_sex,
-            "females",
-            "males",
-            "CD8_G_minus_CD8_B"
-        )
-        list_of_data_frames_of_categories_of_module_scores_and_statistics_re_sex.append(
-            data_frame_of_category_of_module_score_CD8_G_minus_CD8_B_and_statistics_re_sex
-        )
-        for name_of_set_of_genes in list_of_names_of_sets_of_genes:
-            series_of_module_scores = data_frame_of_sample_IDs_and_module_scores_for_6_sets_of_genes[name_of_set_of_genes]
+        for name_of_set_of_genes, series_of_values in dictionary_of_names_of_modules_and_series_of_values.items():
             list_of_data_frames_of_categories_of_module_scores_and_statistics_re_sex.append(
                 create_data_frame_of_category_of_module_score_and_statistics(
-                    series_of_module_scores,
+                    series_of_values,
                     series_of_indicators_of_sex,
                     "females",
                     "males",
@@ -1005,6 +1013,19 @@ def main():
             list_of_data_frames_of_categories_of_module_scores_and_statistics_re_ICB_status.append(
                 data_frame_of_category_of_module_score_CD8_G_minus_CD8_B_and_statistics_re_ICB_status
             )
+            for name_of_set_of_genes, series_of_module_scores in {
+                "CD8_B": series_of_CD8_B_module_scores_for_samples,
+                "CD8_G": series_of_CD8_G_module_scores_for_samples
+            }.items():
+                list_of_data_frames_of_categories_of_module_scores_and_statistics_re_ICB_status.append(
+                    create_data_frame_of_category_of_module_score_and_statistics(
+                        series_of_module_scores,
+                        series_of_indicators_of_ICB_status_for_stratum,
+                        "naive",
+                        "experienced",
+                        name_of_set_of_genes
+                    )
+                )
             for name_of_set_of_genes in list_of_names_of_sets_of_genes:
                 series_of_module_scores = data_frame_of_sample_IDs_and_module_scores_for_6_sets_of_genes[name_of_set_of_genes]
                 list_of_data_frames_of_categories_of_module_scores_and_statistics_re_ICB_status.append(
