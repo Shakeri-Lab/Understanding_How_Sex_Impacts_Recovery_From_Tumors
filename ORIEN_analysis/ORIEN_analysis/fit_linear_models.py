@@ -45,12 +45,8 @@ def create_data_frame_of_output_and_clinical_molecular_linkage_data(
     return data_frame_of_output_and_clinical_molecular_linkage_data
 
 
-def create_data_frame_of_specimen_IDs_and_indicators_that_patient_received_ICB_therapy(
-    clinical_molecular_linkage_data: pd.DataFrame,
-    data_frame_of_output_and_clinical_molecular_linkage_data,
-    medications_data: pd.DataFrame,
-    output_of_pairing_clinical_data_and_stages_of_tumors: pd.DataFrame
-):
+def create_medications_data_for_ICB_therapy(medications_data: pd.DataFrame) -> pd.DataFrame:
+    medications_data = medications_data.copy()
     set_of_medications_for_ICB_therapy = {
         "Pembrolizumab", "Nivolumab", # PD‑1
         "Atezolizumab", # PD‑L1
@@ -61,22 +57,133 @@ def create_data_frame_of_specimen_IDs_and_indicators_that_patient_received_ICB_t
     )
     medications_data_for_ICB_therapy = medications_data[medications_data["medication_is_for_ICB_therapy"]].copy()
     medications_data_for_ICB_therapy["AgeAtMedStart"] = medications_data_for_ICB_therapy["AgeAtMedStart"].apply(numericize_age)
+    return medications_data_for_ICB_therapy[["AvatarKey", "Medication", "AgeAtMedStart"]]
+
+
+def join_unique_names_of_medications(series_of_names: pd.Series):
+    set_of_names = {name for name in series_of_names}
+    list_of_sorted_names = sorted(set_of_names)
+    return '|'.join(list_of_sorted_names)
+
+
+def create_data_frame_of_patient_IDs_earliest_ages_at_ICB_medication_start_and_medication_names(
+    medications_data_for_ICB_therapy: pd.DataFrame
+) -> pd.DataFrame:
+    data_frame_of_patient_IDs_and_earliest_ages_at_ICB_medication_start = (
+        medications_data_for_ICB_therapy
+        .groupby(
+            "AvatarKey",
+            as_index = False
+        )
+        ["AgeAtMedStart"]
+        .min()
+        .rename(columns = {"AgeAtMedStart": "Earliest_Age_At_ICB_Medication_Start"})
+    )
+    medications_data_with_earliest_ages_at_ICB_medication_start = medications_data_for_ICB_therapy.merge(
+        data_frame_of_patient_IDs_and_earliest_ages_at_ICB_medication_start,
+        how = "inner",
+        left_on = "AvatarKey",
+        right_on = "AvatarKey"
+    )
+    medications_data_for_earliest_ICB_therapy = medications_data_with_earliest_ages_at_ICB_medication_start[
+        medications_data_with_earliest_ages_at_ICB_medication_start["AgeAtMedStart"] ==
+        medications_data_with_earliest_ages_at_ICB_medication_start["Earliest_Age_At_ICB_Medication_Start"]
+    ]
+    data_frame_of_patient_IDs_and_names_of_ICB_medications_at_earliest_age_of_medication_start = (
+        medications_data_for_earliest_ICB_therapy
+        .groupby("AvatarKey")
+        ["Medication"]
+        .apply(join_unique_names_of_medications)
+        .reset_index(name = "Name_Of_ICB_Medication_At_Earliest_Age_Of_Medication_Start")
+    )
+    data_frame_of_patient_IDs_earliest_ages_at_ICB_medication_start_and_medication_names = (
+        data_frame_of_patient_IDs_and_earliest_ages_at_ICB_medication_start
+        .merge(
+            data_frame_of_patient_IDs_and_names_of_ICB_medications_at_earliest_age_of_medication_start,
+            how = "left",
+            left_on = "AvatarKey",
+            right_on = "AvatarKey"
+        )
+    )
+    return data_frame_of_patient_IDs_earliest_ages_at_ICB_medication_start_and_medication_names
+
+
+def create_data_frame_for_reviewing_ICB_status(
+    clinical_molecular_linkage_data: pd.DataFrame,
+    output_of_pairing_clinical_data_and_stages_of_tumors: pd.DataFrame,
+    medications_data: pd.DataFrame,
+    enrichment_matrix: pd.DataFrame
+) -> pd.DataFrame:
+    data_frame = (
+        output_of_pairing_clinical_data_and_stages_of_tumors[["ORIENSpecimenID", "AvatarKey"]]
+        .merge(
+            clinical_molecular_linkage_data[["DeidSpecimenID", "Age At Specimen Collection", "RNASeq"]],
+            how = "left",
+            left_on = "ORIENSpecimenID",
+            right_on = "DeidSpecimenID",
+            validate = "one_to_one"
+        )
+        .drop(columns = "DeidSpecimenID")
+    )
+    series_of_samples_IDs = enrichment_matrix["SampleID"]
+    data_frame = data_frame[data_frame["RNASeq"].isin(series_of_samples_IDs)]
+    data_frame = data_frame.rename(
+        columns = {"Age At Specimen Collection": "Age_At_Specimen_Collection"}
+    )
+    data_frame["Age_At_Specimen_Collection"] = data_frame["Age_At_Specimen_Collection"].apply(numericize_age)
+    medications_data_for_ICB_therapy = create_medications_data_for_ICB_therapy(medications_data)
+    data_frame_of_patient_IDs_earliest_ages_at_ICB_medication_start_and_medication_names = (
+        create_data_frame_of_patient_IDs_earliest_ages_at_ICB_medication_start_and_medication_names(
+            medications_data_for_ICB_therapy
+        )
+    )
+    data_frame = (
+        data_frame
+        .merge(
+            data_frame_of_patient_IDs_earliest_ages_at_ICB_medication_start_and_medication_names,
+            how = "left",
+            left_on = "AvatarKey",
+            right_on = "AvatarKey",
+            validate = "many_to_one"
+        )
+    )
+    data_frame["specimen_is_experienced"] = (
+        data_frame["Earliest_Age_At_ICB_Medication_Start"] <= data_frame["Age_At_Specimen_Collection"]
+    )
+    data_frame["ICB_status"] = np.where(data_frame["specimen_is_experienced"], "Experienced", "Naive")
+    return data_frame
+
+
+def create_data_frame_of_specimen_IDs_and_indicators_that_patient_received_ICB_therapy(
+    clinical_molecular_linkage_data: pd.DataFrame,
+    data_frame_of_output_and_clinical_molecular_linkage_data: pd.DataFrame,
+    medications_data: pd.DataFrame,
+    output_of_pairing_clinical_data_and_stages_of_tumors: pd.DataFrame
+):
+    medications_data_for_ICB_therapy = create_medications_data_for_ICB_therapy(medications_data)
+    data_frame_of_patient_IDs_earliest_ages_at_ICB_medication_start_and_medication_names = (
+        create_data_frame_of_patient_IDs_earliest_ages_at_ICB_medication_start_and_medication_names(
+            medications_data_for_ICB_therapy
+        )
+    )
     data_frame_of_output_clinical_molecular_linkage_and_medications_data = (
         data_frame_of_output_and_clinical_molecular_linkage_data[["ORIENSpecimenID", "AvatarKey", "Age_At_Specimen_Collection"]]
         .merge(
-            medications_data_for_ICB_therapy[["AvatarKey", "AgeAtMedStart"]],
-            on = "AvatarKey",
-            how = "left"
+            data_frame_of_patient_IDs_earliest_ages_at_ICB_medication_start_and_medication_names,
+            how = "left",
+            left_on = "AvatarKey",
+            right_on = "AvatarKey",
+            validate = "many_to_one"
         )
     )
     data_frame_of_output_clinical_molecular_linkage_and_medications_data["patient_received_ICB_therapy_at_or_before_age_of_specimen_collection"] = (
-        data_frame_of_output_clinical_molecular_linkage_and_medications_data["AgeAtMedStart"] <= data_frame_of_output_clinical_molecular_linkage_and_medications_data["Age_At_Specimen_Collection"]
+        data_frame_of_output_clinical_molecular_linkage_and_medications_data["Earliest_Age_At_ICB_Medication_Start"] <=
+        data_frame_of_output_clinical_molecular_linkage_and_medications_data["Age_At_Specimen_Collection"]
     )
     data_frame_of_specimen_IDs_and_indicators_that_patient_received_ICB_therapy = (
-        data_frame_of_output_clinical_molecular_linkage_and_medications_data
-        .groupby("ORIENSpecimenID", as_index = False)
-        ["patient_received_ICB_therapy_at_or_before_age_of_specimen_collection"]
-        .agg(lambda series: series.any())
+        data_frame_of_output_clinical_molecular_linkage_and_medications_data[
+            ["ORIENSpecimenID", "patient_received_ICB_therapy_at_or_before_age_of_specimen_collection"]
+        ]
     )
     return data_frame_of_specimen_IDs_and_indicators_that_patient_received_ICB_therapy
 
@@ -97,6 +204,13 @@ def create_data_frame_of_enrichment_scores_and_clinical_and_QC_data(
         clinical_molecular_linkage_data,
         output_of_pairing_clinical_data_and_stages_of_tumors
     )
+    data_frame_for_reviewing_ICB_status = create_data_frame_for_reviewing_ICB_status(
+        clinical_molecular_linkage_data,
+        output_of_pairing_clinical_data_and_stages_of_tumors,
+        medications_data,
+        enrichment_matrix
+    )
+    data_frame_for_reviewing_ICB_status.to_csv(paths.data_frame_for_reviewing_ICB_status, index = False)
     data_frame_of_specimen_IDs_and_indicators_that_patient_received_ICB_therapy = (
         create_data_frame_of_specimen_IDs_and_indicators_that_patient_received_ICB_therapy(
             clinical_molecular_linkage_data,
@@ -146,13 +260,11 @@ def create_data_frame_of_enrichment_scores_and_clinical_and_QC_data(
         .astype("boolean")
         .fillna(False)
     )
-
     list_of_cell_types = [
         name_of_column
         for name_of_column in enrichment_matrix.columns
         if name_of_column not in ["SampleID", "ImmuneScore", "StromaScore", "MicroenvironmentScore"]
     ]
-
     return data_frame_of_enrichment_scores_and_clinical_and_QC_data, list_of_cell_types
 
 

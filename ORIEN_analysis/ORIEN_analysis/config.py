@@ -80,6 +80,7 @@ class Paths():
         self.results_of_fitting_LMs_per_xCell2_and_Pan_Cancer = self.outputs_of_fitting_LMs / "results_of_fitting_LMs_per_xCell2_and_Pan_Cancer.csv"
         self.significant_results_of_fitting_LMs_per_xCell = self.outputs_of_fitting_LMs / "significant_results_of_fitting_LMs_per_xCell.csv"
         self.significant_results_of_fitting_LMs_per_xCell2_and_Pan_Cancer = self.outputs_of_fitting_LMs / "significant_results_of_fitting_LMs_per_xCell2_and_Pan_Cancer.csv"
+        self.data_frame_for_reviewing_ICB_status = self.outputs_of_fitting_LMs / "data_frame_for_reviewing_ICB_status.csv"
 
 
         # ORIEN_analysis/ORIEN_analysis/compare_enrichment_scores.py
