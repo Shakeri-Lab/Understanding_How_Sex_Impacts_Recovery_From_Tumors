@@ -42,6 +42,8 @@ from rpy2 import robjects as ro
 import seaborn as sns
 from rpy2.robjects import vectors
 
+from pathlib import Path
+
 
 def load_dictionary_of_names_of_sets_of_genes_and_lists_of_genes() -> dict[str, list[str]]:
     string_representing_dictionary_of_names_of_sets_of_genes_and_lists_of_genes = (
@@ -580,6 +582,78 @@ def create_expression_heatmap(
     plt.close()
 
 
+SIGNATURES_FOR_SUMMARY = [f"CD8_{i}" for i in range(1,7)] + ["CD8_B", "CD8_G"]
+ALPHA_MAIN = 0.05
+ALPHA_SUGG = 0.10
+
+def _load_fgsea_csv(path: Path) -> pd.DataFrame:
+    """Load an fgsea result and normalize expected columns (pathway, NES, padj)."""
+    df = pd.read_csv(path)
+    # Make a lowercase->original map to find the columns regardless of exact case
+    lower_map = {c.lower(): c for c in df.columns}
+    required = ["pathway", "nes", "padj"]
+    missing = [r for r in required if r not in lower_map]
+    if missing:
+        raise ValueError(f"Missing columns {missing} in {path}")
+    df = df.rename(columns={
+        lower_map["pathway"]: "pathway",
+        lower_map["nes"]: "NES",
+        lower_map["padj"]: "padj"
+    })
+    return df[["pathway", "NES", "padj"]]
+
+def _summarize_stratum(df_fgsea: pd.DataFrame, stratum_label: str) -> pd.DataFrame:
+    """Subset to our signatures and compute direction/significance."""
+    sub = df_fgsea[df_fgsea["pathway"].isin(SIGNATURES_FOR_SUMMARY)].copy()
+    # Direction convention based on your pipeline:
+    # Sex coded Female=0, Male=1, correlations ranked descending → positive NES = higher in males.
+    sub["direction"] = np.where(
+        sub["NES"] > 0, "higher in males",
+        np.where(sub["NES"] < 0, "higher in females", "no difference")
+    )
+    sub["significance"] = pd.cut(
+        sub["padj"],
+        bins=[-1, ALPHA_MAIN, ALPHA_SUGG, float("inf")],
+        labels=[f"significant (padj<{ALPHA_MAIN})", f"suggestive (padj<{ALPHA_SUGG})", "ns"],
+        right=False
+    )
+    sub["stratum"] = stratum_label
+    return sub.sort_values(["padj", "pathway"])
+
+def _format_lines(df_summary: pd.DataFrame, stratum_label: str) -> str:
+    rows = df_summary[df_summary["stratum"] == stratum_label]
+    lines = [f"{stratum_label}:"]
+    for _, r in rows.iterrows():
+        lines.append(
+            f"  {r['pathway']}: {r['direction']} "
+            f"(NES={r['NES']:.2f}, padj={r['padj']:.3g}; {r['significance']})"
+        )
+    return "\n".join(lines)
+
+def create_sex_diff_summary_from_fgsea_files() -> tuple[pd.DataFrame, str]:
+    """
+    Load the three fgsea-by-sex CSVs produced earlier in main(),
+    build a tidy summary across strata, and return (summary_df, pretty_text).
+    """
+    p_all = Path(paths.data_frame_of_names_of_sets_of_genes_statistics_and_lists_of_genes_re_sex_for_all_samples)
+    p_naive = Path(paths.data_frame_of_names_of_sets_of_genes_statistics_and_lists_of_genes_re_sex_for_naive_samples)
+    p_exper = Path(paths.data_frame_of_names_of_sets_of_genes_statistics_and_lists_of_genes_re_sex_for_experienced_samples)
+
+    df_all   = _summarize_stratum(_load_fgsea_csv(p_all),   "all")
+    df_naive = _summarize_stratum(_load_fgsea_csv(p_naive), "ICB-naive")
+    df_exper = _summarize_stratum(_load_fgsea_csv(p_exper), "ICB-experienced")
+
+    summary = pd.concat([df_all, df_naive, df_exper], ignore_index=True)
+    summary = summary[["stratum", "pathway", "NES", "padj", "direction", "significance"]]
+
+    pretty_text = "\n\n".join([
+        _format_lines(summary, "all"),
+        _format_lines(summary, "ICB-naive"),
+        _format_lines(summary, "ICB-experienced"),
+    ])
+    return summary, pretty_text
+
+
 def main():
     paths.ensure_dependencies_for_comparing_enrichment_scores_exist()
     clinical_molecular_linkage_data = pd.read_csv(paths.clinical_molecular_linkage_data)
@@ -1079,6 +1153,11 @@ def main():
                 "Log of Ratio of CD8 G Module Score and CD8 B Module Score\nvs. ICB Status",
                 paths.plot_of_log_of_ratio_of_CD8_G_module_score_and_CD8_B_module_score_vs_ICB_status
             )
+
+
+    summary_df, pretty_text = create_sex_diff_summary_from_fgsea_files()
+    summary_csv_path = paths.outputs_of_completing_Aim_1_2 / "summary_of_sex_differences_for_CD8_signatures_by_stratum.csv"
+    summary_df.to_csv(summary_csv_path, index=False)
 
 
 if __name__ == "__main__":
