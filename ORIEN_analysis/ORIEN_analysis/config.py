@@ -148,6 +148,9 @@ class Paths():
         self.volcano_plot_for_naive_and_experienced_samples = self.outputs_of_completing_Aim_1_2 / "volcano_plot_for_naive_and_experienced_samples.png"
         self.heatmap_of_normalized_expressions_for_top_differentially_expressed_genes_for_female_and_male_samples = self.outputs_of_completing_Aim_1_2 / "heatmap_of_normalized_expressions_for_top_differentially_expressed_genes_for_female_and_male_samples.png"
         self.heatmap_of_normalized_expressions_for_top_differentially_expressed_genes_for_naive_and_experienced_samples = self.outputs_of_completing_Aim_1_2 / "heatmap_of_normalized_expressions_for_top_differentially_expressed_genes_for_naive_and_experienced_samples.png"
+        self.summary_for_all_samples = self.outputs_of_completing_Aim_1_2 / "summary_for_all_samples.csv"
+        self.summary_for_naive_samples = self.outputs_of_completing_Aim_1_2 / "summary_for_naive_samples.csv"
+        self.summary_for_experienced_samples = self.outputs_of_completing_Aim_1_2 / "summary_for_experienced_samples.csv"
 
         # ORIEN_analysis/ORIEN_analysis/complete_Aim_2_1.py
         # dependencies

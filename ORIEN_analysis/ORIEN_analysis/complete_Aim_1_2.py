@@ -921,18 +921,33 @@ def main():
             data_frame_of_categories_of_module_scores_and_statistics_re_sex["p_value"],
             method = "fdr_bh"
         )[1]
+        summary = data_frame_of_categories_of_module_scores_and_statistics_re_sex[
+            ["mean_value_for_males", "mean_value_for_females", "FDR"]
+        ].copy()
+        summary["difference_between_mean_values_for_males_and_females"] = (
+            summary["mean_value_for_males"] - summary["mean_value_for_females"]
+        )
+        summary["direction"] = np.where(
+            summary["difference_between_mean_values_for_males_and_females"] > 0,
+            "u_M > u_F",
+            "u_F > u_M"
+        )
+        summary["difference_between_mean_values_is_significant"] = summary["FDR"] < 0.05
         if stratum == "all":
             data_frame_of_categories_of_module_scores_and_statistics_re_sex.to_csv(
                 paths.data_frame_of_categories_of_module_scores_and_statistics_re_sex_for_all_samples
             )
+            summary.to_csv(paths.summary_for_all_samples)
         elif stratum == "naive":
             data_frame_of_categories_of_module_scores_and_statistics_re_sex.to_csv(
                 paths.data_frame_of_categories_of_module_scores_and_statistics_re_sex_for_naive_samples
             )
+            summary.to_csv(paths.summary_for_naive_samples)
         elif stratum == "experienced":
             data_frame_of_categories_of_module_scores_and_statistics_re_sex.to_csv(
                 paths.data_frame_of_categories_of_module_scores_and_statistics_re_sex_for_experienced_samples
             )
+            summary.to_csv(paths.summary_for_experienced_samples)
         else:
             raise Exception("Stratum is invalid.")
         if stratum == "all":
