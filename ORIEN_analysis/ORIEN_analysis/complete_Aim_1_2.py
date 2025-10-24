@@ -654,6 +654,138 @@ def create_sex_diff_summary_from_fgsea_files() -> tuple[pd.DataFrame, str]:
     return summary, pretty_text
 
 
+def _summarize_icb(df_fgsea: pd.DataFrame) -> pd.DataFrame:
+    """
+    ICB indicator coded Naive=0, Experienced=1 in the ranks (stratum == 'all').
+    Positive NES ⇒ enriched in ICB-experienced; Negative NES ⇒ enriched in ICB-naive.
+    """
+    sub = df_fgsea[df_fgsea["pathway"].isin(SIGNATURES_FOR_SUMMARY)].copy()
+    sub["direction"] = np.where(
+        sub["NES"] > 0, "higher in experienced",
+        np.where(sub["NES"] < 0, "higher in naive", "no difference")
+    )
+    sub["significance"] = pd.cut(
+        sub["padj"],
+        bins=[-1, ALPHA_MAIN, ALPHA_SUGG, float("inf")],
+        labels=[f"significant (padj<{ALPHA_MAIN})", f"suggestive (padj<{ALPHA_SUGG})", "ns"],
+        right=False
+    )
+    sub["stratum"] = "ICB (all samples)"
+    return sub.sort_values(["padj", "pathway"])[["stratum","pathway","NES","padj","direction","significance"]]
+
+def create_icb_status_summary_from_fgsea_file() -> tuple[pd.DataFrame, str]:
+    """
+    Load the single fgsea-by-ICB CSV (built in main() for stratum=='all') and return
+    a tidy summary plus a human-readable pretty text block.
+    """
+    p_icb = Path(paths.data_frame_of_names_of_sets_of_genes_statistics_and_lists_of_genes_re_ICB_status)
+    df = _load_fgsea_csv(p_icb)
+    summary = _summarize_icb(df)
+    # pretty text
+    lines = ["ICB status (Naive vs Experienced):"]
+    for _, r in summary.iterrows():
+        lines.append(
+            f"  {r['pathway']}: {r['direction']} "
+            f"(NES={r['NES']:.2f}, padj={r['padj']:.3g}; {r['significance']})"
+        )
+    pretty_text = "\n".join(lines)
+    return summary, pretty_text
+
+def create_icb_module_score_summary(
+    df_stats_icb: pd.DataFrame
+) -> pd.DataFrame:
+    """
+    Condense the Mann–Whitney + BH-FDR table into a simple summary:
+    means (naive/experienced), difference, direction, significance.
+    Assumes df_stats_icb was created with name_of_group_0='naive', name_of_group_1='experienced'.
+    """
+    df = df_stats_icb.copy()
+    # Ensure canonical column names are present
+    required = ["mean_value_for_naive","mean_value_for_experienced","FDR"]
+    for col in required:
+        if col not in df.columns:
+            raise ValueError(f"Expected column '{col}' missing from ICB stats table.")
+    out = df[["mean_value_for_naive","mean_value_for_experienced","FDR"]].copy()
+    out["difference_between_mean_values_for_experienced_and_naive"] = (
+        out["mean_value_for_experienced"] - out["mean_value_for_naive"]
+    )
+    out["direction"] = np.where(
+        out["difference_between_mean_values_for_experienced_and_naive"] > 0,
+        "u_exp > u_naive",
+        "u_naive > u_exp"
+    )
+    out["difference_between_mean_values_is_significant"] = out["FDR"] < ALPHA_MAIN
+    return out
+
+
+def _summarize_icb_by_sex(df_fgsea: pd.DataFrame, sex_label: str) -> pd.DataFrame:
+    """
+    For a single sex (Female or Male): NES>0 ⇒ enriched in ICB-experienced within that sex.
+    """
+    sub = df_fgsea[df_fgsea["pathway"].isin(SIGNATURES_FOR_SUMMARY)].copy()
+    sub["direction"] = np.where(
+        sub["NES"] > 0, "higher in experienced",
+        np.where(sub["NES"] < 0, "higher in naive", "no difference")
+    )
+    sub["significance"] = pd.cut(
+        sub["padj"],
+        bins=[-1, ALPHA_MAIN, ALPHA_SUGG, float("inf")],
+        labels=[f"significant (padj<{ALPHA_MAIN})", f"suggestive (padj<{ALPHA_SUGG})", "ns"],
+        right=False
+    )
+    sub["sex"] = sex_label
+    sub["stratum"] = f"ICB ({sex_label})"
+    return sub.sort_values(["padj", "pathway"])[["sex","stratum","pathway","NES","padj","direction","significance"]]
+
+def create_icb_status_summary_by_sex_from_fgsea_files() -> tuple[pd.DataFrame, str]:
+    """
+    Read the two FGSEA-by-ICB CSVs generated within each sex and produce a tidy summary + pretty text.
+    """
+    base = paths.outputs_of_completing_Aim_1_2
+    p_f = Path(base) / "fgsea_re_ICB_status_female.csv"
+    p_m = Path(base) / "fgsea_re_ICB_status_male.csv"
+    df_f = _summarize_icb_by_sex(_load_fgsea_csv(p_f), "Female")
+    df_m = _summarize_icb_by_sex(_load_fgsea_csv(p_m), "Male")
+    summary = pd.concat([df_f, df_m], ignore_index=True)
+    # pretty text (grouped by sex)
+    lines = []
+    for sex_label in ["Female", "Male"]:
+        lines.append(f"ICB status (Naive vs Experienced) within {sex_label}:")
+        for _, r in summary[summary["sex"]==sex_label].iterrows():
+            lines.append(
+                f"  {r['pathway']}: {r['direction']} "
+                f"(NES={r['NES']:.2f}, padj={r['padj']:.3g}; {r['significance']})"
+            )
+        lines.append("")  # blank line between sexes
+    pretty_text = "\n".join(lines).strip()
+    return summary, pretty_text
+
+def create_icb_module_score_summary_by_sex(
+    df_stats_icb_female: pd.DataFrame,
+    df_stats_icb_male: pd.DataFrame
+) -> pd.DataFrame:
+    """
+    Condense Mann–Whitney + BH-FDR ICB-status tables within each sex into a single tidy frame.
+    Assumes columns mean_value_for_naive / mean_value_for_experienced / FDR are present.
+    """
+    def _summ(df, sex_label):
+        out = df[["mean_value_for_naive","mean_value_for_experienced","FDR"]].copy()
+        out["difference_between_mean_values_for_experienced_and_naive"] = (
+            out["mean_value_for_experienced"] - out["mean_value_for_naive"]
+        )
+        out["direction"] = np.where(
+            out["difference_between_mean_values_for_experienced_and_naive"] > 0,
+            "u_exp > u_naive",
+            "u_naive > u_exp"
+        )
+        out["difference_between_mean_values_is_significant"] = out["FDR"] < ALPHA_MAIN
+        out["sex"] = sex_label
+        return out
+    fem = _summ(df_stats_icb_female, "Female")
+    mal = _summ(df_stats_icb_male, "Male")
+    return pd.concat([fem, mal], axis=0)
+
+
 def main():
     paths.ensure_dependencies_for_comparing_enrichment_scores_exist()
     clinical_molecular_linkage_data = pd.read_csv(paths.clinical_molecular_linkage_data)
@@ -846,6 +978,20 @@ def main():
                 data_frame_of_names_of_sets_of_genes_statistics_and_lists_of_genes_re_sex,
                 paths.plot_of_FDR_vs_Normalized_Enrichment_Score_re_sex_for_all_samples
             )
+            for sex_label, sex_code in [("Female", 0), ("Male", 1)]:
+                idx = series_of_indicators_of_sex[series_of_indicators_of_sex == sex_code].index
+                if len(idx) >= 3:  # guard for tiny subsets
+                    expr_sex = expression_submatrix[idx]
+                    icb_sex = series_of_indicators_of_ICB_status_for_stratum.loc[idx]
+                    df_genes_icb_sex = compute_point_biserial_correlation_for_each_gene(expr_sex, icb_sex)
+                    ser_icb = df_genes_icb_sex["point_biserial_correlation"].copy()
+                    ranks_icb = ser_icb.rank(method="first")
+                    ser_icb = ser_icb + (ranks_icb * 1e-12)
+                    ser_ranked_icb = ser_icb.sort_values(ascending=False)
+                    df_fgsea_icb_sex = run_fgsea(ser_ranked_icb, dictionary_of_names_of_sets_of_genes_and_lists_of_genes)
+                    # Save per-sex FGSEA CSVs (used later for summaries)
+                    out_csv = paths.outputs_of_completing_Aim_1_2 / f"fgsea_re_ICB_status_{sex_label.lower()}.csv"
+                    df_fgsea_icb_sex.to_csv(out_csv, index=False)
         elif stratum == "naive":
             plot_FDR_vs_Normalized_Enrichment_Score(
                 data_frame_of_names_of_sets_of_genes_statistics_and_lists_of_genes_re_sex,
@@ -1137,6 +1283,35 @@ def main():
             data_frame_of_categories_of_module_scores_and_statistics_re_ICB_status.to_csv(
                 paths.data_frame_of_categories_of_module_scores_and_statistics_re_ICB_status
             )
+            icb_mod_summary = create_icb_module_score_summary(data_frame_of_categories_of_module_scores_and_statistics_re_ICB_status)
+            icb_mod_summary_path = paths.outputs_of_completing_Aim_1_2 / "summary_by_ICB_status.csv"
+            icb_mod_summary.to_csv(icb_mod_summary_path)
+            sex_icb_tables = {}
+            for sex_label, sex_code in [("Female", 0), ("Male", 1)]:
+                idx = series_of_indicators_of_sex[series_of_indicators_of_sex == sex_code].index
+                if len(idx) >= 3:
+                    icb_ind = series_of_indicators_of_ICB_status_for_stratum.loc[idx]
+                    per_sig = []
+                    for module_name, series_vals in dictionary_of_names_of_modules_and_series_of_values.items():
+                        per_sig.append(
+                            create_data_frame_of_category_of_module_score_and_statistics(
+                                series_vals.loc[idx], icb_ind, "naive", "experienced", module_name
+                            )
+                        )
+                    df_sex = pd.concat(per_sig, axis=0)
+                    df_sex["FDR"] = multipletests(df_sex["p_value"], method="fdr_bh")[1]
+                    sex_icb_tables[sex_label] = df_sex
+                    # write the per-sex detailed table
+                    (paths.outputs_of_completing_Aim_1_2 / f"data_frame_of_categories_of_module_scores_and_statistics_re_ICB_status_{sex_label.lower()}.csv"
+                    ).write_text(df_sex.to_csv())
+            # concise module-score summaries by sex (if both exist)
+            if "Female" in sex_icb_tables or "Male" in sex_icb_tables:
+                fem_df = sex_icb_tables.get("Female", pd.DataFrame(columns=["mean_value_for_naive","mean_value_for_experienced","FDR"]))
+                mal_df = sex_icb_tables.get("Male",   pd.DataFrame(columns=["mean_value_for_naive","mean_value_for_experienced","FDR"]))
+                icb_mod_by_sex = create_icb_module_score_summary_by_sex(fem_df, mal_df)
+                (paths.outputs_of_completing_Aim_1_2 / "summary_by_ICB_status_by_sex.csv").write_text(
+                    icb_mod_by_sex.to_csv()
+                )
             plot_value_vs_indicator(
                 series_of_differences,
                 series_of_indicators_of_ICB_status_for_stratum,
@@ -1154,10 +1329,22 @@ def main():
                 paths.plot_of_log_of_ratio_of_CD8_G_module_score_and_CD8_B_module_score_vs_ICB_status
             )
 
-
     summary_df, pretty_text = create_sex_diff_summary_from_fgsea_files()
     summary_csv_path = paths.outputs_of_completing_Aim_1_2 / "summary_of_sex_differences_for_CD8_signatures_by_stratum.csv"
     summary_df.to_csv(summary_csv_path, index=False)
+
+    icb_summary_df, icb_pretty = create_icb_status_summary_from_fgsea_file()
+    icb_summary_csv_path = paths.outputs_of_completing_Aim_1_2 / "summary_of_ICB_status_differences_for_CD8_signatures.csv"
+    icb_summary_df.to_csv(icb_summary_csv_path, index=False)
+    (paths.outputs_of_completing_Aim_1_2 / "summary_of_ICB_status_differences_pretty.txt").write_text(
+        icb_pretty, encoding="utf-8"
+    )
+    icb_by_sex_df, icb_by_sex_pretty = create_icb_status_summary_by_sex_from_fgsea_files()
+    icb_by_sex_csv = paths.outputs_of_completing_Aim_1_2 / "summary_of_ICB_status_differences_for_CD8_signatures_by_sex.csv"
+    icb_by_sex_df.to_csv(icb_by_sex_csv, index=False)
+    (paths.outputs_of_completing_Aim_1_2 / "summary_of_ICB_status_differences_by_sex_pretty.txt").write_text(
+        icb_by_sex_pretty, encoding="utf-8"
+    )
 
 
 if __name__ == "__main__":
