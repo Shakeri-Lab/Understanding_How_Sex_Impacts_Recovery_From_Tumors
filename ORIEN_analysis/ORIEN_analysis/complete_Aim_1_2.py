@@ -30,7 +30,7 @@ from ORIEN_analysis.fit_linear_models import (
 from rpy2.robjects.packages import importr
 import json
 from rpy2.robjects.conversion import localconverter
-from scipy.stats import mannwhitneyu
+from scipy.stats import mannwhitneyu, ttest_ind
 from statsmodels.stats.multitest import multipletests
 import numpy as np
 from ORIEN_analysis.fit_linear_models import numericize_age
@@ -425,33 +425,42 @@ def create_data_frame_of_genes_log_FCs_p_values_and_FDRs(
     expression_submatrix: pd.DataFrame,
     series_of_indicators: pd.Series
 ) -> pd.DataFrame:
-    expression_submatrix_for_indicator_0 = expression_submatrix.loc[:, series_of_indicators == 0]
-    expression_submatrix_for_indicator_1 = expression_submatrix.loc[:, series_of_indicators == 1]
-    pseudocount: float = 1e-6
-    series_of_mean_expressions_for_indicator_0 = expression_submatrix_for_indicator_0.mean(axis = 1) + pseudocount
-    series_of_mean_expressions_for_indicator_1 = expression_submatrix_for_indicator_1.mean(axis = 1) + pseudocount
-    series_of_log_FCs = np.log2(series_of_mean_expressions_for_indicator_1 / series_of_mean_expressions_for_indicator_0)
-    list_of_p_values = []
-    for gene in expression_submatrix.index:
-        series_of_expressions_for_gene_and_indicator_0 = expression_submatrix_for_indicator_0.loc[gene].to_numpy()
-        series_of_expressions_for_gene_and_indicator_1 = expression_submatrix_for_indicator_1.loc[gene].to_numpy()
-        _, p_value = mannwhitneyu(
-            series_of_expressions_for_gene_and_indicator_0,
-            series_of_expressions_for_gene_and_indicator_1,
-            alternative = "two-sided"
+    """
+    Compute log2 fold-changes and p-values on a log scale for stability:
+      - logFC = (mean(log1p(group1)) - mean(log1p(group0))) / ln(2)
+      - p-value = Welch's t-test on log1p-transformed values (same scale).
+    This avoids extreme FCs when raw means are near zero and makes the
+    volcano plot conventional and interpretable.
+    """
+    # Split columns by indicator
+    X0 = expression_submatrix.loc[:, series_of_indicators == 0]
+    X1 = expression_submatrix.loc[:, series_of_indicators == 1]
+
+    # Work on natural-log scale; convert to log2 later
+    ln2 = np.log(2.0)
+    L0 = np.log1p(X0)
+    L1 = np.log1p(X1)
+
+    # log2 fold-change ≈ difference of means on log scale
+    logFC = (L1.mean(axis=1) - L0.mean(axis=1)) / ln2
+
+    # Welch t-test on the same (log1p) scale
+    pvals = []
+    for g in expression_submatrix.index:
+        t_stat, p_value = ttest_ind(
+            L1.loc[g].to_numpy(),
+            L0.loc[g].to_numpy(),
+            equal_var=False,
+            nan_policy="omit"
         )
-        list_of_p_values.append(p_value)
-    series_of_p_values = pd.Series(list_of_p_values, index = expression_submatrix.index, name = "p_value")
-    series_of_FDRs = multipletests(series_of_p_values, method = "fdr_bh")[1]
-    data_frame_of_genes_log_FCs_p_values_and_FDRs = pd.DataFrame(
-        {
-            "log_FC": series_of_log_FCs,
-            "p_value": list_of_p_values,
-            "FDR": series_of_FDRs
-        }
-    )
-    data_frame_of_genes_log_FCs_p_values_and_FDRs.index.name = "gene"
-    return data_frame_of_genes_log_FCs_p_values_and_FDRs
+        pvals.append(p_value)
+
+    pvals = pd.Series(pvals, index=expression_submatrix.index, name="p_value")
+    FDR = multipletests(pvals, method="fdr_bh")[1]
+
+    out = pd.DataFrame({"log_FC": logFC, "p_value": pvals, "FDR": FDR})
+    out.index.name = "gene"
+    return out
 
 
 def create_volcano_plot(
