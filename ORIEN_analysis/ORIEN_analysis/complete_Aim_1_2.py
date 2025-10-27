@@ -834,6 +834,61 @@ def create_volcano_plots_for_gene_sets(
         )
 
 
+def create_heatmaps_for_gene_sets(
+    expression_submatrix: pd.DataFrame,
+    series_of_indicators_of_sex: pd.Series,
+    series_of_indicators_of_ICB_status: pd.Series,
+    dictionary_of_names_of_sets_of_genes_and_lists_of_genes: dict[str, list[str]],
+    output_dir: Path
+):
+    """
+    For each gene set, create a heatmap (top DE genes within the set) for:
+      - Female vs Male
+      - ICB Naive vs Experienced
+    Uses the same DE/stat scale as volcano plots (Welch t-test on log1p; log2FC from log1p means).
+    Skips sets with fewer than 3 genes present in the matrix.
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    for set_name, gene_list in dictionary_of_names_of_sets_of_genes_and_lists_of_genes.items():
+        # subset to genes present
+        genes_present = [g for g in gene_list if g in expression_submatrix.index]
+        if len(genes_present) < 3:
+            continue
+
+        expr_subset = expression_submatrix.loc[genes_present]
+
+        # Sex contrast heatmap
+        try:
+            df_sex = create_data_frame_of_genes_log_FCs_p_values_and_FDRs(expr_subset, series_of_indicators_of_sex)
+            create_expression_heatmap(
+                expression_submatrix = expr_subset,
+                series_of_indicators = series_of_indicators_of_sex,
+                name_of_indicator_0 = "Female",
+                name_of_indicator_1 = "Male",
+                title = f"Heatmap ({set_name}) — Top DE genes\nFemale vs Male",
+                path_of_plot = str(output_dir / f"heatmap_{set_name}_female_vs_male.png"),
+                data_frame_of_genes_log_FCs_p_values_and_FDRs = df_sex
+            )
+        except Exception as e:
+            print(f"Heatmap {set_name} TODO contrast failed")
+
+        # ICB contrast heatmap
+        try:
+            df_icb = create_data_frame_of_genes_log_FCs_p_values_and_FDRs(expr_subset, series_of_indicators_of_ICB_status)
+            create_expression_heatmap(
+                expression_submatrix = expr_subset,
+                series_of_indicators = series_of_indicators_of_ICB_status,
+                name_of_indicator_0 = "Naive",
+                name_of_indicator_1 = "Experienced",
+                title = f"Heatmap ({set_name}) — Top DE genes\nICB Naive vs Experienced",
+                path_of_plot = str(output_dir / f"heatmap_{set_name}_naive_vs_experienced.png"),
+                data_frame_of_genes_log_FCs_p_values_and_FDRs = df_icb
+            )
+        except Exception as e:
+            print(f"Heatmap {set_name} TODO contrast failed")
+
+
 def main():
     paths.ensure_dependencies_for_comparing_enrichment_scores_exist()
     clinical_molecular_linkage_data = pd.read_csv(paths.clinical_molecular_linkage_data)
@@ -983,6 +1038,18 @@ def main():
                 title = "Heatmap of Normalized Expressions\nfor Top Differentially Expressed Genes\nfor Naive and Experienced Samples",
                 path_of_plot = paths.heatmap_of_normalized_expressions_for_top_differentially_expressed_genes_for_naive_and_experienced_samples,
                 data_frame_of_genes_log_FCs_p_values_and_FDRs = data_frame_of_genes_log_FCs_p_values_and_FDRs_for_naive_and_experienced_samples
+            )
+            # Heatmaps per gene set (same contrasts as volcano plots)
+            create_heatmaps_for_gene_sets(
+                expression_submatrix = expression_submatrix,
+                series_of_indicators_of_sex = series_of_indicators_of_sex,
+                series_of_indicators_of_ICB_status = series_of_indicators_of_ICB_status_for_stratum,
+                dictionary_of_names_of_sets_of_genes_and_lists_of_genes = {
+                    **{name: dictionary_of_names_of_sets_of_genes_and_lists_of_genes[name] for name in [f"CD8_{i}" for i in range(1, 7)]},
+                    "CD8_B": dictionary_of_names_of_sets_of_genes_and_lists_of_genes["CD8_B"],
+                    "CD8_G": dictionary_of_names_of_sets_of_genes_and_lists_of_genes["CD8_G"]
+                },
+                output_dir = paths.outputs_of_completing_Aim_1_2 / "heatmap_by_gene_set"
             )
         data_frame_of_genes_and_statistics_re_sex = compute_point_biserial_correlation_for_each_gene(
             expression_submatrix,
