@@ -1,5 +1,6 @@
 __pycache__
 .ipynb_checkpoints
+.vscode
 ORIEN_analysis/24PRJ217UVA_20241112_PatientMaster_V4_Ethnicity.csv
 ORIEN_analysis/ORIEN_analysis.egg-info/
 aggregated_contents.txt

@@ -191,11 +191,11 @@ class Paths():
 
         # ORIEN_analysis/ORIEN_analysis/create_summary_of_driver_mutations.py
         # dependencies
-        # <no folders>
+        self.outputs_of_creating_summary_of_driver_mutations = self.output / "creating_summary_of_driver_mutations"
         # -----
-        # <no files>
+        # self.data_frame_of_IDs_of_patients_specimens_and_WES_and_paths_to_WES, which is defined above
         # outputs
-        # <no files>
+        self.summary_of_driver_mutations = self.outputs_of_creating_summary_of_driver_mutations / "summary_of_driver_mutations.csv"
 
 
     def ensure_dependencies_for_pairing_clinical_data_and_stages_of_tumors_exist(self):
@@ -321,11 +321,11 @@ class Paths():
 
     def ensure_dependencies_for_creating_summary_of_driver_mutations_exist(self):
         for path in [
-
+            self.outputs_of_creating_summary_of_driver_mutations
         ]:
             os.makedirs(path, exist_ok = True)
         for path in [
-
+            self.data_frame_of_IDs_of_patients_specimens_and_WES_and_paths_to_WES
         ]:
             assert os.path.exists(path), f"The dependency of comparing enrichment scores `{path}` does not exist."
 

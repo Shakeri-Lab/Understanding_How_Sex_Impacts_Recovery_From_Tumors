@@ -1,3 +1,6 @@
+from ORIEN_analysis.config import paths
+
+
 #!/usr/bin/env python3
 '''
 Parse annotated somatic and tumor FT VCF archives corresponding to WES IDs and
@@ -224,24 +227,11 @@ def create_summary(path_to_data_frame_of_IDs_of_patients_specimens_and_WES_and_p
     )
 
 
+def main():
+    paths.ensure_dependencies_for_creating_summary_of_driver_mutations_exist()
+    summary = create_summary(paths.data_frame_of_IDs_of_patients_specimens_and_WES_and_paths_to_WES)
+    summary.to_csv(paths.summary_of_driver_mutations, index = False)
+
+
 if __name__ == "__main__":
-
-    parser = argparse.ArgumentParser(description = "Create a summary of driver mutations.")
-    parser.add_argument(
-        "input_csv",
-        type = Path,
-        help = "data frame of IDs of patients, specimens, and WES and paths to WES"
-    )
-    parser.add_argument(
-        "-o",
-        "--output_csv",
-        type = Path,
-        default = Path("summary_of_driver_mutations.csv"),
-        help = "path to summary of driver mutations",
-    )
-    args = parser.parse_args()
-
-    summary = create_summary(args.input_csv)
-    summary.to_csv(args.output_csv, index = False)
-    print(f"Summary of driver mutations was written to {args.output_csv}.")
-
+    main()
