@@ -11,6 +11,7 @@ Usage:
 from pathlib import Path
 import numpy as np
 import pandas as pd
+from ORIEN_analysis.config import paths
 
 
 def classify_ICB_medication(name: str) -> str | None:
@@ -156,14 +157,15 @@ def classify_specimen_site_of_collection(site: str) -> str | None:
 
 
 def main():
+    paths.ensure_dependencies_for_building_tables_exist()
     
     # Read CSV files into data frames.
-    PATH_TO_NORMALIZED_FILES = Path("../../../Clinical_Data/24PRJ217UVA_NormalizedFiles")
+    PATH_TO_NORMALIZED_FILES = Path("../Clinical_Data/24PRJ217UVA_NormalizedFiles")
     PATH_TO_CLINICAL_MOLECULAR_LINKAGE_DATA = PATH_TO_NORMALIZED_FILES / "24PRJ217UVA_20241112_ClinicalMolLinkage_V4.csv"
     PATH_TO_PATIENT_DATA = PATH_TO_NORMALIZED_FILES / "24PRJ217UVA_20241112_PatientMaster_V4.csv"
-    PATH_TO_PATIENT_DATA_WITH_EMILY_NINMERS_ETHNICITIES = "24PRJ217UVA_20241112_PatientMaster_V4_Ethnicity.csv"
+    PATH_TO_PATIENT_DATA_WITH_EMILY_NINMERS_ETHNICITIES = "ORIEN_analysis/24PRJ217UVA_20241112_PatientMaster_V4_Ethnicity.csv"
     PATH_TO_TUMOR_MARKER_DATA = PATH_TO_NORMALIZED_FILES / "24PRJ217UVA_20241112_TumorMarker_V4.csv"
-    PATH_TO_OUTPUT_OF_PIPELINE_FOR_PAIRING_CLINICAL_DATA_AND_STAGES_OF_TUMORS = "../../pair_clinical_data_and_stages_of_tumors/output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors.csv"
+    PATH_TO_OUTPUT_OF_PIPELINE_FOR_PAIRING_CLINICAL_DATA_AND_STAGES_OF_TUMORS = "ORIEN_analysis/output/pairing_clinical_data_and_stages_of_tumors/output_of_pairing_clinical_data_and_stages_of_tumors.csv"
     PATH_TO_MEDICATIONS_DATA = PATH_TO_NORMALIZED_FILES / "24PRJ217UVA_20241112_Medications_V4.csv"
     PATH_TO_DIAGNOSIS_DATA = PATH_TO_NORMALIZED_FILES / "24PRJ217UVA_20241112_Diagnosis_V4.csv"
     
@@ -194,7 +196,7 @@ def main():
     data_from_output_of_pipeline_and_diagnosis_data = data_from_output_of_pipeline_and_diagnosis_data[
         ~data_from_output_of_pipeline_and_diagnosis_data["TNMEditionNumber"].str.contains("Eighth Edition", regex = False)
     ]
-    data_from_output_of_pipeline_and_diagnosis_data.to_csv("data_from_output_of_pipeline_and_diagnosis_data.csv", index = False)
+    data_from_output_of_pipeline_and_diagnosis_data.to_csv("ORIEN_analysis/output/building_tables/data_from_output_of_pipeline_and_diagnosis_data.csv", index = False)
 
     # Create a data frame of clinical data, and data in output of pipeline, of cutaneous tumors in output of pipeline.
     tumor_data = clinical_molecular_linkage_data.merge(
@@ -415,7 +417,7 @@ def main():
         f"{number_of_unique_patient_IDs}."
     )
     data_frame_of_patient_IDs_and_ethnicities_for_patients_in_patient_data.to_csv(
-        "data_frame_of_patient_IDs_and_ethnicities_for_patients_in_patient_data.csv",
+        "ORIEN_analysis/output/building_tables/data_frame_of_patient_IDs_and_ethnicities_for_patients_in_patient_data.csv",
         index = False
     )
 
@@ -436,7 +438,7 @@ def main():
         f"{number_of_unique_patient_IDs}."
     )
     data_frame_of_patient_IDs_and_ethnicities_for_patients_in_tumor_data.to_csv(
-        "data_frame_of_patient_IDs_and_ethnicities_for_patients_in_tumor_data.csv",
+        "ORIEN_analysis/output/building_tables/data_frame_of_patient_IDs_and_ethnicities_for_patients_in_tumor_data.csv",
         index = False
     )
 
@@ -706,7 +708,7 @@ def main():
     ]
     
     data_frame_of_IDs_of_patients_specimens_and_WES = tumor_data[["ORIENAvatarKey", "DeidSpecimenID", "WES", "WES Batch"]]
-    data_frame_of_IDs_of_patients_specimens_and_WES.to_csv("data_frame_of_IDs_of_patients_specimens_and_WES.csv", index = False)
+    data_frame_of_IDs_of_patients_specimens_and_WES.to_csv("ORIEN_analysis/output/building_tables/data_frame_of_IDs_of_patients_specimens_and_WES.csv", index = False)
 
     # Assemble tables.
     table_1 = pd.DataFrame(

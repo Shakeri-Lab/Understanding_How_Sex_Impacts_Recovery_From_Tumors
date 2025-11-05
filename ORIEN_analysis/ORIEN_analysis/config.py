@@ -156,7 +156,41 @@ class Paths():
         # dependencies
         self.outputs_of_completing_Aim_2_1 = self.output / "completing_Aim_2_1"
         # -----
-        
+        # <no files>
+        # outputs
+        # <no files>
+
+        # ORIEN_analysis/ORIEN_analysis/build_tables.py
+        # dependencies
+        self.outputs_of_building_tables = self.output / "building_tables"
+        # -----
+        # <no files>
+        # outputs
+        # <no files>
+
+        # ORIEN_analysis/ORIEN_analysis/add_paths_to_data_frame_of_IDs_of_patients_specimens_and_WES.py
+        # dependencies
+        # <no folders>
+        # -----
+        # <no files>
+        # outputs
+        # <no files>
+
+        # ORIEN_analysis/ORIEN_analysis/create_data_frame_of_patient_IDs_specimen_IDs_and_indicators_of_mutations.py
+        # dependencies
+        # <no folders>
+        # -----
+        # <no files>
+        # outputs
+        # <no files>
+
+        # ORIEN_analysis/ORIEN_analysis/create_summary_of_driver_mutations.py
+        # dependencies
+        # <no folders>
+        # -----
+        # <no files>
+        # outputs
+        # <no files>
 
 
     def ensure_dependencies_for_pairing_clinical_data_and_stages_of_tumors_exist(self):
@@ -224,9 +258,64 @@ class Paths():
             assert os.path.exists(path), f"The dependency of comparing enrichment scores `{path}` does not exist."
 
 
-    def ensure_dependencies_for_comparing_enrichment_scores_exist(self):
+    def ensure_dependencies_for_completing_Aim_1_2_exist(self):
         for path in [
-            self.outputs_of_completing_Aim_1_2
+
+        ]:
+            os.makedirs(path, exist_ok = True)
+        for path in [
+
+        ]:
+            assert os.path.exists(path), f"The dependency of comparing enrichment scores `{path}` does not exist."
+
+
+    def ensure_dependencies_for_completing_Aim_2_1_exist(self):
+        for path in [
+
+        ]:
+            os.makedirs(path, exist_ok = True)
+        for path in [
+
+        ]:
+            assert os.path.exists(path), f"The dependency of comparing enrichment scores `{path}` does not exist."
+
+
+    def ensure_dependencies_for_building_tables_exist(self):
+        for path in [
+            self.outputs_of_building_tables
+        ]:
+            os.makedirs(path, exist_ok = True)
+        for path in [
+
+        ]:
+            assert os.path.exists(path), f"The dependency of comparing enrichment scores `{path}` does not exist."
+
+
+    def ensure_dependencies_for_adding_paths_to_data_frame_of_IDs_of_patients_specimens_and_WES_tables_exist(self):
+        for path in [
+
+        ]:
+            os.makedirs(path, exist_ok = True)
+        for path in [
+
+        ]:
+            assert os.path.exists(path), f"The dependency of comparing enrichment scores `{path}` does not exist."
+
+
+    def ensure_dependencies_for_creating_data_frame_of_patient_IDs_specimen_IDs_and_indicators_of_mutations_exist(self):
+        for path in [
+
+        ]:
+            os.makedirs(path, exist_ok = True)
+        for path in [
+
+        ]:
+            assert os.path.exists(path), f"The dependency of comparing enrichment scores `{path}` does not exist."
+
+
+    def ensure_dependencies_for_creating_summary_of_driver_mutations_exist(self):
+        for path in [
+
         ]:
             os.makedirs(path, exist_ok = True)
         for path in [
