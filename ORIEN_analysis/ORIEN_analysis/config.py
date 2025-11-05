@@ -176,18 +176,18 @@ class Paths():
         self.WES = self.root / "../../WES"
         self.outputs_of_adding_paths_to_data_frame_of_IDs_of_patients_specimens_and_WES = self.output / "adding_paths_to_data_frame_of_IDs_of_patients_specimens_and_WES"
         # -----
-        # <no files>
+        # self.data_frame_of_IDs_of_patients_specimens_and_WES, which is defined above
         # outputs
         # <no files>
         self.data_frame_of_IDs_of_patients_specimens_and_WES_and_paths_to_WES = self.outputs_of_adding_paths_to_data_frame_of_IDs_of_patients_specimens_and_WES / "data_frame_of_IDs_of_patients_specimens_and_WES_and_paths_to_WES.csv"
 
         # ORIEN_analysis/ORIEN_analysis/create_data_frame_of_patient_IDs_specimen_IDs_and_indicators_of_mutations.py
         # dependencies
-        # <no folders>
+        self.outputs_of_creating_data_frame_of_patient_IDs_specimen_IDs_and_indicators_of_mutations = self.output / "creating_data_frame_of_patient_IDs_specimen_IDs_and_indicators_of_mutations"
         # -----
-        # <no files>
+        # self.data_frame_of_IDs_of_patients_specimens_and_WES_and_paths_to_WES, which is defined above
         # outputs
-        # <no files>
+        self.data_frame_of_patient_IDs_specimen_IDs_and_indicators_of_mutations = self.outputs_of_creating_data_frame_of_patient_IDs_specimen_IDs_and_indicators_of_mutations / "data_frame_of_patient_IDs_specimen_IDs_and_indicators_of_mutations.csv"
 
         # ORIEN_analysis/ORIEN_analysis/create_summary_of_driver_mutations.py
         # dependencies
@@ -310,11 +310,11 @@ class Paths():
 
     def ensure_dependencies_for_creating_data_frame_of_patient_IDs_specimen_IDs_and_indicators_of_mutations_exist(self):
         for path in [
-
+            self.outputs_of_creating_data_frame_of_patient_IDs_specimen_IDs_and_indicators_of_mutations
         ]:
             os.makedirs(path, exist_ok = True)
         for path in [
-
+            self.data_frame_of_IDs_of_patients_specimens_and_WES_and_paths_to_WES
         ]:
             assert os.path.exists(path), f"The dependency of comparing enrichment scores `{path}` does not exist."
 

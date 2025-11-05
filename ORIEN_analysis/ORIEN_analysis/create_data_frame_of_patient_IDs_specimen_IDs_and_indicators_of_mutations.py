@@ -26,6 +26,8 @@ from typing import Dict, List
 import pandas as pd
 import pysam
 
+from ORIEN_analysis.config import paths
+
 
 # Map names of mutations to tuples of gene symbol and lists of equivalent protein changes.
 CATALOGUE: Dict[str, tuple[str, List[str]]] = {
@@ -180,25 +182,16 @@ def process_specimens(path_to_data_frame_of_IDs_of_patients_specimens_and_WES_an
     )
 
 
+def main():
+    paths.ensure_dependencies_for_creating_data_frame_of_patient_IDs_specimen_IDs_and_indicators_of_mutations_exist()
+    data_frame_of_patient_IDs_specimen_IDs_and_indicators_of_mutations = process_specimens(
+        paths.data_frame_of_IDs_of_patients_specimens_and_WES_and_paths_to_WES
+    )
+    data_frame_of_patient_IDs_specimen_IDs_and_indicators_of_mutations.to_csv(
+        paths.data_frame_of_patient_IDs_specimen_IDs_and_indicators_of_mutations,
+        index = False
+    )
+
+
 if __name__ == "__main__":
-
-    parser = argparse.ArgumentParser(
-        description = "Create a data frame of patient IDs, specimen IDs, and indicators of whether mutations are present corresponding to a data frame of IDs of patients, specimens, and WES and paths to WES."
-    )
-    parser.add_argument(
-        "input_csv",
-        type = Path,
-        help = "data frame of IDs of patients, specimens, and WES and paths to WES"
-    )
-    parser.add_argument(
-        "-o",
-        "--output_csv",
-        type = Path,
-        default = Path("data_frame_of_patient_IDs_specimen_IDs_and_indicators_of_mutations.csv"),
-        help = "path to data frame of patient IDs, specimen IDs, and indicators of mutations",
-    )
-    args = parser.parse_args()
-
-    data_frame_of_patient_IDs_specimen_IDs_and_indicators_of_mutations = process_specimens(args.input_csv)
-    data_frame_of_patient_IDs_specimen_IDs_and_indicators_of_mutations.to_csv(args.output_csv, index = False)
-    print(f"Data frame of patient IDs, specimen IDs, and indicators of mutations was written to {args.output_csv}.")
+    main()
