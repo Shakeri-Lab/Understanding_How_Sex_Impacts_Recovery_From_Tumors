@@ -166,15 +166,20 @@ class Paths():
         # -----
         # <no files>
         # outputs
-        # <no files>
+        self.data_frame_of_IDs_of_patients_specimens_and_WES = self.outputs_of_building_tables / "data_frame_of_IDs_of_patients_specimens_and_WES.csv"
+        self.data_frame_of_patient_IDs_and_ethnicities_for_patients_in_patient_data = self.outputs_of_building_tables / "data_frame_of_patient_IDs_and_ethnicities_for_patients_in_patient_data.csv"
+        self.data_frame_of_patient_IDs_and_ethnicities_for_patients_in_tumor_data = self.outputs_of_building_tables / "data_frame_of_patient_IDs_and_ethnicities_for_patients_in_tumor_data.csv"
+        self.data_from_output_of_pipeline_and_diagnosis_data = self.outputs_of_building_tables / "data_from_output_of_pipeline_and_diagnosis_data.csv"
 
         # ORIEN_analysis/ORIEN_analysis/add_paths_to_data_frame_of_IDs_of_patients_specimens_and_WES.py
         # dependencies
-        # <no folders>
+        self.WES = self.root / "../../WES"
+        self.outputs_of_adding_paths_to_data_frame_of_IDs_of_patients_specimens_and_WES = self.output / "adding_paths_to_data_frame_of_IDs_of_patients_specimens_and_WES"
         # -----
         # <no files>
         # outputs
         # <no files>
+        self.data_frame_of_IDs_of_patients_specimens_and_WES_and_paths_to_WES = self.outputs_of_adding_paths_to_data_frame_of_IDs_of_patients_specimens_and_WES / "data_frame_of_IDs_of_patients_specimens_and_WES_and_paths_to_WES.csv"
 
         # ORIEN_analysis/ORIEN_analysis/create_data_frame_of_patient_IDs_specimen_IDs_and_indicators_of_mutations.py
         # dependencies
@@ -291,13 +296,14 @@ class Paths():
             assert os.path.exists(path), f"The dependency of comparing enrichment scores `{path}` does not exist."
 
 
-    def ensure_dependencies_for_adding_paths_to_data_frame_of_IDs_of_patients_specimens_and_WES_tables_exist(self):
+    def ensure_dependencies_for_adding_paths_to_data_frame_of_IDs_of_patients_specimens_and_WES_exist(self):
         for path in [
-
+            self.WES,
+            self.outputs_of_adding_paths_to_data_frame_of_IDs_of_patients_specimens_and_WES
         ]:
             os.makedirs(path, exist_ok = True)
         for path in [
-
+            self.data_frame_of_IDs_of_patients_specimens_and_WES
         ]:
             assert os.path.exists(path), f"The dependency of comparing enrichment scores `{path}` does not exist."
 

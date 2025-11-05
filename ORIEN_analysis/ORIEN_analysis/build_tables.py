@@ -196,7 +196,10 @@ def main():
     data_from_output_of_pipeline_and_diagnosis_data = data_from_output_of_pipeline_and_diagnosis_data[
         ~data_from_output_of_pipeline_and_diagnosis_data["TNMEditionNumber"].str.contains("Eighth Edition", regex = False)
     ]
-    data_from_output_of_pipeline_and_diagnosis_data.to_csv("ORIEN_analysis/output/building_tables/data_from_output_of_pipeline_and_diagnosis_data.csv", index = False)
+    data_from_output_of_pipeline_and_diagnosis_data.to_csv(
+        paths.data_from_output_of_pipeline_and_diagnosis_data,
+        index = False
+    )
 
     # Create a data frame of clinical data, and data in output of pipeline, of cutaneous tumors in output of pipeline.
     tumor_data = clinical_molecular_linkage_data.merge(
@@ -417,7 +420,7 @@ def main():
         f"{number_of_unique_patient_IDs}."
     )
     data_frame_of_patient_IDs_and_ethnicities_for_patients_in_patient_data.to_csv(
-        "ORIEN_analysis/output/building_tables/data_frame_of_patient_IDs_and_ethnicities_for_patients_in_patient_data.csv",
+        paths.data_frame_of_patient_IDs_and_ethnicities_for_patients_in_patient_data,
         index = False
     )
 
@@ -438,7 +441,7 @@ def main():
         f"{number_of_unique_patient_IDs}."
     )
     data_frame_of_patient_IDs_and_ethnicities_for_patients_in_tumor_data.to_csv(
-        "ORIEN_analysis/output/building_tables/data_frame_of_patient_IDs_and_ethnicities_for_patients_in_tumor_data.csv",
+        paths.data_frame_of_patient_IDs_and_ethnicities_for_patients_in_tumor_data,
         index = False
     )
 
@@ -708,7 +711,7 @@ def main():
     ]
     
     data_frame_of_IDs_of_patients_specimens_and_WES = tumor_data[["ORIENAvatarKey", "DeidSpecimenID", "WES", "WES Batch"]]
-    data_frame_of_IDs_of_patients_specimens_and_WES.to_csv("ORIEN_analysis/output/building_tables/data_frame_of_IDs_of_patients_specimens_and_WES.csv", index = False)
+    data_frame_of_IDs_of_patients_specimens_and_WES.to_csv(paths.data_frame_of_IDs_of_patients_specimens_and_WES, index = False)
 
     # Assemble tables.
     table_1 = pd.DataFrame(

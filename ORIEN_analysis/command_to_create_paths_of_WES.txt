@@ -1,1 +1,0 @@
-find ../../WES -type f -print | tee paths_of_WES.txt
