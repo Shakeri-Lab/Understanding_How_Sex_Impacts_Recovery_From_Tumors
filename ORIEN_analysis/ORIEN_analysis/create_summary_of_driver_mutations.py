@@ -205,13 +205,16 @@ def create_summary(path_to_data_frame_of_IDs_of_patients_specimens_and_WES_and_p
     Iterate over data frame of IDs of patients, specimens, and WES and paths to WES and
     accumulate dictionaries each corresponding to a specimen and a mutation.
     '''
-    data_frame_of_IDs_of_patients_specimens_and_WES_and_paths_to_WES = pd.read_csv(path_to_data_frame_of_IDs_of_patients_specimens_and_WES_and_paths_to_WES, dtype = str).fillna("")
+    data_frame_of_IDs_of_patients_specimens_and_WES_and_paths_to_WES = pd.read_csv(
+        path_to_data_frame_of_IDs_of_patients_specimens_and_WES_and_paths_to_WES,
+        dtype = str
+    ).fillna("")
     
     list_of_dictionaries: List[dict] = []
     for _, row in data_frame_of_IDs_of_patients_specimens_and_WES_and_paths_to_WES.iterrows():
         list_of_dictionaries.extend(create_list_of_dictionaries_of_mutations(row))
     
-    return pd.DataFrame(
+    summary = pd.DataFrame(
         list_of_dictionaries,
         columns = [
             "ORIENAvatarKey",
@@ -225,11 +228,44 @@ def create_summary(path_to_data_frame_of_IDs_of_patients_specimens_and_WES_and_p
             "Alternate Allele"
         ]
     )
+    patient_data = pd.read_csv(paths.patient_data)
+    summary = summary.merge(
+        patient_data[["AvatarKey", "Sex"]],
+        how = "left",
+        left_on = "ORIENAvatarKey",
+        right_on = "AvatarKey"
+    ).drop(columns = "AvatarKey")
+    return summary
 
+
+def print_numbers_of_patients_with_mutations_in_gene(summary: pd.DataFrame, gene: str) -> None:
+    summary_for_mutaitons_in_gene = summary.loc[(summary["Present"] == True) & (summary["Gene Name"] == gene)].copy()
+    data_frame_of_patient_IDs_and_sexes = summary_for_mutaitons_in_gene[["ORIENAvatarKey", "Sex"]].drop_duplicates()
+    number_of_patients = data_frame_of_patient_IDs_and_sexes["ORIENAvatarKey"].nunique()
+    number_of_female_patients = data_frame_of_patient_IDs_and_sexes.loc[
+        data_frame_of_patient_IDs_and_sexes["Sex"] == "Female",
+        "ORIENAvatarKey"
+    ].nunique()
+    number_of_male_patients = data_frame_of_patient_IDs_and_sexes.loc[
+        data_frame_of_patient_IDs_and_sexes["Sex"] == "Male",
+        "ORIENAvatarKey"
+    ].nunique()
+    if gene == "BRAF":
+        print(f"Number of female patients with a BRAF mutation present: {number_of_female_patients}")
+        print(f"Number of male patients with a BRAF mutation present: {number_of_male_patients}")
+        print(f"Total number of patients with a BRAF mutation present: {number_of_patients}")
+    elif gene == "NRAS":
+        print(f"Number of female patients with an NRAS mutation present: {number_of_female_patients}")
+        print(f"Number of male patients with an NRAS mutation present: {number_of_male_patients}")
+        print(f"Total number of patients with an NRAS mutation present: {number_of_patients}")
+    else:
+        raise Exception("Gene should be BRAF or NRAS.")
 
 def main():
     paths.ensure_dependencies_for_creating_summary_of_driver_mutations_exist()
     summary = create_summary(paths.data_frame_of_IDs_of_patients_specimens_and_WES_and_paths_to_WES)
+    for gene in ("BRAF", "NRAS"):
+        print_numbers_of_patients_with_mutations_in_gene(summary, gene)
     summary.to_csv(paths.summary_of_driver_mutations, index = False)
 
 
