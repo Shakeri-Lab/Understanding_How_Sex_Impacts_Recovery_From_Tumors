@@ -181,8 +181,8 @@ def create_list_of_dictionaries_of_mutations(row: pd.Series) -> List[dict]:
                             any(p == protein_change or p.lstrip("p.") == protein_change for p in list_of_protein_changes)
                         ):
                             alternate_allele_for_this_entry = variant_record.alts[index_of_alternate_allele]
-                            if alternate_allele_for_this_entry not in list_of_alternate_alleles:
-                                continue
+                            #if alternate_allele_for_this_entry not in list_of_alternate_alleles:
+                            #    continue
                             
                             print(f"Patient ID is {patient_ID}. Specimen ID is {specimen_ID}. Gene is {gene}. Protein change is {protein_change}.")
                             results[mutation].update(
