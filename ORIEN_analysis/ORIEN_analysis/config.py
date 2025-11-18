@@ -193,6 +193,7 @@ class Paths():
         # self.data_frame_of_IDs_of_patients_specimens_and_WES_and_paths_to_WES, which is defined above
         # outputs
         self.data_frame_of_patient_and_specimen_information_and_indicators_of_mutations = self.outputs_of_creating_data_frame_of_patient_IDs_specimen_IDs_and_indicators_of_mutations / "data_frame_of_patient_and_specimen_information_and_indicators_of_mutations.csv"
+        self.data_frame_of_patient_IDs_specimen_IDs_and_mutations = self.outputs_of_creating_data_frame_of_patient_IDs_specimen_IDs_and_indicators_of_mutations / "data_frame_of_patient_IDs_specimen_IDs_and_mutations.csv"
 
         # ORIEN_analysis/ORIEN_analysis/create_summary_of_driver_mutations.py
         # dependencies

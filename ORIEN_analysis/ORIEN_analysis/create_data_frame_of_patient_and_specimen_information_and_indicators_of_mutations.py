@@ -18,22 +18,20 @@ It will also print the numbers of female, male, and total patients with BRAF and
 using the same logic as in `create_summary_of_driver_mutations.py`.
 '''
 
-import argparse
-import csv
-import gzip
-import shutil
-import tempfile
 from pathlib import Path
-from typing import Dict, List
-
+from ORIEN_analysis.config import paths
 import pandas as pd
 import pysam
 
-from ORIEN_analysis.config import paths
 
-
-# Map names of mutations to tuples of gene symbol and lists of equivalent protein changes.
-CATALOGUE: Dict[str, tuple[str, List[str]]] = {
+# Map names of mutations to tuples of gene symbols and lists of equivalent protein changes.
+CATALOGUE: dict[
+    str,
+    tuple[
+        str,
+        list[str]
+    ]
+] = {
     "BRAF_V600E": ("BRAF", ["p.V600E", "p.Val600Glu"]),
     "BRAF_V600K": ("BRAF", ["p.V600K", "p.Val600Lys"]),
     "NRAS_Q61R": ("NRAS", ["p.Q61R", "p.Gln61Arg"]),
@@ -50,6 +48,7 @@ CATALOGUE: Dict[str, tuple[str, List[str]]] = {
 def get_indices_of_gene_symbol_and_protein_change(vcf_header):
     '''
     Return a tuple of an index of a HUGO gene symbol in a variant record and an index of a protein change.
+    TODO: WHat is a variant record?
     '''
     string_of_Funcotator_fields = vcf_header.info["FUNCOTATION"].description.split("Funcotation fields are: ")[1]
     list_of_Funcotator_fields = string_of_Funcotator_fields.split('|')
@@ -63,23 +62,13 @@ def create_dictionary_of_mutations_and_indicators_of_presence(
     index_of_gene: int,
     index_of_protein_change: int,
     row
-) -> Dict[str, bool]:
+) -> dict[str, bool]:
     '''
     Return a dictionary of mutations and indicators of presences for 1 variant record.
     '''
-    '''
-    print("Variant record info is the following.")
-    print(variant_record.info)
-    input()
-    '''
     dictionary_of_mutations_and_indicators_of_presence = {name: False for name in CATALOGUE}
     if "FUNCOTATION" in variant_record.info:
-        '''
-        print("Value corresponding to key FUNCOTATION in variant record info is the following.")
-        print(variant_record.info["FUNCOTATION"])
-        input()
-        '''
-        wl: Dict[str, set[str]] = {}
+        wl: dict[str, set[str]] = {}
         for mut, (_, aa_variants) in CATALOGUE.items():
             s = set()
             for p in aa_variants:
@@ -90,44 +79,24 @@ def create_dictionary_of_mutations_and_indicators_of_presence(
                 s.add(p.lstrip("p."))
             wl[mut] = s
         for entry in variant_record.info["FUNCOTATION"]:
-            '''
-            print("Entry is the following.")
-            print(entry)
-            input()
-            '''
             fields = entry.lstrip('[').rstrip(']').split('|')
-            '''
-            print("Fields is the following.")
-            print(fields)
-            input()
-            '''
             gene = fields[index_of_gene]
-            '''
-            print("Gene is the following.")
-            print(gene)
-            input()
-            '''
             tokens = set(normalize_protein_tokens(fields[index_of_protein_change]))
             if not tokens:
                 continue
             tokens_no_p = {t.lstrip("p.") for t in tokens}
-            '''
-            print("Protein change is the following.")
-            print(protein_change)
-            input()
-            '''
             for mutation, (expected_gene, _) in CATALOGUE.items():
-                '''
-                print(f"Mutation is {mutation}.")
-                print(f"Expected gene is {expected_gene}.")
-                input()
-                '''
                 if dictionary_of_mutations_and_indicators_of_presence[mutation] or gene != expected_gene:
                     continue
                 if tokens & wl[mutation] or tokens_no_p & wl[mutation]:
                     patient_ID = row["ORIENAvatarKey"]
                     specimen_ID = row["DeidSpecimenID"]
-                    print(f"Patient ID is {patient_ID}. Specimen ID is {specimen_ID}. Gene is {gene}. Protein change is {sorted(tokens)}.")
+                    print(
+                        f"Patient ID is {patient_ID}. " +
+                        f"Specimen ID is {specimen_ID}. " +
+                        f"Gene is {gene}. " +
+                        f"Protein change is {sorted(tokens)}."
+                    )
                     dictionary_of_mutations_and_indicators_of_presence[mutation] = True
     return dictionary_of_mutations_and_indicators_of_presence
 
@@ -148,25 +117,17 @@ def collect_tokens_for_gene(fields, idx_gene, idx_pchg, target_gene, bucket: set
             bucket.add(token)
 
 
-_AUDIT_ROWS: list[dict] = []
-
-def create_dictionary_of_mutations_and_indicators_of_presence_in_any_record(row) -> Dict[str, bool]:
-    '''
-    Return a dictionary of mutations and indicators of presences for 1 archive.
-    '''
-    path_to_archive = Path(row["path_to_WES"]).expanduser().resolve()
-    pid, sid = row["ORIENAvatarKey"], row["DeidSpecimenID"]
+# TODO: Cleaning in progress
+def create_tuple_of_dictionaries(row) -> tuple[dict[str, bool], dict[str, str]]:
+    path_to_archive = str(Path(row["path_to_WES"]).expanduser().resolve())
+    pid = row["ORIENAvatarKey"]
+    sid = row["DeidSpecimenID"]
 
     seen_braf: set[str] = set()
     seen_nras: set[str] = set()
 
     with pysam.VariantFile(path_to_archive) as variant_file:
         index_of_gene_symbol, index_of_protein_change = get_indices_of_gene_symbol_and_protein_change(variant_file.header)
-        '''
-        print(f"Index of gene symbol is {index_of_gene_symbol}.")
-        print(f"Index of protein change is {index_of_protein_change}.")
-        input()
-        '''
         dictionary_of_mutations_and_indicators_of_presence_in_any_record = {name: False for name in CATALOGUE}
         for variant_record in variant_file:
             if "FUNCOTATION" not in variant_record.info:
@@ -182,71 +143,81 @@ def create_dictionary_of_mutations_and_indicators_of_presence_in_any_record(row)
                 row
             )
             dictionary_of_mutations_and_indicators_of_presence_in_any_record = {
-                k: dictionary_of_mutations_and_indicators_of_presence_in_any_record[k] or dictionary_of_mutations_and_indicators_of_presence_in_record[k]
+                k: (
+                    dictionary_of_mutations_and_indicators_of_presence_in_any_record[k] or
+                    dictionary_of_mutations_and_indicators_of_presence_in_record[k]
+                )
                 for k in dictionary_of_mutations_and_indicators_of_presence_in_any_record
             }
-    _AUDIT_ROWS.append(
-        {
-            "ORIENAvatarKey": pid,
-            "DeidSpecimenID": sid,
-            "BRAF_protein_changes": '|'.join(sorted(seen_braf)) if seen_braf else "",
-            "NRAS_protein_changes": '|'.join(sorted(seen_nras)) if seen_nras else ""
-        }
-    )
-    return dictionary_of_mutations_and_indicators_of_presence_in_any_record
+    patient_specimen_mutation_info: dict[str, str] = {
+        "ORIENAvatarKey": pid,
+        "DeidSpecimenID": sid,
+        "BRAF_protein_changes": '|'.join(sorted(seen_braf)) if seen_braf else "",
+        "NRAS_protein_changes": '|'.join(sorted(seen_nras)) if seen_nras else ""
+    }
+    
+    return dictionary_of_mutations_and_indicators_of_presence_in_any_record, patient_specimen_mutation_info
 
 
-def process_specimens(path_to_data_frame_of_IDs_of_patients_specimens_and_WES_and_paths_to_WES: Path) -> pd.DataFrame:
-    '''
-    Construct a data frame of patient IDs, specimen IDs, and indicators of mutations,
-    then merge Sex from paths.patient_data.
-
-    Returns
-    -------
-    pd.DataFrame -- data frame with columns ORIENAvatarKey, DeidSpecimenID, Sex, and columns of indicators of mutations
-    '''
+# Examined
+def create_data_frames(
+    path_to_data_frame_of_IDs_of_patients_specimens_and_WES_and_paths_to_WES: Path
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     data_frame_of_IDs_of_patients_specimens_and_WES_and_paths_to_WES = pd.read_csv(
         path_to_data_frame_of_IDs_of_patients_specimens_and_WES_and_paths_to_WES,
         dtype = str
     ).fillna("")
-    
-    list_of_row_information: List[Dict[str, str | bool]] = []
-
+    list_of_row_information: list[dict[str, str | bool]] = []
+    list_of_dictionaries_of_patient_IDs_specimen_IDs_and_mutations: list[dict[str, str]] = []
     for _, row in data_frame_of_IDs_of_patients_specimens_and_WES_and_paths_to_WES.iterrows():
-        patient_id = row["ORIENAvatarKey"]
-        specimen_id = row["DeidSpecimenID"]
+        patient_ID = row["ORIENAvatarKey"]
+        specimen_ID = row["DeidSpecimenID"]
         if row["path_to_WES"] == "":
-            print(f"Path to WES does not exist for specimen with ID {specimen_id}.")
+            print(f"Path to WES does not exist for specimen with ID {specimen_ID}.")
             continue
-        dictionary_of_mutations_and_indicators_of_presence = create_dictionary_of_mutations_and_indicators_of_presence_in_any_record(row)
+        (
+            dictionary_of_mutations_and_indicators_of_presence,
+            dictionary_of_patient_IDs_specimen_IDs_and_mutations
+        ) = create_tuple_of_dictionaries(row)
         list_of_row_information.append(
             {
-                "ORIENAvatarKey": patient_id,
-                "DeidSpecimenID": specimen_id,
+                "ORIENAvatarKey": patient_ID,
+                "DeidSpecimenID": specimen_ID,
                 **dictionary_of_mutations_and_indicators_of_presence
             }
         )
-    df = pd.DataFrame(
+        list_of_dictionaries_of_patient_IDs_specimen_IDs_and_mutations.append(
+            dictionary_of_patient_IDs_specimen_IDs_and_mutations
+        )
+    data_frame_of_patient_and_specimen_information_and_indicators_of_mutations = pd.DataFrame(
         list_of_row_information,
         columns = ["ORIENAvatarKey", "DeidSpecimenID", *CATALOGUE]
     )
     patient_data = pd.read_csv(paths.patient_data)
-    df = df.merge(
-        patient_data[["AvatarKey", "Sex"]],
-        how = "left",
-        left_on = "ORIENAvatarKey",
-        right_on = "AvatarKey"
-    ).drop(columns = "AvatarKey")
-    df = df[["ORIENAvatarKey", "DeidSpecimenID", "Sex", *CATALOGUE]]
-    return df
+    data_frame_of_patient_and_specimen_information_and_indicators_of_mutations = (
+        data_frame_of_patient_and_specimen_information_and_indicators_of_mutations.merge(
+            patient_data[["AvatarKey", "Sex"]],
+            how = "left",
+            left_on = "ORIENAvatarKey",
+            right_on = "AvatarKey"
+        ).drop(columns = "AvatarKey")
+    )
+    data_frame_of_patient_and_specimen_information_and_indicators_of_mutations = (
+        data_frame_of_patient_and_specimen_information_and_indicators_of_mutations[
+            ["ORIENAvatarKey", "DeidSpecimenID", "Sex", *CATALOGUE]
+        ]
+    )
+    data_frame_of_patient_IDs_specimen_IDs_and_mutations = (
+        pd.DataFrame(list_of_dictionaries_of_patient_IDs_specimen_IDs_and_mutations)
+        .sort_values(["ORIENAvatarKey", "DeidSpecimenID", "BRAF_protein_changes", "NRAS_protein_changes"])
+    )
+    return (
+        data_frame_of_patient_and_specimen_information_and_indicators_of_mutations,
+        data_frame_of_patient_IDs_specimen_IDs_and_mutations
+    )
 
 
 def print_numbers_of_patients_with_mutations_in_gene(df_with_sex: pd.DataFrame, gene: str) -> None:
-    '''
-    Compute presence from the indicator columns in this wide table.
-    Counting is at the patient level.
-    Specimens are collapsed using logical OR.
-    '''
     gene_prefix = f"{gene}_"
     gene_cols = [c for c in df_with_sex.columns if c.startswith(gene_prefix)]
     row_has_gene = df_with_sex[gene_cols].any(axis = 1)
@@ -255,8 +226,18 @@ def print_numbers_of_patients_with_mutations_in_gene(df_with_sex: pd.DataFrame, 
         df_tmp.groupby(["ORIENAvatarKey", "Sex"], as_index = False)["_HAS_GENE"].max()
     )
     total = int(per_patient["_HAS_GENE"].sum())
-    female = int(per_patient.loc[(per_patient["Sex"] == "Female") & (per_patient["_HAS_GENE"]), "_HAS_GENE"].sum())
-    male = int(per_patient.loc[(per_patient["Sex"] == "Male") & (per_patient["_HAS_GENE"]), "_HAS_GENE"].sum())
+    female = int(
+        per_patient.loc[
+            (per_patient["Sex"] == "Female") & (per_patient["_HAS_GENE"]),
+            "_HAS_GENE"
+        ].sum()
+    )
+    male = int(
+        per_patient.loc[
+            (per_patient["Sex"] == "Male") & (per_patient["_HAS_GENE"]),
+            "_HAS_GENE"
+        ].sum()
+    )
     if gene == "BRAF":
         print(f"Number of female patients with a BRAF mutation present: {female}")
         print(f"Number of male patients with a BRAF mutation present: {male}")
@@ -269,27 +250,29 @@ def print_numbers_of_patients_with_mutations_in_gene(df_with_sex: pd.DataFrame, 
         raise Exception("Gene should be BRAF or NRAS.")
 
 
+# Examined
 def main():
     paths.ensure_dependencies_for_creating_data_frame_of_patient_IDs_specimen_IDs_and_indicators_of_mutations_exist()
-    data_frame_of_patient_and_specimen_information_and_indicators_of_mutations = process_specimens(
-        paths.data_frame_of_IDs_of_patients_specimens_and_WES_and_paths_to_WES
-    )
-    for gene in ("BRAF", "NRAS"):
-        print_numbers_of_patients_with_mutations_in_gene(
-            data_frame_of_patient_and_specimen_information_and_indicators_of_mutations,
-            gene
-        )
-    if _AUDIT_ROWS:
-        audit_df = pd.DataFrame(_AUDIT_ROWS).drop_duplicates().sort_values(["ORIENAvatarKey", "DeidSpecimenID", "BRAF_protein_changes"])
-        out = paths.data_frame_of_patient_and_specimen_information_and_indicators_of_mutations.with_name(
-            f"{paths.data_frame_of_patient_and_specimen_information_and_indicators_of_mutations.stem}_BRAF_audit.csv"
-        )
-        audit_df.to_csv(out, index = False)
-        print(f"[DIAG] Wrote BRAF audit to: {out}")
+
+    (
+        data_frame_of_patient_and_specimen_information_and_indicators_of_mutations,
+        data_frame_of_patient_IDs_specimen_IDs_and_mutations
+    ) = create_data_frames(paths.data_frame_of_IDs_of_patients_specimens_and_WES_and_paths_to_WES)
+
     data_frame_of_patient_and_specimen_information_and_indicators_of_mutations.to_csv(
         paths.data_frame_of_patient_and_specimen_information_and_indicators_of_mutations,
         index = False
     )
+    data_frame_of_patient_IDs_specimen_IDs_and_mutations.to_csv(
+        paths.data_frame_of_patient_IDs_specimen_IDs_and_mutations,
+        index = False
+    )
+
+    for gene in ("BRAF", "NRAS"):
+        print_numbers_of_patients_with_mutations_in_gene(
+            data_frame_of_patient_and_specimen_information_and_indicators_of_mutations,
+            gene
+        ) # TODO: Examine.
 
 
 if __name__ == "__main__":
