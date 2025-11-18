@@ -184,7 +184,6 @@ class Paths():
         # -----
         # self.data_frame_of_IDs_of_patients_specimens_and_WES, which is defined above
         # outputs
-        # <no files>
         self.data_frame_of_IDs_of_patients_specimens_and_WES_and_paths_to_WES = self.outputs_of_adding_paths_to_data_frame_of_IDs_of_patients_specimens_and_WES / "data_frame_of_IDs_of_patients_specimens_and_WES_and_paths_to_WES.csv"
 
         # ORIEN_analysis/ORIEN_analysis/create_data_frame_of_patient_IDs_specimen_IDs_and_indicators_of_mutations.py
