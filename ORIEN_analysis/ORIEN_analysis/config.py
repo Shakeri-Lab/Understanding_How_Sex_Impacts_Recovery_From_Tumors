@@ -164,7 +164,13 @@ class Paths():
         # dependencies
         self.outputs_of_building_tables = self.output / "building_tables"
         # -----
-        # <no files>
+        # self.clinical_molecular_linkage_data, which is defined above
+        # self.patient_data, which is defined above
+        self.patient_data_with_Emily_Ninmers_ethnicities = "ORIEN_analysis/24PRJ217UVA_20241112_PatientMaster_V4_Ethnicity.csv"
+        self.tumor_marker_data = self.normalized_clinical_data / "24PRJ217UVA_20241112_TumorMarker_V4.csv"
+        # self.output_of_pairing_clinical_data_and_stages_of_tumors, which is defined above
+        # self.medications_data, which is defined above
+        # self.diagnosis_data, which is defined above
         # outputs
         self.data_frame_of_IDs_of_patients_specimens_and_WES = self.outputs_of_building_tables / "data_frame_of_IDs_of_patients_specimens_and_WES.csv"
         self.data_frame_of_patient_IDs_and_ethnicities_for_patients_in_patient_data = self.outputs_of_building_tables / "data_frame_of_patient_IDs_and_ethnicities_for_patients_in_patient_data.csv"
@@ -291,7 +297,13 @@ class Paths():
         ]:
             os.makedirs(path, exist_ok = True)
         for path in [
-
+            self.clinical_molecular_linkage_data,
+            self.patient_data,
+            self.patient_data_with_Emily_Ninmers_ethnicities,
+            self.tumor_marker_data,
+            self.output_of_pairing_clinical_data_and_stages_of_tumors,
+            self.medications_data,
+            self.diagnosis_data
         ]:
             assert os.path.exists(path), f"The dependency of comparing enrichment scores `{path}` does not exist."
 

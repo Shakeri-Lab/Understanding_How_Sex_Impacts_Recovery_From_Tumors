@@ -8,7 +8,6 @@ Usage:
 ../../miniconda3/envs/ici_sex/bin/python build_tables.py
 '''
 
-from pathlib import Path
 import numpy as np
 import pandas as pd
 from ORIEN_analysis.config import paths
@@ -25,46 +24,6 @@ def classify_ICB_medication(name: str) -> str | None:
         return "Anti-CTLA4"
     return None
 
-
-def determine_ICB_status(
-    patient_ID: str,
-    age_at_specimen_collection: float,
-    dictionary_of_patients_IDs_and_lists_of_tuples_of_ages_at_medication_start_and_ICB_classes
-):
-    '''
-    Determine whether a patient is
-    Naive to ICB medications or
-    Experienced with ICB medications and
-    Experienced with Anti-PD1 medications only,
-    Experienced with Anti-CTLA4 medication only, or
-    Experienced with both Anti-PD1 and Anti-CTLA4 medications.
-    
-    Compare a specimen's age at specimen collection fudged with
-    ages at medication start for that patient.
-    If there is no age at medication start less than or equal to age at specimen collection fudged,
-    then all ages at medication start are greater than age at specimen collection fudged,
-    age at specimen collection fudged is before any ages at medication start, and
-    patient is Naive.
-    Otherwise, patient is Experienced. 
-    '''
-    list_of_tuples_of_ages_at_medication_start_and_ICB_classes = dictionary_of_patients_IDs_and_lists_of_tuples_of_ages_at_medication_start_and_ICB_classes.get(patient_ID, [])
-    if not list_of_tuples_of_ages_at_medication_start_and_ICB_classes or age_at_specimen_collection is None:
-        return "Naive"
-    list_of_tuples_of_ages_at_medication_start_less_than_or_equal_to_age_at_specimen_collection_fudged_and_ICB_classes = [
-        (age, clas)
-        for age, clas in list_of_tuples_of_ages_at_medication_start_and_ICB_classes
-        if not np.isnan(age) and age <= age_at_specimen_collection + 0.005
-    ]
-    if not list_of_tuples_of_ages_at_medication_start_less_than_or_equal_to_age_at_specimen_collection_fudged_and_ICB_classes:
-        return "Naive"
-    set_of_classes = {clas for _, clas in list_of_tuples_of_ages_at_medication_start_less_than_or_equal_to_age_at_specimen_collection_fudged_and_ICB_classes}
-    if set_of_classes == {"Anti-PD1"}:
-        return "Anti-PD1 only"
-    if set_of_classes == {"Anti-CTLA4"}:
-        return "Anti-CTLA4 only"
-    if set_of_classes == {"Anti-PD1", "Anti-CTLA4"}:
-        return "Anti-PD1 and anti-CTLA4"
-    return "Experienced"
 
 def classify_primary_diagnosis_site(site: str) -> str | None:
     '''
@@ -89,6 +48,7 @@ def classify_primary_diagnosis_site(site: str) -> str | None:
         return "Vulva"
     if "Skin, NOS".lower() in lowercase_site:
         return "Skin, NOS"
+
 
 def classify_specimen_site_of_collection(site: str) -> str | None:
     '''
@@ -156,31 +116,72 @@ def classify_specimen_site_of_collection(site: str) -> str | None:
     return None
 
 
+def determine_ICB_status(
+    patient_ID: str,
+    age_at_specimen_collection: float,
+    dictionary_of_patients_IDs_and_lists_of_tuples_of_ages_at_medication_start_and_ICB_classes
+):
+    '''
+    Determine whether a patient is
+    Naive to ICB medications or
+    Experienced with ICB medications and
+    Experienced with Anti-PD1 medications only,
+    Experienced with Anti-CTLA4 medication only, or
+    Experienced with both Anti-PD1 and Anti-CTLA4 medications.
+    
+    Compare a specimen's age at specimen collection fudged with
+    ages at medication start for that patient.
+    If there is no age at medication start less than or equal to age at specimen collection fudged,
+    then all ages at medication start are greater than age at specimen collection fudged,
+    age at specimen collection fudged is before any ages at medication start, and
+    patient is Naive.
+    Otherwise, patient is Experienced. 
+    '''
+    list_of_tuples_of_ages_at_medication_start_and_ICB_classes = (
+        dictionary_of_patients_IDs_and_lists_of_tuples_of_ages_at_medication_start_and_ICB_classes.get(patient_ID, [])
+    )
+    if not list_of_tuples_of_ages_at_medication_start_and_ICB_classes or age_at_specimen_collection is None:
+        return "Naive"
+    list_of_tuples_of_ages_at_medication_start_less_than_or_equal_to_age_at_specimen_collection_fudged_and_ICB_classes = [
+        (age, clas)
+        for age, clas in list_of_tuples_of_ages_at_medication_start_and_ICB_classes
+        if not np.isnan(age) and age <= age_at_specimen_collection + 0.005
+    ]
+    if not list_of_tuples_of_ages_at_medication_start_less_than_or_equal_to_age_at_specimen_collection_fudged_and_ICB_classes:
+        return "Naive"
+    set_of_classes = {
+        clas
+        for _, clas
+        in list_of_tuples_of_ages_at_medication_start_less_than_or_equal_to_age_at_specimen_collection_fudged_and_ICB_classes
+    }
+    if set_of_classes == {"Anti-PD1"}:
+        return "Anti-PD1 only"
+    if set_of_classes == {"Anti-CTLA4"}:
+        return "Anti-CTLA4 only"
+    if set_of_classes == {"Anti-PD1", "Anti-CTLA4"}:
+        return "Anti-PD1 and anti-CTLA4"
+    return "Experienced"
+
+
 def main():
     paths.ensure_dependencies_for_building_tables_exist()
     
     # Read CSV files into data frames.
-    PATH_TO_NORMALIZED_FILES = Path("../Clinical_Data/24PRJ217UVA_NormalizedFiles")
-    PATH_TO_CLINICAL_MOLECULAR_LINKAGE_DATA = PATH_TO_NORMALIZED_FILES / "24PRJ217UVA_20241112_ClinicalMolLinkage_V4.csv"
-    PATH_TO_PATIENT_DATA = PATH_TO_NORMALIZED_FILES / "24PRJ217UVA_20241112_PatientMaster_V4.csv"
-    PATH_TO_PATIENT_DATA_WITH_EMILY_NINMERS_ETHNICITIES = "ORIEN_analysis/24PRJ217UVA_20241112_PatientMaster_V4_Ethnicity.csv"
-    PATH_TO_TUMOR_MARKER_DATA = PATH_TO_NORMALIZED_FILES / "24PRJ217UVA_20241112_TumorMarker_V4.csv"
-    PATH_TO_OUTPUT_OF_PIPELINE_FOR_PAIRING_CLINICAL_DATA_AND_STAGES_OF_TUMORS = "ORIEN_analysis/output/pairing_clinical_data_and_stages_of_tumors/output_of_pairing_clinical_data_and_stages_of_tumors.csv"
-    PATH_TO_MEDICATIONS_DATA = PATH_TO_NORMALIZED_FILES / "24PRJ217UVA_20241112_Medications_V4.csv"
-    PATH_TO_DIAGNOSIS_DATA = PATH_TO_NORMALIZED_FILES / "24PRJ217UVA_20241112_Diagnosis_V4.csv"
-    
-    clinical_molecular_linkage_data = pd.read_csv(PATH_TO_CLINICAL_MOLECULAR_LINKAGE_DATA, dtype = str)
-    patient_data = pd.read_csv(PATH_TO_PATIENT_DATA, dtype = str)
-    patient_data_with_Emily_Ninmers_ethnicities = pd.read_csv(PATH_TO_PATIENT_DATA_WITH_EMILY_NINMERS_ETHNICITIES, dtype = str)
-    tumor_marker_data = pd.read_csv(PATH_TO_TUMOR_MARKER_DATA, dtype = str)
-    output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors = pd.read_csv(PATH_TO_OUTPUT_OF_PIPELINE_FOR_PAIRING_CLINICAL_DATA_AND_STAGES_OF_TUMORS, dtype = str)
+    clinical_molecular_linkage_data = pd.read_csv(paths.clinical_molecular_linkage_data, dtype = str)
+    diagnosis_data = pd.read_csv(paths.diagnosis_data, dtype = str)
+    diagnosis_data = diagnosis_data.reset_index().rename(columns = {"index": "index_of_row_of_diagnosis_data"})
+    medications_data = pd.read_csv(paths.medications_data, dtype = str)
+    output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors = pd.read_csv(
+        paths.output_of_pairing_clinical_data_and_stages_of_tumors,
+        dtype = str
+    )
     output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors["index_of_row_of_diagnosis_data_paired_with_specimen"] = pd.to_numeric(
         output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors["index_of_row_of_diagnosis_data_paired_with_specimen"],
         errors = "raise"
     )
-    medications_data = pd.read_csv(PATH_TO_MEDICATIONS_DATA, dtype = str)
-    diagnosis_data = pd.read_csv(PATH_TO_DIAGNOSIS_DATA, dtype = str)
-    diagnosis_data = diagnosis_data.reset_index().rename(columns = {"index": "index_of_row_of_diagnosis_data"})
+    patient_data = pd.read_csv(paths.patient_data, dtype = str)
+    patient_data_with_Emily_Ninmers_ethnicities = pd.read_csv(paths.patient_data_with_Emily_Ninmers_ethnicities, dtype = str)
+    tumor_marker_data = pd.read_csv(paths.tumor_marker_data, dtype = str)
     
     # Create CSV file with data from output of pipeline and diagnosis data.
     data_from_output_of_pipeline_and_diagnosis_data = output_of_pipeline_for_pairing_clinical_data_and_stages_of_tumors[
@@ -242,24 +243,17 @@ def main():
         "",
         "Unknown/Not Reported",
         "Unknown/Not Applicable",
-        "No TNM applicable for this site/histology combination",
+        "No TNM applicable for this site/histology combination"
     }
 
     # Print out initial statistics about tumor data.
     number_of_rows_in_tumor_data = len(tumor_data)
     number_of_unique_patients_with_tumor_data = len(tumor_data["ORIENAvatarKey"].unique())
     number_of_unique_patients_with_tumors_with_RNA_sequencing = len(
-        tumor_data.loc[
-            tumor_data["RNASeq"].notna() & (tumor_data["RNASeq"].str.strip() != ""),
-            "ORIENAvatarKey"
-        ]
+        tumor_data.loc[tumor_data["RNASeq"].notna(), "ORIENAvatarKey"].unique()
     )
     number_of_unique_patients_with_tumors_with_WES = len(
-        tumor_data.loc[
-            tumor_data["WES"].notna() & (tumor_data["WES"].str.strip() != ""),
-            "ORIENAvatarKey"
-        ]
-        .unique()
+        tumor_data.loc[tumor_data["WES"].notna(), "ORIENAvatarKey"].unique()
     )
     print(
         "We determined a data frame of clinical data, and " +
@@ -273,8 +267,8 @@ def main():
     print(tumor_data.head(n = 3))
 
     # Classify specimens as having WES only, RNA sequencing only, or both WES and RNA sequencing.
-    series_of_indicators_that_specimen_has_WES = tumor_data["WES"].notna() & (tumor_data["WES"].str.strip() != "")
-    series_of_indicators_that_specimen_has_RNA_sequencing = tumor_data["RNASeq"].notna() & tumor_data["RNASeq"].notna() & (tumor_data["RNASeq"].str.strip() != "")
+    series_of_indicators_that_specimen_has_WES = tumor_data["WES"].notna()
+    series_of_indicators_that_specimen_has_RNA_sequencing = tumor_data["RNASeq"].notna() & tumor_data["RNASeq"].notna()
     tumor_data["class_of_sequencing_data"] = np.select(
         [
             series_of_indicators_that_specimen_has_WES & ~series_of_indicators_that_specimen_has_RNA_sequencing,
@@ -379,14 +373,13 @@ def main():
 
     print("We assign an ICB status to each specimen.")
 
-    # Add sex for each patient.
+    # Add sex, race, and ethnicity for each patient.
     tumor_data = tumor_data.merge(
         patient_data[["AvatarKey", "Sex", "Race", "Ethnicity"]],
         left_on = "ORIENAvatarKey",
         right_on = "AvatarKey",
         how = "left"
     ).drop(columns = "AvatarKey")
-    tumor_data["Sex"] = tumor_data["Sex"].str.title()
     
     tumor_data = tumor_data.merge(
         patient_data_with_Emily_Ninmers_ethnicities[["AvatarKey", "EthnicityEKN"]],
@@ -394,7 +387,6 @@ def main():
         right_on = "AvatarKey",
         how = "left"
     ).drop(columns = "AvatarKey")
-    tumor_data["EthnicityEKN"] = tumor_data["EthnicityEKN"].fillna("Unknown")
 
     print(f"The number of rows in tumor data after merging patient data is {len(tumor_data)}.")
 
@@ -405,7 +397,6 @@ def main():
     data_frame_of_patient_IDs_and_ethnicities_for_patients_in_patient_data = (
         patient_data[["AvatarKey", "Ethnicity"]]
         .assign(
-            Ethnicity = lambda df: df["Ethnicity"].fillna(""),
             normalized_ethnicity = lambda df: df["Ethnicity"].str.split(r"\s*;\s*")
         )
         .explode("normalized_ethnicity")
@@ -413,7 +404,9 @@ def main():
         .sort_values(by = "AvatarKey")
         .reset_index(drop = True)
     )
-    number_of_unique_patient_IDs = len(data_frame_of_patient_IDs_and_ethnicities_for_patients_in_patient_data["AvatarKey"].unique())
+    number_of_unique_patient_IDs = len(
+        data_frame_of_patient_IDs_and_ethnicities_for_patients_in_patient_data["AvatarKey"].unique()
+    )
     print(
         "The number of unique patient IDs in " +
         f"data frame of patient IDs and ethnicities for patients in patient data is " +
@@ -434,7 +427,9 @@ def main():
         right_on = ["AvatarKey", "Ethnicity"],
         how = "left"
     ).drop(columns = ["AvatarKey"])
-    number_of_unique_patient_IDs = len(data_frame_of_patient_IDs_and_ethnicities_for_patients_in_tumor_data["ORIENAvatarKey"].unique())
+    number_of_unique_patient_IDs = len(
+        data_frame_of_patient_IDs_and_ethnicities_for_patients_in_tumor_data["ORIENAvatarKey"].unique()
+    )
     print(
         "The number of unique patient IDs in " +
         "data frame of patient IDs and ethnicities for patients in tumor data is " +
@@ -445,28 +440,26 @@ def main():
         index = False
     )
 
-    tumor_data["clean_pathological_group_stage"] = tumor_data["PathGroupStage"].fillna("").str.strip()
-    tumor_data["clean_clinical_group_stage"] = tumor_data["ClinGroupStage"].fillna("").str.strip()
-    series_of_indicators_that_pathological_group_stage_exists = ~tumor_data["clean_pathological_group_stage"].isin(INVALID_STAGE_VALUES)
-    series_of_indicators_that_clinical_group_stage_exists = ~tumor_data["clean_clinical_group_stage"].isin(INVALID_STAGE_VALUES)
+    series_of_indicators_that_pathological_group_stage_exists = ~tumor_data["PathGroupStage"].isin(INVALID_STAGE_VALUES)
+    series_of_indicators_that_clinical_group_stage_exists = ~tumor_data["ClinGroupStage"].isin(INVALID_STAGE_VALUES)
     tumor_data["Stage"] = np.select(
         [
             series_of_indicators_that_pathological_group_stage_exists,
             ~series_of_indicators_that_pathological_group_stage_exists & series_of_indicators_that_clinical_group_stage_exists
         ],
         [
-            tumor_data["clean_pathological_group_stage"],
-            tumor_data["clean_clinical_group_stage"]
+            tumor_data["PathGroupStage"],
+            tumor_data["ClinGroupStage"]
         ],
         default = "Unknown"
     )
 
     print("We add column \"Stage\" to tumor data for Table 2.")
 
-    tumor_data["clean_performance_status_at_diagnosis_scale"] = tumor_data["PerformStatusAtDiagnosisScale"].fillna("").str.strip()
-    tumor_data["clean_performance_status_at_diagnosis"] = tumor_data["PerformStatusAtDiagnosis"].fillna("").str.strip()
-    series_of_indicators_that_performance_status_at_diagnosis_scale_contains_ECOG = tumor_data["clean_performance_status_at_diagnosis_scale"].str.contains("ECOG", regex = False)
-    series_of_first_numbers = tumor_data["clean_performance_status_at_diagnosis"].str.extract(r"(\d+)", expand = False).astype(float)
+    series_of_indicators_that_performance_status_at_diagnosis_scale_contains_ECOG = (
+        tumor_data["PerformStatusAtDiagnosisScale"].str.contains("ECOG", regex = False)
+    )
+    series_of_first_numbers = tumor_data["PerformStatusAtDiagnosis"].str.extract(r"(\d+)", expand = False).astype(float)
     tumor_data["ECOG PS"] = np.where(
         series_of_indicators_that_performance_status_at_diagnosis_scale_contains_ECOG,
         series_of_first_numbers.map(map_to_class_of_ECOG_performance_status),
@@ -776,7 +769,7 @@ def map_to_class_of_ECOG_performance_status(value) -> str:
         return "3+"
     return str(int(value))
 
-    
+
 def numericize_age(age: str):
     if age == "Age 90 or older":
         return 90.0
